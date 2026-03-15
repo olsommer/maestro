@@ -1,0 +1,39 @@
+{
+  "name": "@maestro/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@hapi/boom": "^10.0.1",
+    "@maestro/wire": "workspace:*",
+    "@mariozechner/pi-coding-agent": "^0.58.3",
+    "@types/hapi__boom": "^9.0.1",
+    "@types/qrcode": "^1.5.6",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "fastify": "^5.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "nanoid": "^5.0.0",
+    "node-cron": "^4.2.1",
+    "node-pty": "^1.1.0",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

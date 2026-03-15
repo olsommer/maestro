@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - ollama
+    ports:
+      - "4800:4800"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4800
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - maestro_data:/root/.maestro
+      - maestro_projects:/root/maestro-projects
+      - maestro_gh:/root/.config/gh
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  maestro_data:
+  maestro_projects:
+  maestro_gh:
+  ollama_data:

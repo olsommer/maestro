@@ -1,0 +1,21 @@
+{
+  "name": "maestro",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter @maestro/server dev",
+    "dev:client": "pnpm --filter @maestro/client dev",
+    "build": "pnpm -r run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "node-pty"
+    ]
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

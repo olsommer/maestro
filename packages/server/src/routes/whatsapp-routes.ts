@@ -1,0 +1,67 @@
+import type { FastifyInstance } from "fastify";
+import {
+  startWhatsApp,
+  stopWhatsApp,
+  getWhatsAppStatus,
+  sendWhatsAppMessage,
+} from "../integrations/whatsapp.js";
+import { listWhatsAppMessages } from "../state/sqlite.js";
+import type { Server as SocketServer } from "socket.io";
+
+export async function registerWhatsAppRoutes(
+  app: FastifyInstance,
+  io: SocketServer
+) {
+  // Get connection status
+  app.get("/api/integrations/whatsapp", async () => {
+    return getWhatsAppStatus();
+  });
+
+  // Connect (start Baileys, triggers QR)
+  app.post("/api/integrations/whatsapp/connect", async (_req, reply) => {
+    try {
+      await startWhatsApp(io);
+      return getWhatsAppStatus();
+    } catch (error) {
+      return reply.status(500).send({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to start WhatsApp",
+      });
+    }
+  });
+
+  // Disconnect
+  app.delete("/api/integrations/whatsapp/connect", async () => {
+    await stopWhatsApp();
+    return { ok: true };
+  });
+
+  // Message history
+  app.get("/api/integrations/whatsapp/messages", async (req) => {
+    const query = req.query as { chatJid?: string; limit?: string };
+    const chatJid = query.chatJid || undefined;
+    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    return listWhatsAppMessages(chatJid, limit);
+  });
+
+  // Manual send (for testing)
+  app.post("/api/integrations/whatsapp/send", async (req, reply) => {
+    try {
+      const body = req.body as { jid: string; text: string };
+      if (!body.jid || !body.text) {
+        return reply
+          .status(400)
+          .send({ error: "jid and text are required" });
+      }
+      await sendWhatsAppMessage(body.jid, body.text);
+      return { ok: true };
+    } catch (error) {
+      return reply.status(500).send({
+        error:
+          error instanceof Error ? error.message : "Failed to send message",
+      });
+    }
+  });
+}

@@ -1,0 +1,51 @@
+import type { FastifyInstance } from "fastify";
+import { SettingsUpdateSchema } from "@maestro/wire";
+import { getSettings, updateSettings } from "../state/settings.js";
+import {
+  getUpdateStatus,
+  checkForUpdates,
+  performUpdate,
+  restartAutoUpdater,
+} from "../services/auto-updater.js";
+
+export async function registerSettingsRoutes(app: FastifyInstance) {
+  // Get current settings
+  app.get("/api/settings", async () => {
+    return getSettings();
+  });
+
+  // Update settings
+  app.patch("/api/settings", async (req, reply) => {
+    const parsed = SettingsUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() });
+    }
+
+    const settings = updateSettings(parsed.data);
+
+    // Restart the auto-updater timer if settings changed
+    restartAutoUpdater();
+
+    return settings;
+  });
+
+  // Get update status (installed versions, available updates)
+  app.get("/api/settings/update-status", async () => {
+    return getUpdateStatus();
+  });
+
+  // Manually check for updates (does not install)
+  app.post("/api/settings/check-updates", async () => {
+    await checkForUpdates();
+    return getUpdateStatus();
+  });
+
+  // Manually trigger update now
+  app.post("/api/settings/update-now", async () => {
+    const result = await performUpdate();
+    return {
+      ...result,
+      status: getUpdateStatus(),
+    };
+  });
+}
