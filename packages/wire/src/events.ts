@@ -22,6 +22,9 @@ export const ServerEvents = {
     data: z.string(),
   }),
   "setup:complete": z.object({}),
+  "setup:url": z.object({
+    url: z.string(),
+  }),
   "whatsapp:message": z.object({
     message: z.object({
       id: z.string(),
@@ -74,6 +77,10 @@ export const ClientEvents = {
     rows: z.number().optional(),
   }),
   "setup:unsubscribe": z.object({}),
+  "setup:restart": z.object({
+    cols: z.number().optional(),
+    rows: z.number().optional(),
+  }),
   "whatsapp:subscribe": z.object({}),
   "whatsapp:unsubscribe": z.object({}),
 } as const;

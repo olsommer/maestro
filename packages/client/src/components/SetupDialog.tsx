@@ -148,6 +148,17 @@ export function SetupDialog({
     setPasteValue("");
   };
 
+  const handleRestart = () => {
+    setCompleted(false);
+    setLatestUrl(null);
+    const socket = getSocket();
+    socket.emit("setup:restart", {});
+  };
+
+  const sendKey = (key: string) => {
+    sendInputRef.current?.(key);
+  };
+
   return (
     <Dialog open={open}>
       <DialogContent
@@ -190,41 +201,63 @@ export function SetupDialog({
         </div>
 
         {!completed && (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={pasteValue}
-              onChange={(e) => setPasteValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handlePasteSend();
-              }}
-              placeholder="Paste token or code here..."
-              className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handlePasteSend}
-              disabled={!pasteValue}
-            >
-              Send
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs font-mono"
+                onClick={() => sendKey("y\n")}
+              >
+                Yes (y)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs font-mono"
+                onClick={() => sendKey("n\n")}
+              >
+                No (n)
+              </Button>
+              <div className="h-4 w-px bg-border" />
+              <input
+                type="text"
+                value={pasteValue}
+                onChange={(e) => setPasteValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handlePasteSend();
+                }}
+                placeholder="Paste token or code here..."
+                className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handlePasteSend}
+                disabled={!pasteValue}
+              >
+                Send
+              </Button>
+            </div>
           </div>
         )}
 
-        {completed ? (
-          <DialogFooter>
+        <DialogFooter className="flex-row justify-between sm:justify-between">
+          {completed ? (
             <p className="text-sm text-green-500 font-medium">
               Setup complete! Starting Maestro...
             </p>
-          </DialogFooter>
-        ) : (
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={handleSkip}>
-              Skip Setup
-            </Button>
-          </DialogFooter>
-        )}
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" onClick={handleRestart}>
+                Restart Setup
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleSkip}>
+                Skip Setup
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

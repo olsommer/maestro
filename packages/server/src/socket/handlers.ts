@@ -1,7 +1,7 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import { ClientEvents } from "@maestro/wire";
 import { sendInput, resizeAgent } from "../agents/agent-manager.js";
-import { sendSetupInput, resizeSetupPty, getSetupOutputBuffer, isSetupDone, startSetupPty, isSetupRunning } from "../setup/setup-manager.js";
+import { sendSetupInput, resizeSetupPty, getSetupOutputBuffer, isSetupDone, startSetupPty, isSetupRunning, resetSetup } from "../setup/setup-manager.js";
 
 export function registerSocketHandlers(io: SocketServer) {
   io.on("connection", (socket: Socket) => {
@@ -93,6 +93,17 @@ export function registerSocketHandlers(io: SocketServer) {
         resizeSetupPty(cols, rows);
       } catch {
         socket.emit("error", { message: "Invalid setup resize payload" });
+      }
+    });
+
+    socket.on("setup:restart", (data) => {
+      try {
+        const { cols, rows } = ClientEvents["setup:restart"].parse(data);
+        console.log(`[setup] Restart requested by ${socket.id}`);
+        resetSetup();
+        startSetupPty(io, cols, rows);
+      } catch {
+        socket.emit("error", { message: "Invalid setup restart payload" });
       }
     });
 
