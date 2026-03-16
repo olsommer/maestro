@@ -5,6 +5,7 @@ import {
   getTelegramStatus,
   sendTelegramMessage,
 } from "./telegram.js";
+import { startTelegramQueue } from "./telegram-queue.js";
 import { listTelegramMessages } from "./telegram-store.js";
 import type { Server as SocketServer } from "socket.io";
 
@@ -23,6 +24,7 @@ export async function registerTelegramRoutes(
     try {
       const token = getToken?.() || undefined;
       await startTelegram(io, token);
+      startTelegramQueue();
       return getTelegramStatus();
     } catch (error) {
       return reply.status(500).send({
