@@ -20,9 +20,7 @@ import { registerSettingsRoutes } from "./routes/settings-routes.js";
 import { getRuntimeStatus } from "./runtime/runtime-status.js";
 import { startAutoUpdater, stopAutoUpdater } from "./services/auto-updater.js";
 import { registerSetupRoutes } from "./routes/setup-routes.js";
-import { registerWhatsAppRoutes } from "./routes/whatsapp-routes.js";
-import { startWhatsApp, stopWhatsApp } from "./integrations/whatsapp.js";
-import { startWhatsAppQueue, stopWhatsAppQueue } from "./services/whatsapp-queue.js";
+import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue, stopWhatsAppQueue } from "@maestro/pi";
 
 const PORT = parseInt(process.env.PORT || "4800", 10);
 const HOST = process.env.HOST || "0.0.0.0";

@@ -107,14 +107,8 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
-  packages/server:
+  packages/pi:
     dependencies:
-      '@fastify/cors':
-        specifier: ^10.0.0
-        version: 10.1.0
-      '@fastify/websocket':
-        specifier: ^11.0.0
-        version: 11.2.0
       '@hapi/boom':
         specifier: ^10.0.1
         version: 10.0.1
@@ -124,15 +118,43 @@ importers:
       '@mariozechner/pi-coding-agent':
         specifier: ^0.58.3
         version: 0.58.3(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ws@8.19.0)(zod@3.25.76)
-      '@types/hapi__boom':
-        specifier: ^9.0.1
-        version: 9.0.1
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(sharp@0.34.5)
+      fastify:
+        specifier: ^5.0.0
+        version: 5.8.2
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
+      socket.io:
+        specifier: ^4.8.0
+        version: 4.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/server:
+    dependencies:
+      '@fastify/cors':
+        specifier: ^10.0.0
+        version: 10.1.0
+      '@fastify/websocket':
+        specifier: ^11.0.0
+        version: 11.2.0
+      '@maestro/pi':
+        specifier: workspace:*
+        version: link:../pi
+      '@maestro/wire':
+        specifier: workspace:*
+        version: link:../wire
       fastify:
         specifier: ^5.0.0
         version: 5.8.2
@@ -148,9 +170,6 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
-      qrcode:
-        specifier: ^1.5.4
-        version: 1.5.4
       socket.io:
         specifier: ^4.8.0
         version: 4.8.3
@@ -1779,10 +1798,6 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
-
-  '@types/hapi__boom@9.0.1':
-    resolution: {integrity: sha512-TSqwgnTmNNp3/9uOpV16S8IVJv+QDmZLEImSuQrzGLCzmuK5P3bx3wdaXGXxfWLlN09Qqnd27POLrEAKhVCM5g==}
-    deprecated: Deprecated
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -6765,10 +6780,6 @@ snapshots:
       '@types/node': 22.19.15
 
   '@types/estree@1.0.8': {}
-
-  '@types/hapi__boom@9.0.1':
-    dependencies:
-      '@hapi/boom': 10.0.1
 
   '@types/json-schema@7.0.15': {}
 

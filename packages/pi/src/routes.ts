@@ -4,8 +4,8 @@ import {
   stopWhatsApp,
   getWhatsAppStatus,
   sendWhatsAppMessage,
-} from "../integrations/whatsapp.js";
-import { listWhatsAppMessages } from "../state/sqlite.js";
+} from "./whatsapp.js";
+import { listWhatsAppMessages } from "./store.js";
 import type { Server as SocketServer } from "socket.io";
 
 export async function registerWhatsAppRoutes(

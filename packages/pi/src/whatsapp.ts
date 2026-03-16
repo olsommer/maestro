@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import type { Server as SocketServer } from "socket.io";
 import makeWASocket, {
@@ -6,13 +8,13 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
 } from "@whiskeysockets/baileys";
-import type { WASocket, BaileysEventMap } from "@whiskeysockets/baileys";
+import type { WASocket } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import * as QRCode from "qrcode";
-import { MAESTRO_DATA_DIR } from "../state/files.js";
 import type { WhatsAppConnectionStatus } from "@maestro/wire";
 
-const AUTH_DIR = path.join(MAESTRO_DATA_DIR, "whatsapp-auth");
+const DATA_DIR = path.join(os.homedir(), ".maestro");
+const AUTH_DIR = path.join(DATA_DIR, "whatsapp-auth");
 
 let sock: WASocket | null = null;
 let io: SocketServer | null = null;
@@ -89,9 +91,10 @@ async function connectBaileys(): Promise<void> {
           .catch((err: unknown) => {
             console.error("[whatsapp] Failed to generate QR code:", err);
           });
-        QRCode.toString(qr, { type: "terminal", small: true })
+        QRCode.toString(qr, { type: "terminal", small: true, margin: 1 })
           .then((ascii: string) => {
             console.log("[whatsapp] Scan this QR code with WhatsApp:\n" + ascii);
+            console.log("[whatsapp] If the QR code above doesn't work, use this code manually:\n" + qr);
           })
           .catch(() => {});
       }
@@ -111,7 +114,16 @@ async function connectBaileys(): Promise<void> {
           return;
         }
 
-        // Reconnect with exponential backoff
+        // QR timeout (code 515) — reconnect immediately to show a fresh QR
+        const isQrTimeout = statusCode === DisconnectReason.timedOut || statusCode === 515;
+        if (isQrTimeout) {
+          console.log("[whatsapp] QR expired, reconnecting immediately for a fresh code...");
+          setStatus("connecting");
+          reconnectTimer = setTimeout(() => connectBaileys(), 1000);
+          return;
+        }
+
+        // Other disconnects — reconnect with exponential backoff
         reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 60000);
         console.log(`[whatsapp] Connection closed (code=${statusCode}), reconnecting in ${delay}ms...`);

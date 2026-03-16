@@ -11,18 +11,21 @@ import {
   getNextQueuedMessage,
   updateWhatsAppMessage,
   whatsAppMessageExists,
-} from "../state/sqlite.js";
-import { nowIso } from "../state/files.js";
+} from "./store.js";
 import {
   onWhatsAppMessage,
   sendWhatsAppMessage,
-} from "../integrations/whatsapp.js";
+} from "./whatsapp.js";
 
 let session: AgentSession | null = null;
 let isProcessing = false;
 
 const PI_PROJECT_PATH = process.env.PI_PROJECT_PATH || "/tmp/maestro-whatsapp";
 const PI_TIMEOUT_MS = parseInt(process.env.PI_TIMEOUT_MS || "300000", 10);
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
 // ── Pi SDK Session ─────────────────────────────────────────────────
 
