@@ -33,9 +33,10 @@ if [[ "$use_claude" =~ ^[Yy]$ ]]; then
     if claude auth status >/dev/null 2>&1; then
       echo "Claude Code is already authenticated."
     else
-      echo "Running: claude auth login"
+      echo "Running: claude setup-token"
+      echo "(Paste your long-lived token when prompted)"
       echo ""
-      claude auth login || echo "(claude auth login exited with error)"
+      claude setup-token || echo "(claude setup-token exited with error)"
     fi
   else
     echo "Claude Code CLI not found, skipping."
