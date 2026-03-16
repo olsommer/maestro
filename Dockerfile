@@ -11,11 +11,13 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/server/package.json packages/server/
 COPY packages/wire/package.json packages/wire/
 COPY packages/mcp/package.json packages/mcp/
+COPY packages/pi/package.json packages/pi/
 RUN pnpm install --frozen-lockfile
 
 # Copy source
 COPY packages/wire/ packages/wire/
 COPY packages/mcp/ packages/mcp/
+COPY packages/pi/ packages/pi/
 COPY packages/server/ packages/server/
 
 # Build wire protocol
