@@ -242,12 +242,17 @@ function PiAgentCard({ settings, onSettingsUpdate }: {
                 <>
                   <FieldSeparator />
                   <Field orientation="horizontal">
-                    <FieldLabel>Model name</FieldLabel>
+                    <div>
+                      <FieldLabel>Model name</FieldLabel>
+                      <FieldDescription>
+                        Include quantization in the tag, e.g. llama3.2:q4_K_M
+                      </FieldDescription>
+                    </div>
                     <FieldContent className="items-end">
                       <input
                         type="text"
                         className="h-9 w-[200px] rounded-md border border-input bg-background px-3 text-sm"
-                        placeholder="e.g. llama3.2:1b"
+                        placeholder="e.g. llama3.2:q4_K_M"
                         value={customModel}
                         onChange={(e) => setCustomModel(e.target.value)}
                       />

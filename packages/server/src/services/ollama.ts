@@ -29,16 +29,11 @@ export async function listOllamaModels(): Promise<OllamaModelInfo[]> {
 
 // Available models to offer for download
 export const RECOMMENDED_MODELS = [
-  "llama3.2",
-  "llama3.2:1b",
-  "llama3.1",
-  "llama3.1:70b",
-  "mistral",
-  "gemma2",
-  "gemma2:2b",
-  "phi3",
-  "qwen2.5",
-  "qwen2.5:0.5b",
+  "qwen3:4b",
+  "qwen3:2b",
+  "qwen3:9b-q4_K_M",
+  "llama3.1:8b-q4_K_M",
+  "llama3.2:3b",
 ];
 
 // Pull state tracking
