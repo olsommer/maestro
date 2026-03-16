@@ -1,4 +1,14 @@
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import Fastify from "fastify";
+
+// Load persisted Anthropic API key if not already in env
+const keyFile = path.join(os.homedir(), ".maestro", ".anthropic_key");
+if (!process.env.ANTHROPIC_API_KEY && fs.existsSync(keyFile)) {
+  const key = fs.readFileSync(keyFile, "utf-8").trim();
+  if (key) process.env.ANTHROPIC_API_KEY = key;
+}
 import cors from "@fastify/cors";
 import { Server as SocketServer } from "socket.io";
 import { initAgentManager } from "./agents/agent-manager.js";
