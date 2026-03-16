@@ -22,6 +22,9 @@ export function SetupDialog({
 }) {
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
   const [completed, setCompleted] = useState(false);
+  const [latestUrl, setLatestUrl] = useState<string | null>(null);
+  const [pasteValue, setPasteValue] = useState("");
+  const sendInputRef = useRef<((data: string) => void) | null>(null);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -38,10 +41,15 @@ export function SetupDialog({
     async function init() {
       const { Terminal } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
+      const { WebLinksAddon } = await import("@xterm/addon-web-links");
 
       if (!mounted || !containerEl) return;
 
       const fitAddon = new FitAddon();
+      const webLinksAddon = new WebLinksAddon((_event, uri) => {
+        window.open(uri, "_blank");
+      });
+
       const term = new Terminal({
         theme: {
           background: "#09090b",
@@ -55,6 +63,7 @@ export function SetupDialog({
       });
 
       term.loadAddon(fitAddon);
+      term.loadAddon(webLinksAddon);
       term.open(containerEl);
 
       // Wait for the dialog open animation to finish so the container
@@ -71,6 +80,13 @@ export function SetupDialog({
       };
       socket.on("setup:output", handleOutput);
 
+      // Surface detected URLs as a clickable banner
+      const handleUrl = (payload: { url: string }) => {
+        if (!mounted) return;
+        setLatestUrl(payload.url);
+      };
+      socket.on("setup:url", handleUrl);
+
       const handleSetupComplete = () => {
         if (!mounted) return;
         setCompleted(true);
@@ -82,6 +98,12 @@ export function SetupDialog({
       term.onData((data) => {
         socket.emit("setup:input", { data });
       });
+
+      // Expose a way for the paste helper to send input
+      sendInputRef.current = (data: string) => {
+        socket.emit("setup:input", { data });
+        term.focus();
+      };
 
       // Subscribe and start PTY in one step — server auto-starts
       // the PTY with these dimensions when no PTY is running yet
@@ -98,8 +120,10 @@ export function SetupDialog({
       return () => {
         resizeObserver.disconnect();
         socket.off("setup:output", handleOutput);
+        socket.off("setup:url", handleUrl);
         socket.off("setup:complete", handleSetupComplete);
         socket.emit("setup:unsubscribe", {});
+        sendInputRef.current = null;
         term.dispose();
       };
     }
@@ -118,6 +142,12 @@ export function SetupDialog({
     onComplete();
   };
 
+  const handlePasteSend = () => {
+    if (!pasteValue || !sendInputRef.current) return;
+    sendInputRef.current(pasteValue);
+    setPasteValue("");
+  };
+
   return (
     <Dialog open={open}>
       <DialogContent
@@ -131,9 +161,56 @@ export function SetupDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {latestUrl && !completed && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm">
+            <span className="shrink-0 font-medium text-blue-400">
+              Open this URL to authenticate:
+            </span>
+            <a
+              href={latestUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-blue-400 underline underline-offset-2 hover:text-blue-300"
+            >
+              {latestUrl}
+            </a>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 ml-auto h-7 text-xs"
+              onClick={() => window.open(latestUrl, "_blank")}
+            >
+              Open
+            </Button>
+          </div>
+        )}
+
         <div className="flex-1 min-h-0 rounded-lg overflow-hidden border bg-[#09090b]">
           <div ref={containerRefCb} className="h-full w-full" />
         </div>
+
+        {!completed && (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={pasteValue}
+              onChange={(e) => setPasteValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handlePasteSend();
+              }}
+              placeholder="Paste token or code here..."
+              className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handlePasteSend}
+              disabled={!pasteValue}
+            >
+              Send
+            </Button>
+          </div>
+        )}
 
         {completed ? (
           <DialogFooter>

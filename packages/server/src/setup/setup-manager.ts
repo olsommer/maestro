@@ -7,6 +7,7 @@ import type { Server as SocketServer } from "socket.io";
 const FLAG_DIR = path.join(os.homedir(), ".maestro");
 const FLAG_FILE = path.join(FLAG_DIR, "setup-complete");
 const SENTINEL = "__MAESTRO_SETUP_DONE__";
+const URL_RE = /https?:\/\/[^\s\x1b\x07\])"']+/g;
 const SCRIPT_PATH = path.resolve(
   import.meta.dirname ?? __dirname,
   "../../scripts/setup.sh"
@@ -77,6 +78,14 @@ export function startSetupPty(io: SocketServer, cols?: number, rows?: number): v
     console.log(`[setup] PTY output (${data.length} bytes, ${roomSize} subscribers)`);
     outputBuffer.push(data);
     io.to("setup").emit("setup:output", { data });
+
+    // Detect URLs and emit them separately for the UI to show as clickable links
+    const urls = data.match(URL_RE);
+    if (urls) {
+      for (const url of urls) {
+        io.to("setup").emit("setup:url", { url });
+      }
+    }
 
     if (data.includes(SENTINEL)) {
       setupComplete = true;

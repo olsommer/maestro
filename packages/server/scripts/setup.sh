@@ -18,7 +18,7 @@ if command -v gh &>/dev/null; then
     echo "GitHub CLI is not authenticated."
     echo "Running: gh auth login"
     echo ""
-    gh auth login || echo "(gh auth login exited with error)"
+    gh auth login --web -p https || echo "(gh auth login exited with error)"
   fi
 else
   echo "GitHub CLI (gh) not found, skipping."
