@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { api, type Settings, type UpdateStatus } from "@/lib/api";
+import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import {
   FieldLabel,
   FieldSeparator,
 } from "@/components/ui/field";
+import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -60,6 +61,392 @@ function DetailRows({
         </div>
       ))}
     </FieldGroup>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function PiAgentCard({ settings, onSettingsUpdate }: {
+  settings: Settings | null;
+  onSettingsUpdate: (s: Settings) => void;
+}) {
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [localModels, setLocalModels] = useState<OllamaModelInfo[]>([]);
+  const [recommendedModels, setRecommendedModels] = useState<string[]>([]);
+  const [pullStatus, setPullStatus] = useState<OllamaPullStatus | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [customModel, setCustomModel] = useState("");
+  const [loading, setLoading] = useState(true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadOllamaData = useCallback(async () => {
+    try {
+      const [status, modelsRes, recRes] = await Promise.all([
+        api.getOllamaStatus(),
+        api.getOllamaModels().catch(() => ({ models: [] })),
+        api.getRecommendedModels(),
+      ]);
+      setOllamaStatus(status);
+      setLocalModels(modelsRes.models);
+      setRecommendedModels(recRes.models);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOllamaData();
+  }, [loadOllamaData]);
+
+  // Set selected model from saved settings
+  useEffect(() => {
+    if (settings?.piOllamaModel) {
+      setSelectedModel(settings.piOllamaModel);
+    }
+  }, [settings?.piOllamaModel]);
+
+  // Poll pull status while pulling
+  useEffect(() => {
+    if (pullStatus && !pullStatus.done) {
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await api.getOllamaPullStatus();
+          setPullStatus(status);
+          if (status.done) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            // Refresh model list after pull completes
+            void loadOllamaData();
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 1000);
+      return () => {
+        if (pollRef.current) clearInterval(pollRef.current);
+      };
+    }
+  }, [pullStatus?.done, loadOllamaData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handlePullModel() {
+    const model = selectedModel === "__custom__" ? customModel.trim() : selectedModel;
+    if (!model) return;
+    try {
+      await api.pullOllamaModel(model);
+      setPullStatus({ model, status: "starting", progress: 0, error: null, done: false });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleSaveModel() {
+    const model = selectedModel === "__custom__" ? customModel.trim() : selectedModel;
+    if (!model) return;
+    try {
+      const updated = await api.updateSettings({ piOllamaModel: model });
+      onSettingsUpdate(updated);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const isPulling = pullStatus != null && !pullStatus.done;
+  const savedModel = settings?.piOllamaModel || "";
+  const effectiveModel = selectedModel === "__custom__" ? customModel.trim() : selectedModel;
+  const modelIsLocal = localModels.some((m) => m.name === effectiveModel || m.name === `${effectiveModel}:latest`);
+  const modelIsSaved = savedModel === effectiveModel;
+
+  // Models available to download (not already local)
+  const localModelNames = new Set(localModels.map((m) => m.name));
+  const downloadableModels = recommendedModels.filter(
+    (m) => !localModelNames.has(m) && !localModelNames.has(`${m}:latest`)
+  );
+
+  return (
+    <Card>
+      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="text-sm">Pi Agent</CardTitle>
+          <CardDescription>
+            Configure the Ollama model used by the Pi agent for local inference.
+          </CardDescription>
+        </div>
+        {ollamaStatus && (
+          <Badge variant={ollamaStatus.running ? "secondary" : "destructive"}>
+            {ollamaStatus.running ? "Ollama Running" : "Ollama Offline"}
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderIcon className="size-4 animate-spin" />
+            Checking Ollama status...
+          </div>
+        ) : !ollamaStatus?.running ? (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>Ollama not reachable</AlertTitle>
+            <AlertDescription>
+              Cannot connect to Ollama at {ollamaStatus?.host ?? "http://localhost:11434"}.
+              Make sure Ollama is running.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <FieldGroup>
+              <Field orientation="horizontal">
+                <div>
+                  <FieldLabel>Model</FieldLabel>
+                  <FieldDescription>
+                    Select a locally available model or download a new one.
+                  </FieldDescription>
+                </div>
+                <FieldContent className="items-end">
+                  <Select value={selectedModel} onValueChange={(v) => { if (v != null) setSelectedModel(v); }}>
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Select a model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {localModels.length > 0 && (
+                        <>
+                          {localModels.map((m) => (
+                            <SelectItem key={m.name} value={m.name}>
+                              {m.name} ({formatBytes(m.size)})
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {downloadableModels.length > 0 && (
+                        <>
+                          {downloadableModels.map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m} (download)
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      <SelectItem value="__custom__">Custom model...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FieldContent>
+              </Field>
+
+              {selectedModel === "__custom__" && (
+                <>
+                  <FieldSeparator />
+                  <Field orientation="horizontal">
+                    <FieldLabel>Model name</FieldLabel>
+                    <FieldContent className="items-end">
+                      <input
+                        type="text"
+                        className="h-9 w-[200px] rounded-md border border-input bg-background px-3 text-sm"
+                        placeholder="e.g. llama3.2:1b"
+                        value={customModel}
+                        onChange={(e) => setCustomModel(e.target.value)}
+                      />
+                    </FieldContent>
+                  </Field>
+                </>
+              )}
+
+              {savedModel && (
+                <>
+                  <FieldSeparator />
+                  <Field orientation="horizontal">
+                    <FieldLabel>Active model</FieldLabel>
+                    <FieldContent className="items-end">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs">{savedModel}</span>
+                        {localModelNames.has(savedModel) || localModelNames.has(`${savedModel}:latest`) ? (
+                          <Badge variant="secondary">
+                            <CheckCircleIcon className="mr-1 size-3" />
+                            Ready
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">Not downloaded</Badge>
+                        )}
+                      </div>
+                    </FieldContent>
+                  </Field>
+                </>
+              )}
+            </FieldGroup>
+
+            {/* Pull progress */}
+            {pullStatus && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {pullStatus.done
+                      ? pullStatus.error
+                        ? `Failed: ${pullStatus.error}`
+                        : `Downloaded ${pullStatus.model}`
+                      : `Downloading ${pullStatus.model}...`}
+                  </span>
+                  <span className="font-mono text-xs">{pullStatus.progress}%</span>
+                </div>
+                <Progress value={pullStatus.progress} />
+                {pullStatus.done && pullStatus.error && (
+                  <Alert variant="destructive">
+                    <TriangleAlertIcon />
+                    <AlertTitle>Pull failed</AlertTitle>
+                    <AlertDescription>{pullStatus.error}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {effectiveModel && !modelIsLocal && (
+                <Button
+                  variant="outline"
+                  disabled={isPulling || !effectiveModel}
+                  onClick={() => void handlePullModel()}
+                >
+                  {isPulling ? (
+                    <LoaderIcon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <DownloadIcon className="mr-2 size-4" />
+                  )}
+                  Download Model
+                </Button>
+              )}
+              <Button
+                disabled={!effectiveModel || !modelIsLocal || modelIsSaved}
+                onClick={() => void handleSaveModel()}
+              >
+                <CheckCircleIcon className="mr-2 size-4" />
+                {modelIsSaved ? "Saved" : "Save & Activate"}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TelegramCard({ settings, onSettingsUpdate }: {
+  settings: Settings | null;
+  onSettingsUpdate: (s: Settings) => void;
+}) {
+  const [tokenInput, setTokenInput] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ status: string; botUsername?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (settings?.telegramBotToken) {
+      setTokenInput(settings.telegramBotToken);
+    }
+  }, [settings?.telegramBotToken]);
+
+  useEffect(() => {
+    api.getTelegramStatus()
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  const savedToken = settings?.telegramBotToken || "";
+  const isDirty = tokenInput !== savedToken;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await api.updateSettings({ telegramBotToken: tokenInput.trim() });
+      onSettingsUpdate(updated);
+
+      // If token was set, connect; if cleared, disconnect
+      if (tokenInput.trim()) {
+        const newStatus = await api.connectTelegram();
+        setStatus(newStatus);
+      } else {
+        await api.disconnectTelegram();
+        setStatus({ status: "disconnected", botUsername: null });
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isConnected = status?.status === "connected";
+
+  return (
+    <Card>
+      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="text-sm">Telegram</CardTitle>
+          <CardDescription>
+            Connect a Telegram bot to interact with the Pi agent via chat.
+          </CardDescription>
+        </div>
+        {status && (
+          <Badge variant={isConnected ? "secondary" : "outline"}>
+            {isConnected
+              ? `@${status.botUsername || "bot"}`
+              : status.status === "error"
+                ? "Error"
+                : status.status === "connecting"
+                  ? "Connecting..."
+                  : "Disconnected"}
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <FieldGroup>
+          <Field orientation="horizontal">
+            <div>
+              <FieldLabel>Bot Token</FieldLabel>
+              <FieldDescription>
+                Get a token from @BotFather on Telegram.
+              </FieldDescription>
+            </div>
+            <FieldContent className="items-end">
+              <div className="flex items-center gap-2">
+                <input
+                  type={showToken ? "text" : "password"}
+                  className="h-9 w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
+                  placeholder="123456:ABC-DEF..."
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  onClick={() => setShowToken(!showToken)}
+                >
+                  {showToken ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+                </Button>
+              </div>
+            </FieldContent>
+          </Field>
+        </FieldGroup>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            disabled={!isDirty || saving}
+            onClick={() => void handleSave()}
+          >
+            {saving ? (
+              <LoaderIcon className="mr-2 size-4 animate-spin" />
+            ) : (
+              <CheckCircleIcon className="mr-2 size-4" />
+            )}
+            {saving ? "Saving..." : isDirty ? "Save & Connect" : "Saved"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -321,6 +708,9 @@ function SettingsView() {
               </div>
             </CardContent>
           </Card>
+
+          <PiAgentCard settings={settings} onSettingsUpdate={setSettings} />
+          <TelegramCard settings={settings} onSettingsUpdate={setSettings} />
 
           <Card>
             <CardHeader>

@@ -4,3 +4,4 @@ export * from "./events.js";
 export * from "./project.js";
 export * from "./settings.js";
 export * from "./whatsapp.js";
+export * from "./telegram.js";

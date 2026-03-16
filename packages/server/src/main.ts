@@ -20,7 +20,10 @@ import { registerSettingsRoutes } from "./routes/settings-routes.js";
 import { getRuntimeStatus } from "./runtime/runtime-status.js";
 import { startAutoUpdater, stopAutoUpdater } from "./services/auto-updater.js";
 import { registerSetupRoutes } from "./routes/setup-routes.js";
+import { registerOllamaRoutes } from "./routes/ollama-routes.js";
 import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue, stopWhatsAppQueue } from "@maestro/pi";
+import { registerTelegramRoutes, startTelegram, stopTelegram, startTelegramQueue, stopTelegramQueue } from "@maestro/pi";
+import { getSettings as getSettingsState } from "./state/settings.js";
 
 const PORT = parseInt(process.env.PORT || "4800", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -85,6 +88,8 @@ async function main() {
   await registerSettingsRoutes(app);
   await registerSetupRoutes(app);
   await registerWhatsAppRoutes(app, io);
+  await registerTelegramRoutes(app, io, () => getSettingsState().telegramBotToken);
+  await registerOllamaRoutes(app);
 
   // 8. Register socket handlers
   registerSocketHandlers(io);
@@ -100,6 +105,14 @@ async function main() {
     await startWhatsApp(io);
     startWhatsAppQueue();
     console.log("[startup] WhatsApp integration enabled");
+  }
+
+  // Start Telegram if enabled (via env var or saved token in settings)
+  const savedTelegramToken = getSettingsState().telegramBotToken;
+  if (process.env.TELEGRAM_ENABLED === "1" || savedTelegramToken) {
+    await startTelegram(io, savedTelegramToken || undefined);
+    startTelegramQueue();
+    console.log("[startup] Telegram integration enabled");
   }
 
   // 10. Health check
@@ -125,6 +138,8 @@ async function main() {
     stopAutoUpdater();
     stopWhatsAppQueue();
     await stopWhatsApp();
+    stopTelegramQueue();
+    await stopTelegram();
     killAllPty();
     io.close();
     await app.close();

@@ -47,6 +47,24 @@ export const ServerEvents = {
   "whatsapp:qr": z.object({
     qrCode: z.string(),
   }),
+  "telegram:message": z.object({
+    message: z.object({
+      id: z.string(),
+      chatId: z.string(),
+      messageId: z.string(),
+      direction: z.enum(["incoming", "outgoing"]),
+      senderName: z.string().nullable(),
+      body: z.string(),
+      status: z.enum(["queued", "processing", "completed", "failed"]),
+      responseText: z.string().nullable(),
+      error: z.string().nullable(),
+      createdAt: z.string(),
+      processedAt: z.string().nullable(),
+    }),
+  }),
+  "telegram:status": z.object({
+    status: z.enum(["disconnected", "connecting", "connected", "error"]),
+  }),
 } as const;
 
 // Client -> Server events
@@ -84,6 +102,8 @@ export const ClientEvents = {
   }),
   "whatsapp:subscribe": z.object({}),
   "whatsapp:unsubscribe": z.object({}),
+  "telegram:subscribe": z.object({}),
+  "telegram:unsubscribe": z.object({}),
 } as const;
 
 export type ServerEventMap = {
