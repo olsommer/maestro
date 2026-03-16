@@ -59,7 +59,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { SidebarSeparator, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 function ProjectStatusBadge({ status }: { status: string }) {
@@ -779,8 +778,6 @@ function ProjectsPageInner() {
   return (
     <>
       <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-2 py-2 md:px-4 md:py-3">
-        <SidebarTrigger className="-ml-1" />
-        <SidebarSeparator orientation="vertical" className="mx-0 md:mr-2" />
         <div className="w-full flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Projects</h2>

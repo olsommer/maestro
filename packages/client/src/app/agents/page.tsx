@@ -53,7 +53,6 @@ import {
   TriangleAlertIcon,
   Trash2Icon,
 } from "lucide-react";
-import { SidebarSeparator, SidebarTrigger } from "@/components/ui/sidebar";
 
 type GridPreset = "auto" | "1x1" | "2x1" | "2x2" | "3x2" | "3x3";
 
@@ -377,8 +376,6 @@ function AgentPanel() {
       {/* Toolbar */}
       <div className="border-b bg-background h-auto md:h-16 sticky top-0 flex shrink-0 items-center gap-2 px-2 py-2 md:px-4 md:py-3">
         <div className="flex flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-between">
-          <SidebarTrigger className="-ml-1" />
-          <SidebarSeparator orientation="vertical" className="mx-0 md:mr-2" />
           <div className="hidden md:contents">
             <Select
               value={gridPreset}
