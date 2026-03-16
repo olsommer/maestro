@@ -108,16 +108,6 @@ export const api = {
   getRuntimeStatus: () => request<RuntimeStatus>("/api/system/status"),
   getGitHubIntegration: () =>
     request<{ github: GitHubConnectionStatus }>("/api/integrations/github"),
-  connectGitHub: (token: string) =>
-    request<{ github: GitHubConnectionStatus }>("/api/integrations/github/connect", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-  disconnectGitHub: () =>
-    request<{ ok: boolean; github: GitHubConnectionStatus }>(
-      "/api/integrations/github/connect",
-      { method: "DELETE" }
-    ),
   searchGitHubRepos: (query: string) =>
     request<{ repos: GitHubRepoSuggestion[] }>(
       `/api/integrations/github/repos?${
