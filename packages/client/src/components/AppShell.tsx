@@ -35,8 +35,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         {/* Main */}
         <SidebarInset className="min-h-dvh">
           <GitHubStatusBanner />
-          <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
+          <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:hidden">
             <SidebarTrigger className="-ml-1" />
+            <span className="ascii-logo text-sm md:hidden">Maestro</span>
           </header>
           <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         </SidebarInset>
