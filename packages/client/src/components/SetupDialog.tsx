@@ -206,7 +206,7 @@ export function SetupDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs font-mono"
+                className="h-7 text-xs font-mono flex-1 sm:flex-none"
                 onClick={() => sendKey("y\n")}
               >
                 Yes (y)
@@ -214,12 +214,13 @@ export function SetupDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs font-mono"
+                className="h-7 text-xs font-mono flex-1 sm:flex-none"
                 onClick={() => sendKey("n\n")}
               >
                 No (n)
               </Button>
-              <div className="h-4 w-px bg-border" />
+            </div>
+            <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={pasteValue}
@@ -228,11 +229,12 @@ export function SetupDialog({
                   if (e.key === "Enter") handlePasteSend();
                 }}
                 placeholder="Paste token or code here..."
-                className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1 min-w-0 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <Button
                 variant="secondary"
                 size="sm"
+                className="shrink-0"
                 onClick={handlePasteSend}
                 disabled={!pasteValue}
               >
