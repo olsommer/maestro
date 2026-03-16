@@ -24,6 +24,7 @@ import { registerOllamaRoutes } from "./routes/ollama-routes.js";
 import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue, stopWhatsAppQueue } from "@maestro/pi";
 import { registerTelegramRoutes, startTelegram, stopTelegram, startTelegramQueue, stopTelegramQueue } from "@maestro/pi";
 import { getSettings as getSettingsState } from "./state/settings.js";
+import { writePiModelsConfig } from "./services/ollama.js";
 
 const PORT = parseInt(process.env.PORT || "4800", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -99,6 +100,13 @@ async function main() {
   await startScheduler();
   startAutomationRunner();
   startAutoUpdater();
+
+  // Ensure Pi models.json is written if a model is configured
+  const savedPiModel = getSettingsState().piOllamaModel;
+  if (savedPiModel) {
+    writePiModelsConfig(savedPiModel);
+    console.log(`[startup] Pi models.json written for model: ${savedPiModel}`);
+  }
 
   // Start WhatsApp if enabled
   if (process.env.WHATSAPP_ENABLED === "1") {
