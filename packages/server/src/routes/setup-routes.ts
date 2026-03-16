@@ -1,18 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import {
-  isSetupComplete,
-  isSetupRunning,
-  resetSetup,
-} from "../setup/setup-manager.js";
 
 export async function registerSetupRoutes(app: FastifyInstance) {
+  // Setup flow is currently disabled — always report setup as complete.
   app.get("/api/setup/status", async () => ({
-    needsSetup: !isSetupComplete(),
-    running: isSetupRunning(),
+    needsSetup: false,
+    running: false,
   }));
 
   app.post("/api/setup/reset", async () => {
-    resetSetup();
     return { ok: true };
   });
 }
