@@ -271,11 +271,31 @@ brew install tailscale   # macOS
 # Start and authenticate
 sudo tailscale up
 
-# Optional: enable HTTPS with a MagicDNS cert
+# Serve the backend over HTTPS via Tailscale (run on the server)
+tailscale serve --bg http://localhost:4800
+```
+
+This makes the server available at `https://<machine-name>.<tailnet>.ts.net` with automatic TLS — no port number needed (port 443 proxies to localhost:4800). The `--bg` flag runs it in the background.
+
+To find your full MagicDNS hostname:
+
+```bash
+tailscale status --json | grep MagicDNSSuffix
+```
+
+This returns your tailnet suffix (e.g. `tail7dbfac.ts.net`). Combine it with your machine name from `tailscale status` to get the full URL:
+
+```
+https://<machine-name>.<tailnet>.ts.net
+```
+
+If the browser shows a certificate error, open the URL directly in the browser first to accept the cert, or regenerate it:
+
+```bash
 tailscale cert <machine-name>.<tailnet>.ts.net
 ```
 
-Connect from the client using `http://<machine-name>:4800` (within the tailnet) or `https://<machine-name>.<tailnet>.ts.net:4800` with Tailscale HTTPS enabled.
+Connect from the client using the full `https://<machine-name>.<tailnet>.ts.net` URL as the server URL.
 
 Note: Tailscale requires the Tailscale app on every connecting device.
 
