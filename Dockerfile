@@ -4,6 +4,9 @@ RUN corepack enable pnpm
 RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
+# Mark Claude Code onboarding as complete (required for headless auth)
+RUN mkdir -p /root/.claude && echo '{"hasCompletedOnboarding":true}' > /root/.claude.json
+
 WORKDIR /app
 
 # Install dependencies

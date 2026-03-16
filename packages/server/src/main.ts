@@ -1,5 +1,15 @@
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+
+// Load persisted Claude OAuth token if not already in env
+const tokenFile = path.join(os.homedir(), ".maestro", ".claude_oauth_token");
+if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && fs.existsSync(tokenFile)) {
+  const token = fs.readFileSync(tokenFile, "utf-8").trim();
+  if (token) process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
+}
 import { Server as SocketServer } from "socket.io";
 import { initAgentManager } from "./agents/agent-manager.js";
 import { killAllPty } from "./agents/pty-manager.js";
