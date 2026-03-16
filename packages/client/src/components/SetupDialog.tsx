@@ -87,6 +87,12 @@ export function SetupDialog({
       };
       socket.on("setup:url", handleUrl);
 
+      const handleClearUrl = () => {
+        if (!mounted) return;
+        setLatestUrl(null);
+      };
+      socket.on("setup:clear-url", handleClearUrl);
+
       const handleSetupComplete = () => {
         if (!mounted) return;
         setCompleted(true);
@@ -121,6 +127,7 @@ export function SetupDialog({
         resizeObserver.disconnect();
         socket.off("setup:output", handleOutput);
         socket.off("setup:url", handleUrl);
+        socket.off("setup:clear-url", handleClearUrl);
         socket.off("setup:complete", handleSetupComplete);
         socket.emit("setup:unsubscribe", {});
         sendInputRef.current = null;

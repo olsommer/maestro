@@ -25,6 +25,7 @@ export const ServerEvents = {
   "setup:url": z.object({
     url: z.string(),
   }),
+  "setup:clear-url": z.object({}),
   "whatsapp:message": z.object({
     message: z.object({
       id: z.string(),

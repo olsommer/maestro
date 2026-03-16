@@ -8,6 +8,9 @@ const FLAG_DIR = path.join(os.homedir(), ".maestro");
 const FLAG_FILE = path.join(FLAG_DIR, "setup-complete");
 const SENTINEL = "__MAESTRO_SETUP_DONE__";
 const URL_RE = /https?:\/\/[^\s\x1b\x07\])"']+/g;
+// Detect prompts like "Do you want to use Claude Code? (y/n)" or "Running:"
+// which indicate a new step has started and any previous URL is stale.
+const STEP_BOUNDARY_RE = /(?:Running:|Checking|Do you want|Enter|Paste|Token)/i;
 const SCRIPT_PATH = path.resolve(
   import.meta.dirname ?? __dirname,
   "../../scripts/setup.sh"
@@ -78,6 +81,13 @@ export function startSetupPty(io: SocketServer, cols?: number, rows?: number): v
     console.log(`[setup] PTY output (${data.length} bytes, ${roomSize} subscribers)`);
     outputBuffer.push(data);
     io.to("setup").emit("setup:output", { data });
+
+    // When a new step boundary is detected, clear any stale URL banner
+    const hasUrl = URL_RE.test(data);
+    URL_RE.lastIndex = 0; // reset regex state
+    if (!hasUrl && STEP_BOUNDARY_RE.test(data)) {
+      io.to("setup").emit("setup:clear-url", {});
+    }
 
     // Detect URLs and emit them separately for the UI to show as clickable links
     const urls = data.match(URL_RE);
