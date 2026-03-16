@@ -35,12 +35,23 @@ async function ensureSession(): Promise<AgentSession> {
   const authStorage = AuthStorage.create();
   const modelRegistry = new ModelRegistry(authStorage);
 
+  // Pick the first available model from the registry (populated from ~/.pi/agent/models.json)
+  const available = await modelRegistry.getAvailable();
+  const model = available[0];
+  if (!model) {
+    throw new Error(
+      "No model available. Configure an Ollama model in Settings > Pi Agent."
+    );
+  }
+  console.log(`[telegram-queue] Using model: ${model.id} (provider: ${model.provider})`);
+
   const { session: s } = await createAgentSession({
     cwd: PI_PROJECT_PATH,
     tools: createCodingTools(PI_PROJECT_PATH),
     sessionManager: SessionManager.continueRecent(PI_PROJECT_PATH),
     authStorage,
     modelRegistry,
+    model,
   });
 
   session = s;
