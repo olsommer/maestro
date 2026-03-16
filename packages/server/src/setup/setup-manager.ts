@@ -7,7 +7,10 @@ import type { Server as SocketServer } from "socket.io";
 const FLAG_DIR = path.join(os.homedir(), ".maestro");
 const FLAG_FILE = path.join(FLAG_DIR, "setup-complete");
 const SENTINEL = "__MAESTRO_SETUP_DONE__";
-const URL_RE = /https?:\/\/[^\s\x1b\x07\])"']+/g;
+// Match URLs in PTY output. PTY data may contain ANSI escape codes interleaved
+// with the URL text, so we first strip all escape sequences before matching.
+const URL_RE = /https?:\/\/[^\s"'<>]+/g;
+const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
 // Detect prompts like "Do you want to use Claude Code? (y/n)" or "Running:"
 // which indicate a new step has started and any previous URL is stale.
 const STEP_BOUNDARY_RE = /(?:Running:|Checking|Do you want|Enter|Paste|Token)/i;
@@ -82,15 +85,18 @@ export function startSetupPty(io: SocketServer, cols?: number, rows?: number): v
     outputBuffer.push(data);
     io.to("setup").emit("setup:output", { data });
 
+    // Strip ANSI escape sequences before URL/boundary detection
+    const clean = data.replace(ANSI_RE, "");
+
     // When a new step boundary is detected, clear any stale URL banner
-    const hasUrl = URL_RE.test(data);
+    const hasUrl = URL_RE.test(clean);
     URL_RE.lastIndex = 0; // reset regex state
-    if (!hasUrl && STEP_BOUNDARY_RE.test(data)) {
+    if (!hasUrl && STEP_BOUNDARY_RE.test(clean)) {
       io.to("setup").emit("setup:clear-url", {});
     }
 
     // Detect URLs and emit them separately for the UI to show as clickable links
-    const urls = data.match(URL_RE);
+    const urls = clean.match(URL_RE);
     if (urls) {
       for (const url of urls) {
         io.to("setup").emit("setup:url", { url });
