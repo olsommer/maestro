@@ -8,7 +8,7 @@ import { SocketProvider } from "@/components/SocketProvider";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { api } from "@/lib/api";
 
-function AppShellInner({ children }: { children: React.ReactNode }) {
+function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNode; hideMobileHeader?: boolean }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [checked, setChecked] = useState(false);
 
@@ -35,10 +35,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         {/* Main */}
         <SidebarInset className="min-h-dvh">
           <GitHubStatusBanner />
-          <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:hidden">
-            <SidebarTrigger className="-ml-1" />
-            <span className="ascii-logo text-sm md:hidden">Maestro</span>
-          </header>
+          {!hideMobileHeader && (
+            <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:hidden">
+              <SidebarTrigger className="-ml-1" />
+              <span className="ascii-logo text-sm md:hidden">Maestro</span>
+            </header>
+          )}
           <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         </SidebarInset>
       </SidebarProvider>
@@ -46,10 +48,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, hideMobileHeader }: { children: React.ReactNode; hideMobileHeader?: boolean }) {
   return (
     <SocketProvider>
-      <AppShellInner>{children}</AppShellInner>
+      <AppShellInner hideMobileHeader={hideMobileHeader}>{children}</AppShellInner>
     </SocketProvider>
   );
 }

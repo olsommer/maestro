@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { api, type Agent } from "@/lib/api";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
@@ -376,6 +377,7 @@ function AgentPanel() {
       {/* Toolbar */}
       <div className="border-b bg-background h-auto md:h-16 sticky top-0 flex shrink-0 items-center gap-2 px-2 py-2 md:px-4 md:py-3">
         <div className="flex flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-between">
+          <SidebarTrigger className="-ml-1 md:hidden" />
           <div className="hidden md:contents">
             <Select
               value={gridPreset}
@@ -610,7 +612,7 @@ function AgentPanel() {
 
 export default function AgentsPage() {
   return (
-    <AppShell>
+    <AppShell hideMobileHeader>
       <main className="flex min-h-0 flex-1">
         <AgentPanel />
       </main>
