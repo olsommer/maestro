@@ -78,9 +78,6 @@ function GitHubConnectionCard() {
   const [tokenInput, setTokenInput] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [deviceAuth, setDeviceAuth] = useState<{ code: string; url: string } | null>(null);
-  const [waitingForDevice, setWaitingForDevice] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api.getGitHubIntegration()
@@ -89,7 +86,7 @@ function GitHubConnectionCard() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleConnectWithToken() {
+  async function handleConnect() {
     if (!tokenInput.trim()) return;
     setConnecting(true);
     setError("");
@@ -105,35 +102,6 @@ function GitHubConnectionCard() {
     }
   }
 
-  async function handleDeviceAuth() {
-    setConnecting(true);
-    setError("");
-    setDeviceAuth(null);
-    try {
-      const result = await api.startGitHubDeviceAuth();
-      setDeviceAuth(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start device auth");
-    } finally {
-      setConnecting(false);
-    }
-  }
-
-  async function handleCompleteDeviceAuth() {
-    setWaitingForDevice(true);
-    setError("");
-    try {
-      const res = await api.completeGitHubDeviceAuth();
-      setStatus(res.github);
-      setDeviceAuth(null);
-      window.dispatchEvent(new Event("maestro:github-status-changed"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Auth not completed yet. Open the link and enter the code, then try again.");
-    } finally {
-      setWaitingForDevice(false);
-    }
-  }
-
   async function handleDisconnect() {
     try {
       const res = await api.disconnectGitHub();
@@ -142,13 +110,6 @@ function GitHubConnectionCard() {
     } catch {
       /* ignore */
     }
-  }
-
-  function handleCopyCode(code: string) {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
   }
 
   if (loading) return null;
@@ -163,7 +124,7 @@ function GitHubConnectionCard() {
         <CardDescription>
           {status?.connected
             ? `Connected as ${status.login}${status.source === "env" ? " (via environment)" : ""}`
-            : "Connect to GitHub for issue sync and automations."}
+            : "Connect with a Personal Access Token (classic) for issue sync and automations."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -204,83 +165,37 @@ function GitHubConnectionCard() {
           </>
         ) : (
           <>
-            {deviceAuth ? (
-              <div className="flex flex-col gap-3">
-                <div className="rounded-md border p-4 text-center">
-                  <p className="mb-2 text-sm text-muted-foreground">
-                    Copy this code and enter it on GitHub:
-                  </p>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-lg font-bold tracking-widest transition-colors hover:bg-muted"
-                    onClick={() => handleCopyCode(deviceAuth.code)}
-                  >
-                    {deviceAuth.code}
-                    {copied ? (
-                      <CheckCircleIcon className="size-4 text-green-500" />
-                    ) : (
-                      <CopyIcon className="size-4 text-muted-foreground" />
-                    )}
-                  </button>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    variant="outline"
-                    onClick={() => window.open(deviceAuth.url, "_blank", "noopener,noreferrer")}
-                  >
-                    <ExternalLinkIcon className="mr-2 size-4" />
-                    Open GitHub
-                  </Button>
-                  <Button
-                    disabled={waitingForDevice}
-                    onClick={() => void handleCompleteDeviceAuth()}
-                  >
-                    {waitingForDevice ? (
-                      <LoaderIcon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <CheckCircleIcon className="mr-2 size-4" />
-                    )}
-                    I've entered the code
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <Button
-                  variant="outline"
-                  disabled={connecting}
-                  onClick={() => void handleDeviceAuth()}
-                >
-                  {connecting ? (
-                    <LoaderIcon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <GithubIcon className="mr-2 size-4" />
-                  )}
-                  Sign in with GitHub
-                </Button>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="h-px flex-1 bg-border" />
-                  or paste a token
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="ghp_..."
-                    value={tokenInput}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleConnectWithToken();
-                    }}
-                  />
-                  <Button
-                    disabled={connecting || !tokenInput.trim()}
-                    onClick={() => void handleConnectWithToken()}
-                  >
-                    Connect
-                  </Button>
-                </div>
-              </div>
-            )}
+            <FieldDescription>
+              Create a classic PAT at{" "}
+              <a
+                href="https://github.com/settings/tokens/new"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                github.com/settings/tokens
+              </a>{" "}
+              with <code className="text-xs">repo</code> and <code className="text-xs">read:org</code> scopes.
+            </FieldDescription>
+            <div className="flex gap-2">
+              <Input
+                placeholder="ghp_..."
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleConnect();
+                }}
+              />
+              <Button
+                disabled={connecting || !tokenInput.trim()}
+                onClick={() => void handleConnect()}
+              >
+                {connecting ? (
+                  <LoaderIcon className="mr-2 size-4 animate-spin" />
+                ) : null}
+                Connect
+              </Button>
+            </div>
 
             {error && (
               <Alert variant="destructive">

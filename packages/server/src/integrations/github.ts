@@ -1,10 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { execFileSync } from "node:child_process";
-import * as pty from "node-pty";
 import { ensureDataDir, nowIso, readJsonFile, writeJsonFile } from "../state/files.js";
-
-const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
 
 const GITHUB_CONNECTION_PATH = path.join(ensureDataDir(), "github-connection.json");
 
@@ -305,76 +302,3 @@ export async function searchGitHubRepositories(
     }));
 }
 
-export interface DeviceAuthResult {
-  code: string;
-  url: string;
-}
-
-let activeGhPty: pty.IPty | null = null;
-
-export function startGhDeviceAuth(): Promise<DeviceAuthResult> {
-  if (activeGhPty) {
-    activeGhPty.kill();
-    activeGhPty = null;
-  }
-
-  return new Promise((resolve, reject) => {
-    const proc = pty.spawn("gh", ["auth", "login", "-w", "-h", "github.com", "-p", "https", "--skip-ssh-key"], {
-      name: "xterm-256color",
-      cols: 120,
-      rows: 30,
-      env: process.env as Record<string, string>,
-    });
-
-    activeGhPty = proc;
-    let output = "";
-    let resolved = false;
-
-    proc.onData((data) => {
-      output += data;
-      const clean = output.replace(ANSI_RE, "");
-
-      // gh outputs:
-      //   "! First copy your one-time code: A933-423D"
-      //   "Open this URL to continue in your web browser: https://github.com/login/device"
-      const codeMatch = clean.match(/one-time code:\s*([A-Z0-9-]+)/i);
-      const urlMatch = clean.match(/(https:\/\/github\.com\/login\/device)/);
-
-      if (codeMatch && urlMatch && !resolved) {
-        resolved = true;
-        resolve({ code: codeMatch[1], url: urlMatch[1] });
-      }
-    });
-
-    proc.onExit(({ exitCode }) => {
-      if (activeGhPty === proc) activeGhPty = null;
-      if (!resolved) {
-        reject(new Error(output.replace(ANSI_RE, "") || `gh auth login exited with code ${exitCode}`));
-      }
-    });
-
-    setTimeout(() => {
-      if (!resolved) {
-        proc.kill();
-        if (activeGhPty === proc) activeGhPty = null;
-        reject(new Error("Device auth timed out"));
-      }
-    }, 5 * 60 * 1000);
-  });
-}
-
-export async function completeGhDeviceAuth(): Promise<GitHubConnectionStatus> {
-  // After the user completes auth in the browser, gh writes the token.
-  // Extract it via `gh auth token` and store it in our connection file.
-  try {
-    const token = runGhCommand(["auth", "token"]);
-    if (!token) {
-      throw new Error("No token returned from gh auth");
-    }
-    return connectGitHubToken(token);
-  } catch (error) {
-    throw new Error(
-      error instanceof Error ? error.message : "Failed to retrieve token after device auth"
-    );
-  }
-}

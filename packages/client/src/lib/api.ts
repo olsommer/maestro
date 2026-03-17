@@ -164,14 +164,6 @@ export const api = {
     request<{ ok: boolean; github: GitHubConnectionStatus }>("/api/integrations/github/connect", {
       method: "DELETE",
     }),
-  startGitHubDeviceAuth: () =>
-    request<{ code: string; url: string }>("/api/integrations/github/device-auth/start", {
-      method: "POST",
-    }),
-  completeGitHubDeviceAuth: () =>
-    request<{ github: GitHubConnectionStatus }>("/api/integrations/github/device-auth/complete", {
-      method: "POST",
-    }),
 
   // Claude Code auth
   getClaudeAuthStatus: () => request<ClaudeAuthStatus>("/api/integrations/claude/status"),
