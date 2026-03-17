@@ -70,9 +70,10 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
   }
 
   return new Promise((resolve, reject) => {
+    // Use very wide PTY so the long OAuth URL never line-wraps
     const proc = pty.spawn("claude", ["setup-token"], {
       name: "xterm-256color",
-      cols: 120,
+      cols: 1000,
       rows: 30,
       env: process.env as Record<string, string>,
     });
@@ -87,9 +88,10 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
 
       // claude setup-token prints ASCII art, then:
       //   "Browser didn't open? Use the url below to sign in (c to copy)"
-      //   https://claude.ai/oauth/authorize?...
+      //   https://claude.ai/oauth/authorize?...&state=...
       //   "Paste code here if prompted >"
-      const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/[^\s"'<>]+)/);
+      // We need the full URL including all query params.
+      const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
         resolve({ url: urlMatch[1] });
