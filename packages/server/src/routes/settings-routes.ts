@@ -35,6 +35,15 @@ export async function registerSettingsRoutes(app: FastifyInstance) {
     return settings;
   });
 
+  // Get Deepgram API key for client-side voice input
+  app.get("/api/settings/deepgram-key", async (_req, reply) => {
+    const settings = getSettings();
+    if (!settings.deepgramApiKey) {
+      return reply.status(404).send({ error: "Deepgram API key not configured" });
+    }
+    return { apiKey: settings.deepgramApiKey };
+  });
+
   // Get update status (installed versions, available updates)
   app.get("/api/settings/update-status", async () => {
     return getUpdateStatus();

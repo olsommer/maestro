@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
-import { ClipboardPasteIcon, KeyboardIcon, MicIcon, TextIcon, XIcon } from "lucide-react";
+import { ClipboardPasteIcon, KeyboardIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as GhosttyTerminal } from "ghostty-web";
 
@@ -19,15 +20,21 @@ function MobileTerminalToolbar({
   onShowText: () => void;
 }) {
   const isMobile = useIsMobile();
-  const [listening, setListening] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
 
-  if (!isMobile) return null;
+  const send = useCallback(
+    (data: string) => {
+      socketRef.current?.emit("agent:input", { agentId, data });
+    },
+    [agentId, socketRef]
+  );
 
-  const send = (data: string) => {
-    socketRef.current?.emit("agent:input", { agentId, data });
-  };
+  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
+    onTranscript: send,
+  });
+
+  if (!isMobile) return null;
 
   const handleEsc = () => send("\x1b");
 
@@ -40,33 +47,8 @@ function MobileTerminalToolbar({
     }
   };
 
-  const handleVoice = () => {
-    const SpeechRecognition =
-      (window as unknown as Record<string, unknown>).webkitSpeechRecognition ||
-      (window as unknown as Record<string, unknown>).SpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recognition = new (SpeechRecognition as any)();
-    recognition.lang = navigator.language || "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0]?.[0]?.transcript;
-      if (transcript) send(transcript);
-    };
-
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-
-    setListening(true);
-    recognition.start();
-  };
-
-  const hasSpeechRecognition =
-    typeof window !== "undefined" &&
-    ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
+  const isListening = voiceStatus === "listening";
+  const isVoiceConnecting = voiceStatus === "connecting";
 
   const handleToggleKeyboard = () => {
     if (keyboardOpen) {
@@ -102,16 +84,18 @@ function MobileTerminalToolbar({
         <TextIcon className="size-3.5" />
         Text
       </Button>
-      {hasSpeechRecognition && (
-        <Button
-          size="xs"
-          variant={listening ? "default" : "secondary"}
-          onClick={handleVoice}
-          disabled={listening}
-        >
+      <Button
+        size="xs"
+        variant={isListening ? "destructive" : "secondary"}
+        onClick={toggleVoice}
+        disabled={isVoiceConnecting}
+      >
+        {isListening ? (
+          <MicOffIcon className="size-3.5" />
+        ) : (
           <MicIcon className="size-3.5" />
-        </Button>
-      )}
+        )}
+      </Button>
       <Button
         size="xs"
         variant={keyboardOpen ? "default" : "secondary"}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon } from "lucide-react";
+import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon, MicIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
@@ -493,6 +493,101 @@ function CodexConnectionCard({ refreshKey }: { refreshKey: number }) {
             )}
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeepgramCard({ settings, onSettingsUpdate }: {
+  settings: Settings | null;
+  onSettingsUpdate: (s: Settings) => void;
+}) {
+  const [keyInput, setKeyInput] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (settings?.deepgramApiKey) {
+      setKeyInput(settings.deepgramApiKey);
+    }
+  }, [settings?.deepgramApiKey]);
+
+  const savedKey = settings?.deepgramApiKey || "";
+  const isDirty = keyInput !== savedKey;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await api.updateSettings({ deepgramApiKey: keyInput.trim() });
+      onSettingsUpdate(updated);
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <MicIcon className="size-4" />
+          Voice Input
+        </CardTitle>
+        <CardDescription>
+          Configure Deepgram for voice-to-text on mobile agent terminals.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <FieldGroup>
+          <Field orientation="horizontal">
+            <div>
+              <FieldLabel>API Key</FieldLabel>
+              <FieldDescription>
+                Get a key at{" "}
+                <a
+                  href="https://console.deepgram.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  console.deepgram.com
+                </a>
+              </FieldDescription>
+            </div>
+            <FieldContent className="items-end">
+              <div className="flex items-center gap-2">
+                <input
+                  type={showKey ? "text" : "password"}
+                  className="h-9 w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
+                  placeholder="dg-..."
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  onClick={() => setShowKey(!showKey)}
+                >
+                  {showKey ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+                </Button>
+              </div>
+            </FieldContent>
+          </Field>
+        </FieldGroup>
+
+        <Button
+          disabled={!isDirty || saving}
+          onClick={() => void handleSave()}
+        >
+          {saving ? (
+            <LoaderIcon className="mr-2 size-4 animate-spin" />
+          ) : (
+            <CheckCircleIcon className="mr-2 size-4" />
+          )}
+          {saving ? "Saving..." : isDirty ? "Save" : "Saved"}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -1172,6 +1267,7 @@ function SettingsView() {
           <CodexConnectionCard refreshKey={authRefreshKey} />
           <GitHubConnectionCard refreshKey={authRefreshKey} />
 
+          <DeepgramCard settings={settings} onSettingsUpdate={setSettings} />
           <PiAgentCard settings={settings} onSettingsUpdate={setSettings} />
           <TelegramCard settings={settings} onSettingsUpdate={setSettings} />
 

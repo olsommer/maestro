@@ -7,6 +7,7 @@ const DEFAULTS: Settings = {
   piOllamaModel: "",
   telegramBotToken: "",
   sandboxEnabled: false,
+  deepgramApiKey: "",
 };
 
 export function getSettings(): Settings {
@@ -16,6 +17,7 @@ export function getSettings(): Settings {
 
   const telegramToken = getSetting("telegramBotToken");
   const sandbox = getSetting("sandboxEnabled");
+  const deepgramKey = getSetting("deepgramApiKey");
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
@@ -23,6 +25,7 @@ export function getSettings(): Settings {
     piOllamaModel: piModel !== null ? piModel : DEFAULTS.piOllamaModel,
     telegramBotToken: telegramToken !== null ? telegramToken : DEFAULTS.telegramBotToken,
     sandboxEnabled: sandbox !== null ? sandbox === "true" : DEFAULTS.sandboxEnabled,
+    deepgramApiKey: deepgramKey !== null ? deepgramKey : DEFAULTS.deepgramApiKey,
   };
 }
 
@@ -41,6 +44,9 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   }
   if (patch.sandboxEnabled !== undefined) {
     setSetting("sandboxEnabled", String(patch.sandboxEnabled));
+  }
+  if (patch.deepgramApiKey !== undefined) {
+    setSetting("deepgramApiKey", patch.deepgramApiKey);
   }
   return getSettings();
 }

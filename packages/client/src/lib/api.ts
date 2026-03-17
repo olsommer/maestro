@@ -90,6 +90,7 @@ export interface Settings {
   autoUpdateIntervalHours: number;
   piOllamaModel: string;
   telegramBotToken: string;
+  deepgramApiKey: string;
 }
 
 export interface OllamaModelInfo {
@@ -194,6 +195,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  getDeepgramKey: () => request<{ apiKey: string }>("/api/settings/deepgram-key"),
   getUpdateStatus: () => request<UpdateStatus>("/api/settings/update-status"),
   checkForUpdates: () => request<UpdateStatus>("/api/settings/check-updates", { method: "POST" }),
   updateNow: () =>

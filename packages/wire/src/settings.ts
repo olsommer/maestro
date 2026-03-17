@@ -7,6 +7,8 @@ export const SettingsSchema = z.object({
   telegramBotToken: z.string().default(""),
   /** Enable nsjail sandboxing for agents (Linux only, graceful fallback on other platforms) */
   sandboxEnabled: z.boolean().default(false),
+  /** Deepgram API key for voice-to-text on mobile */
+  deepgramApiKey: z.string().default(""),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
