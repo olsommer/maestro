@@ -49,12 +49,12 @@ function DetailRows({
     <FieldGroup>
       {rows.map((row, index) => (
         <div key={row.label} className="flex flex-col gap-3">
-          <Field orientation="horizontal">
+          <Field orientation="responsive">
             <FieldLabel>{row.label}</FieldLabel>
-            <FieldContent className="items-start sm:items-end">
-              <div className="sm:text-right">{row.value}</div>
+            <FieldContent className="items-start @md/field-group:items-end">
+              <div className="@md/field-group:text-right">{row.value}</div>
               {row.description && (
-                <FieldDescription className="sm:text-right">
+                <FieldDescription className="@md/field-group:text-right">
                   {row.description}
                 </FieldDescription>
               )}
@@ -540,7 +540,7 @@ function DeepgramCard({ settings, onSettingsUpdate }: {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <FieldGroup>
-          <Field orientation="horizontal">
+          <Field orientation="responsive">
             <div>
               <FieldLabel>API Key</FieldLabel>
               <FieldDescription>
@@ -555,11 +555,11 @@ function DeepgramCard({ settings, onSettingsUpdate }: {
                 </a>
               </FieldDescription>
             </div>
-            <FieldContent className="items-end">
+            <FieldContent className="@md/field-group:items-end">
               <div className="flex items-center gap-2">
                 <input
                   type={showKey ? "text" : "password"}
-                  className="h-9 w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
+                  className="h-9 w-full @md/field-group:w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
                   placeholder="dg-..."
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
@@ -567,7 +567,7 @@ function DeepgramCard({ settings, onSettingsUpdate }: {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-9"
+                  className="size-9 shrink-0"
                   onClick={() => setShowKey(!showKey)}
                 >
                   {showKey ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
@@ -723,16 +723,16 @@ function PiAgentCard({ settings, onSettingsUpdate }: {
         ) : (
           <>
             <FieldGroup>
-              <Field orientation="horizontal">
+              <Field orientation="responsive">
                 <div>
                   <FieldLabel>Model</FieldLabel>
                   <FieldDescription>
                     Select a locally available model or download a new one.
                   </FieldDescription>
                 </div>
-                <FieldContent className="items-end">
+                <FieldContent className="@md/field-group:items-end">
                   <Select value={selectedModel} onValueChange={(v) => { if (v != null) setSelectedModel(v); }}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-full @md/field-group:w-[200px]">
                       <SelectValue placeholder="Select a model" />
                     </SelectTrigger>
                     <SelectContent>
@@ -763,17 +763,17 @@ function PiAgentCard({ settings, onSettingsUpdate }: {
               {selectedModel === "__custom__" && (
                 <>
                   <FieldSeparator />
-                  <Field orientation="horizontal">
+                  <Field orientation="responsive">
                     <div>
                       <FieldLabel>Model name</FieldLabel>
                       <FieldDescription>
                         Include quantization in the tag, e.g. llama3.2:q4_K_M
                       </FieldDescription>
                     </div>
-                    <FieldContent className="items-end">
+                    <FieldContent className="@md/field-group:items-end">
                       <input
                         type="text"
-                        className="h-9 w-[200px] rounded-md border border-input bg-background px-3 text-sm"
+                        className="h-9 w-full @md/field-group:w-[200px] rounded-md border border-input bg-background px-3 text-sm"
                         placeholder="e.g. llama3.2:q4_K_M"
                         value={customModel}
                         onChange={(e) => setCustomModel(e.target.value)}
@@ -786,9 +786,9 @@ function PiAgentCard({ settings, onSettingsUpdate }: {
               {savedModel && (
                 <>
                   <FieldSeparator />
-                  <Field orientation="horizontal">
+                  <Field orientation="responsive">
                     <FieldLabel>Active model</FieldLabel>
-                    <FieldContent className="items-end">
+                    <FieldContent className="@md/field-group:items-end">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs">{savedModel}</span>
                         {localModelNames.has(savedModel) || localModelNames.has(`${savedModel}:latest`) ? (
@@ -930,18 +930,18 @@ function TelegramCard({ settings, onSettingsUpdate }: {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <FieldGroup>
-          <Field orientation="horizontal">
+          <Field orientation="responsive">
             <div>
               <FieldLabel>Bot Token</FieldLabel>
               <FieldDescription>
                 Get a token from @BotFather on Telegram.
               </FieldDescription>
             </div>
-            <FieldContent className="items-end">
+            <FieldContent className="@md/field-group:items-end">
               <div className="flex items-center gap-2">
                 <input
                   type={showToken ? "text" : "password"}
-                  className="h-9 w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
+                  className="h-9 w-full @md/field-group:w-[260px] rounded-md border border-input bg-background px-3 font-mono text-xs"
                   placeholder="123456:ABC-DEF..."
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
@@ -949,7 +949,7 @@ function TelegramCard({ settings, onSettingsUpdate }: {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-9"
+                  className="size-9 shrink-0"
                   onClick={() => setShowToken(!showToken)}
                 >
                   {showToken ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
