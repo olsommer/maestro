@@ -1,7 +1,15 @@
+import * as path from "path";
 import { execFileSync } from "node:child_process";
 import * as pty from "node-pty";
+import { ensureDataDir, readJsonFile, writeJsonFile, nowIso } from "../state/files.js";
 
 const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
+const CLAUDE_TOKEN_PATH = path.join(ensureDataDir(), "claude-oauth-token.json");
+
+interface StoredClaudeToken {
+  token: string;
+  connectedAt: string;
+}
 
 function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
@@ -14,6 +22,37 @@ function commandExists(binary: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ─── Claude Code token persistence ──────────────────────────────────────────
+
+function readStoredClaudeToken(): StoredClaudeToken | null {
+  const record = readJsonFile<StoredClaudeToken | null>(CLAUDE_TOKEN_PATH, null);
+  if (!record?.token) return null;
+  return record;
+}
+
+function storeClaudeToken(token: string): void {
+  writeJsonFile(CLAUDE_TOKEN_PATH, { token, connectedAt: nowIso() } satisfies StoredClaudeToken, {
+    mode: 0o600,
+  });
+  // Also set in current process so agents spawned from now on get it
+  process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
+}
+
+/** Load stored token into process.env on server startup. */
+export function loadStoredClaudeToken(): void {
+  const stored = readStoredClaudeToken();
+  if (stored?.token) {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = stored.token;
+  }
+}
+
+/** Env vars to inject into agent child processes. */
+export function getClaudeChildEnvVars(): Record<string, string> {
+  const stored = readStoredClaudeToken();
+  if (!stored?.token) return {};
+  return { CLAUDE_CODE_OAUTH_TOKEN: stored.token };
 }
 
 // ─── Claude Code ────────────────────────────────────────────────────────────
@@ -31,6 +70,19 @@ export function getClaudeAuthStatus(): ClaudeAuthStatus {
     return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
   }
 
+  // Check stored Maestro-managed token first
+  const stored = readStoredClaudeToken();
+  if (stored?.token) {
+    return {
+      installed: true,
+      loggedIn: true,
+      email: null,
+      orgName: null,
+      authMethod: "oauth_token",
+    };
+  }
+
+  // Fall back to native `claude auth status`
   try {
     const raw = execFileSync("claude", ["auth", "status"], {
       encoding: "utf8",
@@ -97,30 +149,19 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       session.output += data;
       const clean = stripAnsi(session.output);
 
-      console.log("[claude-auth] chunk:", JSON.stringify(data).slice(0, 200));
-
-      // Track when the "Paste code" prompt appears
-      if (/Paste code here/i.test(clean)) {
+      // Track when the "Paste code" prompt appears (ANSI stripping may lose spaces)
+      if (/paste\s*code\s*here/i.test(clean) || /Pastecodehereifprompted/i.test(clean)) {
         session.promptReady = true;
-        console.log("[claude-auth] Paste prompt is ready");
       }
 
-      // claude setup-token prints ASCII art, then:
-      //   "Browser didn't open? Use the url below to sign in (c to copy)"
-      //   https://claude.ai/oauth/authorize?...&state=...
-      //   "Paste code here if prompted >"
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
-        console.log("[claude-auth] URL extracted, PTY still running");
-        console.log("[claude-auth] Full clean output so far:", clean.slice(-500));
         resolve({ url: urlMatch[1] });
       }
     });
 
     proc.onExit(({ exitCode }) => {
-      console.log(`[claude-auth] PTY exited with code ${exitCode}`);
-      console.log("[claude-auth] Full output at exit:", stripAnsi(session.output));
       session.exited = true;
       if (activeClaudeSession === session) activeClaudeSession = null;
       if (!resolved) {
@@ -138,7 +179,7 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
   });
 }
 
-export async function completeClaudeSetupToken(token: string): Promise<ClaudeAuthStatus> {
+export async function completeClaudeSetupToken(code: string): Promise<ClaudeAuthStatus> {
   if (!activeClaudeSession) {
     throw new Error("No active Claude setup-token session. Start the flow again.");
   }
@@ -152,7 +193,6 @@ export async function completeClaudeSetupToken(token: string): Promise<ClaudeAut
 
   // Wait for the paste prompt to appear (up to 5s)
   if (!session.promptReady) {
-    console.log("[claude-auth] Waiting for paste prompt...");
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {
         if (session.promptReady || session.exited) {
@@ -172,15 +212,12 @@ export async function completeClaudeSetupToken(token: string): Promise<ClaudeAut
     throw new Error("Claude setup-token process exited before prompt was ready. Start the flow again.");
   }
 
-  console.log(`[claude-auth] Writing code to PTY (promptReady=${session.promptReady})`);
-
-  // Write the code to the PTY
-  session.proc.write(token);
-  // Small delay then press Enter
+  // Write the OAuth code to the PTY
+  session.proc.write(code);
   await new Promise((r) => setTimeout(r, 100));
   session.proc.write("\r");
 
-  // Wait for the process to exit (up to 15s)
+  // Wait for the process to exit (up to 30s)
   await new Promise<void>((resolve) => {
     if (session.exited) {
       resolve();
@@ -188,21 +225,39 @@ export async function completeClaudeSetupToken(token: string): Promise<ClaudeAut
     }
 
     const timeout = setTimeout(() => {
-      console.log("[claude-auth] Timed out waiting for exit, killing PTY");
-      console.log("[claude-auth] Final output:", stripAnsi(session.output).slice(-500));
       session.proc.kill();
       resolve();
-    }, 15_000);
+    }, 30_000);
 
     session.proc.onExit(() => {
       clearTimeout(timeout);
-      console.log("[claude-auth] PTY exited after code submission");
       resolve();
     });
   });
 
+  // Extract the generated OAuth token from the output
+  const finalOutput = stripAnsi(session.output);
+  const tokenMatch = finalOutput.match(/(sk-ant-oat01-[A-Za-z0-9_-]+)/);
+
   activeClaudeSession = null;
-  return getClaudeAuthStatus();
+
+  if (tokenMatch) {
+    storeClaudeToken(tokenMatch[1]);
+    return {
+      installed: true,
+      loggedIn: true,
+      email: null,
+      orgName: null,
+      authMethod: "oauth_token",
+    };
+  }
+
+  // Token not found in output — check if there's an error
+  if (/error|failed|invalid/i.test(finalOutput)) {
+    throw new Error("Authentication failed. Please try again.");
+  }
+
+  throw new Error("Could not extract OAuth token from Claude output. Please try again.");
 }
 
 // ─── Codex ──────────────────────────────────────────────────────────────────
@@ -225,7 +280,6 @@ export function getCodexAuthStatus(): CodexAuthStatus {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
-    // "Logged in using ChatGPT" or "Logged in using API key" etc.
     const loggedIn = /logged in/i.test(raw);
     return { installed: true, loggedIn, detail: raw };
   } catch (err) {
@@ -233,7 +287,6 @@ export function getCodexAuthStatus(): CodexAuthStatus {
       err instanceof Error && "stderr" in err && typeof err.stderr === "string"
         ? err.stderr.trim()
         : "";
-    // If it exits with error, user is not logged in
     return { installed: true, loggedIn: false, detail: stderr || null };
   }
 }
@@ -267,12 +320,6 @@ export function startCodexDeviceAuth(): Promise<DeviceAuthResult> {
       output += data;
       const clean = stripAnsi(output);
 
-      // Codex outputs:
-      //   "1. Open this link in your browser and sign in to your account"
-      //   "   https://auth.openai.com/codex/device"
-      //   ""
-      //   "2. Enter this one-time code (expires in 15 minutes)"
-      //   "   1ASV-BFRAY"
       const urlMatch = clean.match(/(https:\/\/auth\.openai\.com\/[^\s"'<>]+)/);
       const codeMatch = clean.match(/one-time code[^\n]*\n\s+([A-Z0-9]+-[A-Z0-9]+)/i);
 

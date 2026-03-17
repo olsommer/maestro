@@ -26,12 +26,16 @@ import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue
 import { registerTelegramRoutes, startTelegram, stopTelegram, startTelegramQueue, stopTelegramQueue } from "@maestro/pi";
 import { getSettings as getSettingsState } from "./state/settings.js";
 import { writePiModelsConfig } from "./services/ollama.js";
+import { loadStoredClaudeToken } from "./integrations/cli-auth.js";
 
 const PORT = parseInt(process.env.PORT || "4800", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 
 async function main() {
   console.log("Starting Maestro server...");
+
+  // Load stored Claude OAuth token into process.env
+  loadStoredClaudeToken();
 
   // 2. Initialize auth
   const { apiToken } = initAuth();
