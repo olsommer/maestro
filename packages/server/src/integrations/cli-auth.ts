@@ -109,6 +109,7 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
     activeClaudeSession = session;
 
     let resolved = false;
+    let trustedFolder = false;
     let sentLogin = false;
     let sentOption = false;
 
@@ -117,20 +118,31 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
       const clean = stripAnsi(session.output);
 
       console.log("[claude-login] chunk:", JSON.stringify(data).slice(0, 300));
-      console.log("[claude-login] state: sentLogin=%s sentOption=%s resolved=%s", sentLogin, sentOption, resolved);
 
-      // Step 1: Wait for the input prompt (❯), then send /login
-      if (!sentLogin && /❯/.test(clean)) {
-        sentLogin = true;
-        console.log("[claude-login] Sending /login");
-        proc.write("/login\r");
+      // Step 0: Handle "trust this folder" dialog — press Enter to confirm
+      if (!trustedFolder && /trust\s*this\s*folder/i.test(clean)) {
+        trustedFolder = true;
+        console.log("[claude-login] Trust folder dialog detected, pressing Enter");
+        proc.write("\r");
         return;
       }
 
+      // Step 1: Wait for the main welcome screen, then send /login
+      // Look for the welcome screen (shows after trust, or immediately if already trusted)
+      if (!sentLogin) {
+        const tail = clean.slice(-500);
+        if (/welcome|sonnet|claude\s*code\s*v/i.test(tail) && /❯/.test(tail)) {
+          sentLogin = true;
+          console.log("[claude-login] Welcome screen detected, sending /login");
+          proc.write("/login\r");
+          return;
+        }
+      }
+
       // Step 2: Wait for the login method selection, then send "1" for subscription
-      if (sentLogin && !sentOption && /Select login method/i.test(clean)) {
+      if (sentLogin && !sentOption && /Select\s*login\s*method/i.test(clean)) {
         sentOption = true;
-        console.log("[claude-login] Sending option 1");
+        console.log("[claude-login] Login menu detected, sending option 1");
         proc.write("1");
         return;
       }
@@ -145,13 +157,8 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
-        console.log("[claude-login] URL extracted:", urlMatch[1].slice(0, 80));
+        console.log("[claude-login] URL extracted");
         resolve({ url: urlMatch[1] });
-      }
-
-      // Debug: show last 300 chars of clean output periodically
-      if (!resolved) {
-        console.log("[claude-login] clean tail:", clean.slice(-300));
       }
     });
 
