@@ -33,7 +33,7 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
         <Sidebar />
 
         {/* Main */}
-        <SidebarInset className="min-h-dvh">
+        <SidebarInset className="min-h-dvh max-h-dvh">
           <GitHubStatusBanner />
           {!hideMobileHeader && (
             <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:hidden">

@@ -20,6 +20,8 @@ function MobileTerminalToolbar({
 }) {
   const isMobile = useIsMobile();
   const [listening, setListening] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
 
   if (!isMobile) return null;
 
@@ -66,8 +68,18 @@ function MobileTerminalToolbar({
     typeof window !== "undefined" &&
     ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
 
+  const handleToggleKeyboard = () => {
+    if (keyboardOpen) {
+      hiddenInputRef.current?.blur();
+      setKeyboardOpen(false);
+    } else {
+      hiddenInputRef.current?.focus();
+      setKeyboardOpen(true);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-1 overflow-x-auto border-t bg-card px-2 py-1.5">
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t bg-card px-2 py-1.5">
       <Button size="xs" variant="secondary" onClick={handleEsc}>
         Esc
       </Button>
@@ -102,25 +114,29 @@ function MobileTerminalToolbar({
       )}
       <Button
         size="xs"
-        variant="secondary"
-        onClick={() => {
-          const input = document.createElement("input");
-          input.style.position = "fixed";
-          input.style.opacity = "0";
-          document.body.appendChild(input);
-          input.focus();
-          input.addEventListener("input", (e) => {
-            const value = (e.target as HTMLInputElement).value;
-            if (value) {
-              send(value);
-              (e.target as HTMLInputElement).value = "";
-            }
-          });
-          input.addEventListener("blur", () => input.remove());
-        }}
+        variant={keyboardOpen ? "default" : "secondary"}
+        onClick={handleToggleKeyboard}
       >
         <KeyboardIcon className="size-3.5" />
       </Button>
+      <input
+        ref={hiddenInputRef}
+        className="sr-only absolute bottom-0 left-0"
+        aria-hidden
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        inputMode="text"
+        onInput={(e) => {
+          const value = (e.target as HTMLInputElement).value;
+          if (value) {
+            send(value);
+            (e.target as HTMLInputElement).value = "";
+          }
+        }}
+        onBlur={() => setKeyboardOpen(false)}
+      />
     </div>
   );
 }

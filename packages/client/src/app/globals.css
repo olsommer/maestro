@@ -49,6 +49,13 @@
 
 body {
   font-family: var(--font-mono), ui-monospace, monospace;
+  overflow: hidden;
+  height: 100dvh;
+}
+
+html {
+  height: 100dvh;
+  overflow: hidden;
 }
 
 :root {
