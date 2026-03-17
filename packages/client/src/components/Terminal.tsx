@@ -189,6 +189,37 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
 
       termRef.current = term;
 
+      // Touch scrolling for mobile (ghostty-web has no built-in touch scroll)
+      let touchStartY = 0;
+      let touchAccum = 0;
+      const container = containerRef.current;
+
+      const lineHeight = term.rows > 0
+        ? container.clientHeight / term.rows
+        : 16;
+
+      const onTouchStart = (e: TouchEvent) => {
+        touchStartY = e.touches[0].clientY;
+        touchAccum = 0;
+      };
+
+      const onTouchMove = (e: TouchEvent) => {
+        const dy = touchStartY - e.touches[0].clientY;
+        touchStartY = e.touches[0].clientY;
+        touchAccum += dy;
+
+        const linesToScroll = Math.trunc(touchAccum / lineHeight);
+        if (linesToScroll !== 0) {
+          term.scrollLines(linesToScroll);
+          touchAccum -= linesToScroll * lineHeight;
+        }
+
+        e.preventDefault();
+      };
+
+      container.addEventListener("touchstart", onTouchStart, { passive: true });
+      container.addEventListener("touchmove", onTouchMove, { passive: false });
+
       // Load existing output buffer
       try {
         const { output } = await api.getAgentOutput(agentId);
@@ -233,6 +264,8 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       });
 
       return () => {
+        container.removeEventListener("touchstart", onTouchStart);
+        container.removeEventListener("touchmove", onTouchMove);
         socket.off("agent:output", handleOutput);
         socket.emit("agent:unsubscribe", { agentId });
         term.dispose();
@@ -256,7 +289,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div ref={containerRef} className="w-full min-h-0 flex-1" />
+      <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none" />
 
       {textOverlay !== null && (
         <div className="absolute inset-0 z-10 flex flex-col bg-background">
