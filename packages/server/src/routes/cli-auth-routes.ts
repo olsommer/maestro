@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import {
   getClaudeAuthStatus,
-  startClaudeSetupToken,
-  completeClaudeSetupToken,
+  startClaudeLogin,
+  completeClaudeLogin,
   getCodexAuthStatus,
   startCodexDeviceAuth,
   connectCodexWithApiKey,
@@ -17,11 +17,11 @@ export async function registerCliAuthRoutes(app: FastifyInstance) {
 
   app.post("/api/integrations/claude/setup-token/start", async (_req, reply) => {
     try {
-      const result = await startClaudeSetupToken();
+      const result = await startClaudeLogin();
       return result;
     } catch (error) {
       return reply.status(400).send({
-        error: error instanceof Error ? error.message : "Failed to start claude setup-token",
+        error: error instanceof Error ? error.message : "Failed to start Claude login",
       });
     }
   });
@@ -30,13 +30,13 @@ export async function registerCliAuthRoutes(app: FastifyInstance) {
     try {
       const body = req.body as { token?: string };
       if (!body.token?.trim()) {
-        return reply.status(400).send({ error: "Token is required" });
+        return reply.status(400).send({ error: "Code is required" });
       }
-      const status = await completeClaudeSetupToken(body.token.trim());
+      const status = await completeClaudeLogin(body.token.trim());
       return status;
     } catch (error) {
       return reply.status(400).send({
-        error: error instanceof Error ? error.message : "Failed to complete setup",
+        error: error instanceof Error ? error.message : "Failed to complete login",
       });
     }
   });

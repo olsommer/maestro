@@ -21,7 +21,6 @@ import {
 import { finalizeKanbanTaskAfterAgentExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
-import { getClaudeChildEnvVars } from "../integrations/cli-auth.js";
 import type { AgentRecord } from "../state/types.js";
 
 export interface AgentRuntime {
@@ -139,7 +138,6 @@ export async function startAgent(
   const binaryPath = provider.resolveBinaryPath();
   const envVars = provider.getPtyEnvVars(agent.id, cwd, agent.skills);
   const githubEnvVars = getGitHubChildEnvVars();
-  const claudeEnvVars = getClaudeChildEnvVars();
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -161,7 +159,6 @@ export async function startAgent(
     env: {
       ...envVars,
       ...githubEnvVars,
-      ...claudeEnvVars,
     },
     onData: (data) => {
       if (!getAgentRecord(agentId)) {

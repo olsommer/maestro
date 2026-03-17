@@ -1,15 +1,7 @@
-import * as path from "path";
 import { execFileSync } from "node:child_process";
 import * as pty from "node-pty";
-import { ensureDataDir, readJsonFile, writeJsonFile, nowIso } from "../state/files.js";
 
 const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
-const CLAUDE_TOKEN_PATH = path.join(ensureDataDir(), "claude-oauth-token.json");
-
-interface StoredClaudeToken {
-  token: string;
-  connectedAt: string;
-}
 
 function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
@@ -22,37 +14,6 @@ function commandExists(binary: string): boolean {
   } catch {
     return false;
   }
-}
-
-// ─── Claude Code token persistence ──────────────────────────────────────────
-
-function readStoredClaudeToken(): StoredClaudeToken | null {
-  const record = readJsonFile<StoredClaudeToken | null>(CLAUDE_TOKEN_PATH, null);
-  if (!record?.token) return null;
-  return record;
-}
-
-function storeClaudeToken(token: string): void {
-  writeJsonFile(CLAUDE_TOKEN_PATH, { token, connectedAt: nowIso() } satisfies StoredClaudeToken, {
-    mode: 0o600,
-  });
-  // Also set in current process so agents spawned from now on get it
-  process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
-}
-
-/** Load stored token into process.env on server startup. */
-export function loadStoredClaudeToken(): void {
-  const stored = readStoredClaudeToken();
-  if (stored?.token) {
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = stored.token;
-  }
-}
-
-/** Env vars to inject into agent child processes. */
-export function getClaudeChildEnvVars(): Record<string, string> {
-  const stored = readStoredClaudeToken();
-  if (!stored?.token) return {};
-  return { CLAUDE_CODE_OAUTH_TOKEN: stored.token };
 }
 
 // ─── Claude Code ────────────────────────────────────────────────────────────
@@ -70,19 +31,6 @@ export function getClaudeAuthStatus(): ClaudeAuthStatus {
     return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
   }
 
-  // Check stored Maestro-managed token first
-  const stored = readStoredClaudeToken();
-  if (stored?.token) {
-    return {
-      installed: true,
-      loggedIn: true,
-      email: null,
-      orgName: null,
-      authMethod: "oauth_token",
-    };
-  }
-
-  // Fall back to native `claude auth status`
   try {
     const raw = execFileSync("claude", ["auth", "status"], {
       encoding: "utf8",
@@ -109,7 +57,7 @@ export function getClaudeAuthStatus(): ClaudeAuthStatus {
   }
 }
 
-export interface ClaudeSetupTokenResult {
+export interface ClaudeLoginResult {
   url: string;
 }
 
@@ -120,15 +68,23 @@ let activeClaudeSession: {
   output: string;
 } | null = null;
 
-export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
+/**
+ * Start Claude login flow:
+ * 1. Spawn `claude` in a PTY
+ * 2. Wait for the welcome screen, then send `/login`
+ * 3. Select option 1 (Claude account with subscription)
+ * 4. Extract the OAuth URL
+ *
+ * Claude stores auth natively — no need for token persistence on our side.
+ */
+export function startClaudeLogin(): Promise<ClaudeLoginResult> {
   if (activeClaudeSession) {
     activeClaudeSession.proc.kill();
     activeClaudeSession = null;
   }
 
   return new Promise((resolve, reject) => {
-    // Use very wide PTY so the long OAuth URL never line-wraps
-    const proc = pty.spawn("claude", ["setup-token"], {
+    const proc = pty.spawn("claude", [], {
       name: "xterm-256color",
       cols: 1000,
       rows: 30,
@@ -144,16 +100,33 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
     activeClaudeSession = session;
 
     let resolved = false;
+    let sentLogin = false;
+    let sentOption = false;
 
     proc.onData((data) => {
       session.output += data;
       const clean = stripAnsi(session.output);
 
-      // Track when the "Paste code" prompt appears (ANSI stripping may lose spaces)
+      // Step 1: Wait for the input prompt (❯), then send /login
+      if (!sentLogin && /❯/.test(clean)) {
+        sentLogin = true;
+        proc.write("/login\r");
+        return;
+      }
+
+      // Step 2: Wait for the login method selection, then send "1" for subscription
+      if (sentLogin && !sentOption && /Select login method/i.test(clean)) {
+        sentOption = true;
+        proc.write("1");
+        return;
+      }
+
+      // Step 3: Track when the "Paste code" prompt appears
       if (/paste\s*code\s*here/i.test(clean) || /Pastecodehereifprompted/i.test(clean)) {
         session.promptReady = true;
       }
 
+      // Step 4: Extract the OAuth URL
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
@@ -165,7 +138,7 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       session.exited = true;
       if (activeClaudeSession === session) activeClaudeSession = null;
       if (!resolved) {
-        reject(new Error(stripAnsi(session.output) || `claude setup-token exited with code ${exitCode}`));
+        reject(new Error(stripAnsi(session.output) || `claude exited with code ${exitCode}`));
       }
     });
 
@@ -173,25 +146,25 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       if (!resolved) {
         proc.kill();
         if (activeClaudeSession === session) activeClaudeSession = null;
-        reject(new Error("Claude setup-token timed out"));
+        reject(new Error("Claude login timed out"));
       }
     }, 5 * 60 * 1000);
   });
 }
 
-export async function completeClaudeSetupToken(code: string): Promise<ClaudeAuthStatus> {
+export async function completeClaudeLogin(code: string): Promise<ClaudeAuthStatus> {
   if (!activeClaudeSession) {
-    throw new Error("No active Claude setup-token session. Start the flow again.");
+    throw new Error("No active Claude login session. Start the flow again.");
   }
 
   const session = activeClaudeSession;
 
   if (session.exited) {
     activeClaudeSession = null;
-    throw new Error("Claude setup-token process has already exited. Start the flow again.");
+    throw new Error("Claude process has already exited. Start the flow again.");
   }
 
-  // Wait for the paste prompt to appear (up to 5s)
+  // Wait for the paste prompt to appear (up to 10s)
   if (!session.promptReady) {
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {
@@ -203,13 +176,13 @@ export async function completeClaudeSetupToken(code: string): Promise<ClaudeAuth
       setTimeout(() => {
         clearInterval(check);
         resolve();
-      }, 5000);
+      }, 10_000);
     });
   }
 
   if (session.exited) {
     activeClaudeSession = null;
-    throw new Error("Claude setup-token process exited before prompt was ready. Start the flow again.");
+    throw new Error("Claude process exited before prompt was ready. Start the flow again.");
   }
 
   // Write the OAuth code to the PTY
@@ -217,7 +190,8 @@ export async function completeClaudeSetupToken(code: string): Promise<ClaudeAuth
   await new Promise((r) => setTimeout(r, 100));
   session.proc.write("\r");
 
-  // Wait for the process to exit (up to 30s)
+  // Wait for login to complete — claude stays running after login,
+  // so we wait for "Welcome back" or auth success indicators, then kill
   await new Promise<void>((resolve) => {
     if (session.exited) {
       resolve();
@@ -229,35 +203,35 @@ export async function completeClaudeSetupToken(code: string): Promise<ClaudeAuth
       resolve();
     }, 30_000);
 
+    // Listen for success indicators in output
+    const checkDone = setInterval(() => {
+      const clean = stripAnsi(session.output);
+      // After successful login, claude shows the welcome screen again
+      if (/logged\s*in|welcome\s*back|successfully/i.test(clean.slice(-500))) {
+        clearInterval(checkDone);
+        clearTimeout(timeout);
+        // Give it a moment to finish writing auth, then kill
+        setTimeout(() => {
+          session.proc.kill();
+          resolve();
+        }, 2000);
+      }
+      if (session.exited) {
+        clearInterval(checkDone);
+        clearTimeout(timeout);
+        resolve();
+      }
+    }, 500);
+
     session.proc.onExit(() => {
+      clearInterval(checkDone);
       clearTimeout(timeout);
       resolve();
     });
   });
 
-  // Extract the generated OAuth token from the output
-  const finalOutput = stripAnsi(session.output);
-  const tokenMatch = finalOutput.match(/(sk-ant-oat01-[A-Za-z0-9_-]+)/);
-
   activeClaudeSession = null;
-
-  if (tokenMatch) {
-    storeClaudeToken(tokenMatch[1]);
-    return {
-      installed: true,
-      loggedIn: true,
-      email: null,
-      orgName: null,
-      authMethod: "oauth_token",
-    };
-  }
-
-  // Token not found in output — check if there's an error
-  if (/error|failed|invalid/i.test(finalOutput)) {
-    throw new Error("Authentication failed. Please try again.");
-  }
-
-  throw new Error("Could not extract OAuth token from Claude output. Please try again.");
+  return getClaudeAuthStatus();
 }
 
 // ─── Codex ──────────────────────────────────────────────────────────────────
