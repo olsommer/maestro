@@ -142,11 +142,18 @@ export async function startAgent(
   const envVars = provider.getPtyEnvVars(agent.id, cwd, agent.skills);
   const githubEnvVars = getGitHubChildEnvVars();
 
+  const settings = getSettings();
+  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
+
+  // When running inside a sandbox, always force skip-permissions (yolo mode)
+  // so the CLI agent doesn't block on approval prompts — the sandbox is the security boundary.
+  const skipPermissions = sandboxEnabled ? true : agent.skipPermissions;
+
   const command = provider.buildInteractiveCommand({
     binaryPath,
     prompt,
     projectPath: cwd,
-    skipPermissions: agent.skipPermissions,
+    skipPermissions,
     mcpConfigPath: options?.mcpConfigPath,
     secondaryProjectPaths: agent.secondaryProjectPaths,
     skills: agent.skills,
@@ -154,9 +161,6 @@ export async function startAgent(
 
   const rt = getRuntime(agentId);
   rt.outputBuffer = [];
-
-  const settings = getSettings();
-  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
 
   const ptyInstance = spawnPty({
     agentId,

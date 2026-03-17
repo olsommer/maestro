@@ -52,7 +52,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
   const [customCommandTemplate, setCustomCommandTemplate] = useState("");
   const [customEnvText, setCustomEnvText] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [skipPermissions, setSkipPermissions] = useState(false);
+  const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
   const [useWorktree, setUseWorktree] = useState(false);
   const [worktreePath, setWorktreePath] = useState("");
@@ -338,7 +338,9 @@ export function NewAgentDialog({ open, onClose }: Props) {
                 checked={disableSandbox}
                 onCheckedChange={(checked) => {
                   setDisableSandbox(checked);
-                  if (checked) setSkipPermissions(false);
+                  // When sandbox is disabled, turn off YOLO (no safety net).
+                  // When sandbox is re-enabled, force YOLO on (sandbox is the safety boundary).
+                  setSkipPermissions(!checked);
                 }}
               />
             </Field>
@@ -347,14 +349,16 @@ export function NewAgentDialog({ open, onClose }: Props) {
               <FieldContent>
                 <FieldLabel htmlFor="skip-permissions">YOLO mode</FieldLabel>
                 <FieldDescription>
-                  Allow the agent to run without approval prompts when the provider supports it.
+                  {disableSandbox
+                    ? "Disabled — no sandbox means no safety net for auto-approval."
+                    : "Auto-enabled in sandbox — the sandbox is the security boundary."}
                 </FieldDescription>
               </FieldContent>
               <Switch
                 id="skip-permissions"
                 checked={skipPermissions}
                 onCheckedChange={setSkipPermissions}
-                disabled={disableSandbox}
+                disabled
               />
             </Field>
           </FieldGroup>
