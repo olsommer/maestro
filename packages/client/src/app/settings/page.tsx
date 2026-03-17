@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useStore } from "@/lib/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,6 +215,9 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
 }
 
 function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
+  const router = useRouter();
+  const addAgent = useStore((s) => s.addAgent);
+  const selectAgent = useStore((s) => s.selectAgent);
   const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -239,8 +244,10 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
         skipPermissions: true,
         disableSandbox: true,
       });
-      // Navigate to agents page so user can interact with the login flow
-      window.location.href = `/agents/${agent.id}`;
+      // Select the agent and navigate to agents page for the login flow
+      addAgent(agent);
+      selectAgent(agent.id);
+      router.push("/agents");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start login");
       setConnecting(false);
