@@ -1020,7 +1020,7 @@ function SettingsView() {
 
   const loadUpdateStatus = useCallback(async () => {
     try {
-      const status = await api.getUpdateStatus();
+      const status = await api.checkForUpdates();
       setUpdateStatus(status);
     } catch {
       /* ignore */
