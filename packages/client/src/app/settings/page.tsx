@@ -237,6 +237,7 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
         projectPath: "/tmp",
         prompt: "/login",
         skipPermissions: true,
+        disableSandbox: true,
       });
       // Navigate to agents page so user can interact with the login flow
       window.location.href = `/agents/${agent.id}`;
