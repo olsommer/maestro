@@ -61,12 +61,17 @@ export interface ClaudeSetupTokenResult {
   url: string;
 }
 
-let activeClaudePty: pty.IPty | null = null;
+let activeClaudeSession: {
+  proc: pty.IPty;
+  promptReady: boolean;
+  exited: boolean;
+  output: string;
+} | null = null;
 
 export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
-  if (activeClaudePty) {
-    activeClaudePty.kill();
-    activeClaudePty = null;
+  if (activeClaudeSession) {
+    activeClaudeSession.proc.kill();
+    activeClaudeSession = null;
   }
 
   return new Promise((resolve, reject) => {
@@ -78,37 +83,51 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       env: process.env as Record<string, string>,
     });
 
-    activeClaudePty = proc;
-    let output = "";
+    const session = {
+      proc,
+      promptReady: false,
+      exited: false,
+      output: "",
+    };
+    activeClaudeSession = session;
+
     let resolved = false;
 
     proc.onData((data) => {
-      output += data;
-      const clean = stripAnsi(output);
+      session.output += data;
+      const clean = stripAnsi(session.output);
+
+      // Track when the "Paste code" prompt appears
+      if (/Paste code here/i.test(clean)) {
+        session.promptReady = true;
+        console.log("[claude-auth] Paste prompt is ready");
+      }
 
       // claude setup-token prints ASCII art, then:
       //   "Browser didn't open? Use the url below to sign in (c to copy)"
       //   https://claude.ai/oauth/authorize?...&state=...
       //   "Paste code here if prompted >"
-      // We need the full URL including all query params.
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
+        console.log("[claude-auth] URL extracted, PTY still running");
         resolve({ url: urlMatch[1] });
       }
     });
 
     proc.onExit(({ exitCode }) => {
-      if (activeClaudePty === proc) activeClaudePty = null;
+      console.log(`[claude-auth] PTY exited with code ${exitCode}`);
+      session.exited = true;
+      if (activeClaudeSession === session) activeClaudeSession = null;
       if (!resolved) {
-        reject(new Error(stripAnsi(output) || `claude setup-token exited with code ${exitCode}`));
+        reject(new Error(stripAnsi(session.output) || `claude setup-token exited with code ${exitCode}`));
       }
     });
 
     setTimeout(() => {
       if (!resolved) {
         proc.kill();
-        if (activeClaudePty === proc) activeClaudePty = null;
+        if (activeClaudeSession === session) activeClaudeSession = null;
         reject(new Error("Claude setup-token timed out"));
       }
     }, 5 * 60 * 1000);
@@ -116,29 +135,69 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
 }
 
 export async function completeClaudeSetupToken(token: string): Promise<ClaudeAuthStatus> {
-  if (!activeClaudePty) {
-    throw new Error("No active Claude setup-token session");
+  if (!activeClaudeSession) {
+    throw new Error("No active Claude setup-token session. Start the flow again.");
   }
 
-  const proc = activeClaudePty;
+  const session = activeClaudeSession;
 
-  // Write the token to the PTY — claude is waiting at "Paste code here if prompted >"
-  proc.write(token + "\r");
+  if (session.exited) {
+    activeClaudeSession = null;
+    throw new Error("Claude setup-token process has already exited. Start the flow again.");
+  }
 
-  // Wait for the process to exit (up to 10s)
+  // Wait for the paste prompt to appear (up to 5s)
+  if (!session.promptReady) {
+    console.log("[claude-auth] Waiting for paste prompt...");
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (session.promptReady || session.exited) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 200);
+      setTimeout(() => {
+        clearInterval(check);
+        resolve();
+      }, 5000);
+    });
+  }
+
+  if (session.exited) {
+    activeClaudeSession = null;
+    throw new Error("Claude setup-token process exited before prompt was ready. Start the flow again.");
+  }
+
+  console.log(`[claude-auth] Writing code to PTY (promptReady=${session.promptReady})`);
+
+  // Write the code to the PTY
+  session.proc.write(token);
+  // Small delay then press Enter
+  await new Promise((r) => setTimeout(r, 100));
+  session.proc.write("\r");
+
+  // Wait for the process to exit (up to 15s)
   await new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      proc.kill();
+    if (session.exited) {
       resolve();
-    }, 10_000);
+      return;
+    }
 
-    proc.onExit(() => {
+    const timeout = setTimeout(() => {
+      console.log("[claude-auth] Timed out waiting for exit, killing PTY");
+      console.log("[claude-auth] Final output:", stripAnsi(session.output).slice(-500));
+      session.proc.kill();
+      resolve();
+    }, 15_000);
+
+    session.proc.onExit(() => {
       clearTimeout(timeout);
+      console.log("[claude-auth] PTY exited after code submission");
       resolve();
     });
   });
 
-  activeClaudePty = null;
+  activeClaudeSession = null;
   return getClaudeAuthStatus();
 }
 
