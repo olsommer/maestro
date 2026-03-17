@@ -209,6 +209,12 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       container.addEventListener("touchstart", onTouchStart, { passive: true });
       container.addEventListener("touchmove", onTouchMove, { passive: false });
 
+      // Refit terminal when mobile keyboard opens/closes (visualViewport resize)
+      const onViewportResize = () => {
+        fitAddon.fit();
+      };
+      window.visualViewport?.addEventListener("resize", onViewportResize);
+
       // Load existing output buffer
       try {
         const { output } = await api.getAgentOutput(agentId);
@@ -253,6 +259,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       });
 
       return () => {
+        window.visualViewport?.removeEventListener("resize", onViewportResize);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         socket.off("agent:output", handleOutput);
