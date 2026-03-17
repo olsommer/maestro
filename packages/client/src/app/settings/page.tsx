@@ -236,7 +236,6 @@ function ClaudeConnectionCard() {
         prompt: "/login",
         skipPermissions: true,
       });
-      await api.startAgent(agent.id, "/login");
       // Navigate to agents page so user can interact with the login flow
       window.location.href = `/agents/${agent.id}`;
     } catch (err) {
