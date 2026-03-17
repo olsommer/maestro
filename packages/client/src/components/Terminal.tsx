@@ -5,7 +5,7 @@ import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { ClipboardPasteIcon, KeyboardIcon, MicIcon, LinkIcon, TextIcon, XIcon } from "lucide-react";
+import { ClipboardPasteIcon, KeyboardIcon, MicIcon, TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
 
 function MobileTerminalToolbar({
@@ -21,8 +21,6 @@ function MobileTerminalToolbar({
 }) {
   const isMobile = useIsMobile();
   const [listening, setListening] = useState(false);
-  const [copied, setCopied] = useState(false);
-
   if (!isMobile) return null;
 
   const send = (data: string) => {
@@ -37,38 +35,6 @@ function MobileTerminalToolbar({
       if (text) send(text);
     } catch {
       // Clipboard access denied
-    }
-  };
-
-  const handleCopyUrl = async () => {
-    if (!termRef.current) return;
-    // Extract all text from the terminal buffer
-    // Join lines without newlines first since URLs may wrap across PTY lines
-    const buffer = termRef.current.buffer.active;
-    const lines: string[] = [];
-    for (let i = 0; i < buffer.length; i++) {
-      const line = buffer.getLine(i);
-      if (line) {
-        // isWrapped means this line is a continuation of the previous
-        if (line.isWrapped && lines.length > 0) {
-          lines[lines.length - 1] += line.translateToString(true).trimStart();
-        } else {
-          lines.push(line.translateToString(true));
-        }
-      }
-    }
-    const text = lines.join("\n");
-    const urls = text.match(/https?:\/\/[^\s"'<>]+/g);
-    if (urls && urls.length > 0) {
-      const lastUrl = urls[urls.length - 1];
-      try {
-        await navigator.clipboard.writeText(lastUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch {
-        // Fallback: open the URL directly
-        window.open(lastUrl, "_blank", "noopener,noreferrer");
-      }
     }
   };
 
@@ -119,10 +85,6 @@ function MobileTerminalToolbar({
       </Button>
       <Button size="xs" variant="secondary" onClick={handlePaste}>
         <ClipboardPasteIcon className="size-3.5" />
-      </Button>
-      <Button size="xs" variant={copied ? "default" : "secondary"} onClick={handleCopyUrl}>
-        <LinkIcon className="size-3.5" />
-        {copied ? "Copied!" : "URL"}
       </Button>
       <Button size="xs" variant="secondary" onClick={onShowText}>
         <TextIcon className="size-3.5" />
