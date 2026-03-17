@@ -319,7 +319,7 @@ export function startGhDeviceAuth(): Promise<DeviceAuthResult> {
   }
 
   return new Promise((resolve, reject) => {
-    const proc = pty.spawn("gh", ["auth", "login", "-w"], {
+    const proc = pty.spawn("gh", ["auth", "login", "-w", "-h", "github.com", "-p", "https", "--skip-ssh-key"], {
       name: "xterm-256color",
       cols: 120,
       rows: 30,
