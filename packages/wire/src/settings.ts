@@ -5,6 +5,8 @@ export const SettingsSchema = z.object({
   autoUpdateIntervalHours: z.number().min(1).max(168).default(24),
   piOllamaModel: z.string().default(""),
   telegramBotToken: z.string().default(""),
+  /** Enable nsjail sandboxing for agents (Linux only, graceful fallback on other platforms) */
+  sandboxEnabled: z.boolean().default(false),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

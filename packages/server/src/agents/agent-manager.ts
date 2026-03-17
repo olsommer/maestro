@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider, AgentModel } from "@maestro/wire";
+import type { AgentStatus, AgentProvider } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -9,6 +9,7 @@ import {
   resizePty,
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
+import { isNsjailAvailable } from "./sandbox.js";
 import {
   appendAgentHistory,
   readAgentHistory,
@@ -21,6 +22,7 @@ import {
 import { finalizeKanbanTaskAfterAgentExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
+import { getSettings } from "../state/settings.js";
 import type { AgentRecord } from "../state/types.js";
 
 export interface AgentRuntime {
@@ -30,6 +32,8 @@ export interface AgentRuntime {
 
 export interface StartAgentOptions {
   mcpConfigPath?: string;
+  /** Enable nsjail sandbox for this agent (Linux only, graceful fallback) */
+  sandbox?: boolean;
 }
 
 const agentRuntimes = new Map<string, AgentRuntime>();
@@ -73,7 +77,6 @@ function hydrateAgent(agent: AgentRecord | null): AgentWithProject | null {
 export async function createAgent(options: {
   name?: string;
   provider?: AgentProvider;
-  model?: AgentModel | null;
   projectId?: string;
   projectPath: string;
   worktreePath?: string | null;
@@ -87,7 +90,6 @@ export async function createAgent(options: {
   const agent = createAgentRecord({
     name: options.name ?? null,
     provider: options.provider ?? "claude",
-    model: options.model ?? null,
     projectId: options.projectId ?? null,
     projectPath: options.projectPath,
     worktreePath: options.worktreePath ?? null,
@@ -116,7 +118,6 @@ export async function createAgent(options: {
 export async function startAgent(
   agentId: string,
   prompt: string,
-  model?: string,
   options?: StartAgentOptions
 ) {
   const agent = getAgentRecord(agentId);
@@ -142,7 +143,6 @@ export async function startAgent(
   const command = provider.buildInteractiveCommand({
     binaryPath,
     prompt,
-    model: model || agent.model || undefined,
     projectPath: cwd,
     skipPermissions: agent.skipPermissions,
     mcpConfigPath: options?.mcpConfigPath,
@@ -153,6 +153,9 @@ export async function startAgent(
   const rt = getRuntime(agentId);
   rt.outputBuffer = [];
 
+  const settings = getSettings();
+  const sandboxEnabled = options?.sandbox ?? settings.sandboxEnabled;
+
   const ptyInstance = spawnPty({
     agentId,
     cwd,
@@ -160,6 +163,8 @@ export async function startAgent(
       ...envVars,
       ...githubEnvVars,
     },
+    sandbox: sandboxEnabled,
+    readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
       if (!getAgentRecord(agentId)) {
         return;

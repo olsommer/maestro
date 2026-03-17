@@ -51,7 +51,6 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
         projectId?: string;
         projectPath?: string;
         provider?: string;
-        model?: string;
         customDisplayName?: string;
         customCommandTemplate?: string;
         customEnv?: Record<string, string>;
@@ -77,7 +76,6 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
         projectId: projectContext.projectId,
         projectPath: projectContext.projectPath,
         provider: body.provider || "claude",
-        model: body.model || null,
         customDisplayName: body.customDisplayName || null,
         customCommandTemplate: body.customCommandTemplate || null,
         customEnv: body.customEnv || null,
@@ -110,7 +108,6 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
           projectId: string;
           projectPath: string;
           provider: string;
-          model: string;
           customDisplayName: string;
           customCommandTemplate: string;
           customEnv: Record<string, string>;
@@ -177,8 +174,7 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
 
         const agent = await createAgent({
           name: `manual-${task.name}-${Date.now()}`,
-          provider: task.provider as "claude" | "codex" | "gemini",
-          model: task.model as "sonnet" | "opus" | "haiku" | null,
+          provider: task.provider as "claude" | "codex",
           projectId: task.projectId || undefined,
           projectPath: task.projectPath,
           customDisplayName: task.customDisplayName || undefined,
@@ -187,7 +183,7 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
           skipPermissions: task.skipPermissions,
         });
 
-        await startAgent(agent.id, task.prompt, task.model || undefined);
+        await startAgent(agent.id, task.prompt);
         updateScheduledTaskRecord(task.id, {
           lastRunAt: new Date().toISOString(),
         });

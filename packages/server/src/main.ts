@@ -20,6 +20,7 @@ import { registerWebhookRoutes } from "./routes/webhook-routes.js";
 import { registerSettingsRoutes } from "./routes/settings-routes.js";
 import { getRuntimeStatus } from "./runtime/runtime-status.js";
 import { startAutoUpdater, stopAutoUpdater } from "./services/auto-updater.js";
+import { startAuthStatusChecker, stopAuthStatusChecker } from "./services/auth-status-checker.js";
 import { registerSetupRoutes } from "./routes/setup-routes.js";
 import { registerOllamaRoutes } from "./routes/ollama-routes.js";
 import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue, stopWhatsAppQueue } from "@maestro/pi";
@@ -102,6 +103,7 @@ async function main() {
   await startScheduler();
   startAutomationRunner();
   startAutoUpdater();
+  startAuthStatusChecker();
 
   // Ensure Pi models.json is written if a model is configured
   const savedPiModel = getSettingsState().piOllamaModel;
@@ -146,6 +148,7 @@ async function main() {
     stopScheduler();
     stopAutomationRunner();
     stopAutoUpdater();
+    stopAuthStatusChecker();
     stopWhatsAppQueue();
     await stopWhatsApp();
     stopTelegramQueue();

@@ -3,6 +3,13 @@ import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
 import { createRequire } from "module";
+import {
+  isNsjailAvailable,
+  getNsjailPath,
+  buildNsjailArgs,
+  ensureSandboxWritable,
+  type SandboxConfig,
+} from "./sandbox.js";
 
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
@@ -49,6 +56,7 @@ export interface PtyInstance {
   id: string;
   process: pty.IPty;
   agentId: string;
+  sandboxed: boolean;
 }
 
 const ptyProcesses = new Map<string, PtyInstance>();
@@ -67,6 +75,14 @@ export interface PtySpawnOptions {
   env?: Record<string, string>;
   onData: (data: string) => void;
   onExit: (exitCode: number) => void;
+  /** Enable nsjail sandbox (Linux only, falls back gracefully) */
+  sandbox?: boolean;
+  /** Additional read-only mount paths for sandbox */
+  readonlyMounts?: string[];
+  /** Additional read-write mount paths for sandbox */
+  writableMounts?: string[];
+  /** Memory limit in bytes for sandbox (default: 512MB) */
+  memoryLimit?: number;
 }
 
 export function spawnPty(options: PtySpawnOptions): PtyInstance {
@@ -74,20 +90,65 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
   const shell = process.env.SHELL || "/bin/bash";
   const cwd = options.cwd || os.homedir();
+  const useSandbox = options.sandbox && isNsjailAvailable();
 
-  const ptyProcess = pty.spawn(shell, ["-l"], {
-    name: "xterm-256color",
-    cols: options.cols ?? 120,
-    rows: options.rows ?? 30,
-    cwd,
-    env: buildChildEnv(options.env),
-  });
+  let ptyProcess: pty.IPty;
+
+  if (useSandbox) {
+    // Ensure project dir is writable by sandbox user (uid 1500)
+    ensureSandboxWritable(cwd);
+
+    // Sandboxed spawn: run shell inside nsjail
+    const fullEnv = buildChildEnv(options.env);
+
+    const sandboxConfig: SandboxConfig = {
+      cwd,
+      env: fullEnv,
+      readonlyMounts: options.readonlyMounts,
+      writableMounts: options.writableMounts,
+      memoryLimit: options.memoryLimit,
+    };
+
+    const nsjailArgs = [
+      ...buildNsjailArgs(sandboxConfig),
+      "--", shell, "-l",
+    ];
+
+    ptyProcess = pty.spawn(getNsjailPath(), nsjailArgs, {
+      name: "xterm-256color",
+      cols: options.cols ?? 120,
+      rows: options.rows ?? 30,
+      cwd,
+      // nsjail manages env vars via --env flags, but node-pty still needs
+      // a minimal env for the PTY master side
+      env: { TERM: "xterm-256color" },
+    });
+
+    console.log(`Spawned sandboxed PTY for agent ${options.agentId}`);
+  } else {
+    if (options.sandbox && !isNsjailAvailable()) {
+      console.warn(
+        `Sandbox requested for agent ${options.agentId} but nsjail is not available ` +
+        `(platform: ${process.platform}). Running unsandboxed.`
+      );
+    }
+
+    // Unsandboxed spawn (original behavior)
+    ptyProcess = pty.spawn(shell, ["-l"], {
+      name: "xterm-256color",
+      cols: options.cols ?? 120,
+      rows: options.rows ?? 30,
+      cwd,
+      env: buildChildEnv(options.env),
+    });
+  }
 
   const id = generateId();
   const instance: PtyInstance = {
     id,
     process: ptyProcess,
     agentId: options.agentId,
+    sandboxed: useSandbox ?? false,
   };
 
   ptyProcesses.set(id, instance);

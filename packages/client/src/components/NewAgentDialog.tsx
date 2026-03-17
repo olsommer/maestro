@@ -47,7 +47,6 @@ export function NewAgentDialog({ open, onClose }: Props) {
 
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("claude");
-  const [model, setModel] = useState("");
   const [projectId, setProjectId] = useState("");
   const [customDisplayName, setCustomDisplayName] = useState("");
   const [customCommandTemplate, setCustomCommandTemplate] = useState("");
@@ -117,7 +116,6 @@ export function NewAgentDialog({ open, onClose }: Props) {
       const { agent } = await api.createAgent({
         name: name || undefined,
         provider,
-        model: !isCustomProvider ? model || undefined : undefined,
         projectId: trimmedProjectId,
         projectPath: isRoot ? "/" : undefined,
         customDisplayName: isCustomProvider
@@ -258,7 +256,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
                   />
                   <FieldDescription>
                     Placeholders: <code>{"{{projectPath}}"}</code>,{" "}
-                    <code>{"{{prompt}}"}</code>, <code>{"{{model}}"}</code>
+                    <code>{"{{prompt}}"}</code>
                   </FieldDescription>
                 </Field>
 

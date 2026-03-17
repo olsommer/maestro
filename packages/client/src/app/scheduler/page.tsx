@@ -57,7 +57,6 @@ interface ScheduledTask {
   projectPath: string;
   project?: { id: string; name: string } | null;
   provider: string;
-  model: string | null;
   customDisplayName: string | null;
   customCommandTemplate: string | null;
   customEnv: Record<string, string> | null;
@@ -70,15 +69,7 @@ interface ScheduledTask {
 const PROVIDERS = [
   { value: "claude", label: "Claude Code" },
   { value: "codex", label: "Codex" },
-  { value: "gemini", label: "Gemini CLI" },
   { value: "custom", label: "Custom CLI" },
-];
-
-const MODELS = [
-  { value: "default", label: "Default" },
-  { value: "sonnet", label: "Sonnet" },
-  { value: "opus", label: "Opus" },
-  { value: "haiku", label: "Haiku" },
 ];
 
 function SchedulerView() {
@@ -91,7 +82,6 @@ function SchedulerView() {
   const [prompt, setPrompt] = useState("");
   const [schedule, setSchedule] = useState("0 * * * *");
   const [provider, setProvider] = useState("claude");
-  const [model, setModel] = useState("");
   const [customDisplayName, setCustomDisplayName] = useState("");
   const [customCommandTemplate, setCustomCommandTemplate] = useState("");
   const [customEnvText, setCustomEnvText] = useState("");
@@ -186,7 +176,6 @@ function SchedulerView() {
           prompt: prompt.trim(),
           schedule,
           provider,
-          model: !isCustomProvider ? model || undefined : undefined,
           customDisplayName: isCustomProvider
             ? customDisplayName.trim() || undefined
             : undefined,
@@ -205,7 +194,6 @@ function SchedulerView() {
       setName("");
       setPrompt("");
       setProvider("claude");
-      setModel("");
       setCustomDisplayName("");
       setCustomCommandTemplate("");
       setCustomEnvText("");
@@ -343,30 +331,6 @@ function SchedulerView() {
                     <SelectContent>
                       <SelectGroup>
                         {PROVIDERS.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="scheduler-model">Model</FieldLabel>
-                  <Select
-                    value={model || "default"}
-                    onValueChange={(value) =>
-                      setModel(value === "default" ? "" : String(value ?? ""))
-                    }
-                    disabled={isCustomProvider}
-                  >
-                    <SelectTrigger id="scheduler-model" className="w-full">
-                      <SelectValue placeholder="Default" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {MODELS.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
                             {item.label}
                           </SelectItem>

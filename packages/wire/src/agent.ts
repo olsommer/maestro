@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-export const AgentProvider = z.enum(["claude", "codex", "gemini", "custom"]);
+export const AgentProvider = z.enum(["claude", "codex", "custom"]);
 export type AgentProvider = z.infer<typeof AgentProvider>;
-
-export const AgentModel = z.enum(["sonnet", "opus", "haiku"]);
-export type AgentModel = z.infer<typeof AgentModel>;
 
 export const AgentStatus = z.enum([
   "idle",
@@ -19,7 +16,6 @@ export const AgentSpawnOptions = z
   .object({
     name: z.string().optional(),
     provider: AgentProvider.default("claude"),
-    model: AgentModel.optional(),
     projectId: z.string().optional(),
     projectPath: z.string().optional(),
     customDisplayName: z.string().optional(),
@@ -52,7 +48,6 @@ export const AgentInfo = z.object({
   id: z.string(),
   name: z.string().nullable(),
   provider: AgentProvider,
-  model: AgentModel.nullable(),
   projectId: z.string().nullable().optional(),
   projectName: z.string().nullable().optional(),
   projectPath: z.string(),
@@ -71,7 +66,6 @@ export type AgentInfo = z.infer<typeof AgentInfo>;
 
 export const AgentStartInput = z.object({
   prompt: z.string().optional().default(""),
-  model: AgentModel.optional(),
 });
 export type AgentStartInput = z.infer<typeof AgentStartInput>;
 

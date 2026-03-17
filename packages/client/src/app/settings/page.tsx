@@ -72,7 +72,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function GitHubConnectionCard() {
+function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [status, setStatus] = useState<GitHubConnectionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [tokenInput, setTokenInput] = useState("");
@@ -80,11 +80,12 @@ function GitHubConnectionCard() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getGitHubIntegration()
+    setLoading(true);
+    api.getGitHubIntegration(refreshKey > 0)
       .then((res) => setStatus(res.github))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   async function handleConnect() {
     if (!tokenInput.trim()) return;
@@ -211,18 +212,19 @@ function GitHubConnectionCard() {
   );
 }
 
-function ClaudeConnectionCard() {
+function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
-    api.getClaudeAuthStatus()
+    setLoading(true);
+    api.getClaudeAuthStatus(refreshKey > 0)
       .then(setStatus)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   async function handleLogin() {
     setConnecting(true);
@@ -320,7 +322,7 @@ function ClaudeConnectionCard() {
   );
 }
 
-function CodexConnectionCard() {
+function CodexConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [status, setStatus] = useState<CodexAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -331,11 +333,12 @@ function CodexConnectionCard() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    api.getCodexAuthStatus()
+    setLoading(true);
+    api.getCodexAuthStatus(refreshKey > 0)
       .then(setStatus)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   async function handleDeviceAuth() {
     setConnecting(true);
@@ -883,6 +886,19 @@ function SettingsView() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [updatingClis, setUpdatingClis] = useState(false);
+  // Auth status refresh key — incremented to re-fetch all auth cards
+  const [authRefreshKey, setAuthRefreshKey] = useState(0);
+
+  // Re-fetch auth status when page becomes visible (e.g. returning from another tab after login)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        setAuthRefreshKey((k) => k + 1);
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
 
   const loadUpdateStatus = useCallback(async () => {
     try {
@@ -1144,9 +1160,9 @@ function SettingsView() {
             </CardContent>
           </Card>
 
-          <ClaudeConnectionCard />
-          <CodexConnectionCard />
-          <GitHubConnectionCard />
+          <ClaudeConnectionCard refreshKey={authRefreshKey} />
+          <CodexConnectionCard refreshKey={authRefreshKey} />
+          <GitHubConnectionCard refreshKey={authRefreshKey} />
 
           <PiAgentCard settings={settings} onSettingsUpdate={setSettings} />
           <TelegramCard settings={settings} onSettingsUpdate={setSettings} />

@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { createAgent, startAgent } from "../agents/agent-manager.js";
-import type { AgentProvider, AgentModel } from "@maestro/wire";
+import type { AgentProvider } from "@maestro/wire";
 import {
   listScheduledTaskRecords,
   updateScheduledTaskRecord,
@@ -61,7 +61,6 @@ async function executeScheduledTask(task: ScheduledTaskRecord) {
     const agent = await createAgent({
       name: `scheduled-${task.name}-${Date.now()}`,
       provider: task.provider as AgentProvider,
-      model: task.model as AgentModel | null,
       projectId: task.projectId || undefined,
       projectPath: task.projectPath,
       customDisplayName: task.customDisplayName || undefined,
@@ -70,7 +69,7 @@ async function executeScheduledTask(task: ScheduledTaskRecord) {
       skipPermissions: task.skipPermissions,
     });
 
-    await startAgent(agent.id, task.prompt, task.model || undefined);
+    await startAgent(agent.id, task.prompt);
     updateScheduledTaskRecord(task.id, {
       lastRunAt: new Date().toISOString(),
     });

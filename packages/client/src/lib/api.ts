@@ -147,8 +147,8 @@ export interface GitHubRepoSuggestion {
 export const api = {
   getProjects: () => request<{ projects: Project[] }>("/api/projects"),
   getRuntimeStatus: () => request<RuntimeStatus>("/api/system/status"),
-  getGitHubIntegration: () =>
-    request<{ github: GitHubConnectionStatus }>("/api/integrations/github"),
+  getGitHubIntegration: (fresh?: boolean) =>
+    request<{ github: GitHubConnectionStatus }>(`/api/integrations/github${fresh ? "?fresh=1" : ""}`),
   searchGitHubRepos: (query: string) =>
     request<{ repos: GitHubRepoSuggestion[] }>(
       `/api/integrations/github/repos?${
@@ -166,10 +166,12 @@ export const api = {
     }),
 
   // Claude Code auth
-  getClaudeAuthStatus: () => request<ClaudeAuthStatus>("/api/integrations/claude/status"),
+  getClaudeAuthStatus: (fresh?: boolean) =>
+    request<ClaudeAuthStatus>(`/api/integrations/claude/status${fresh ? "?fresh=1" : ""}`),
 
   // Codex auth
-  getCodexAuthStatus: () => request<CodexAuthStatus>("/api/integrations/codex/status"),
+  getCodexAuthStatus: (fresh?: boolean) =>
+    request<CodexAuthStatus>(`/api/integrations/codex/status${fresh ? "?fresh=1" : ""}`),
   startCodexDeviceAuth: () =>
     request<{ code: string; url: string }>("/api/integrations/codex/device-auth/start", {
       method: "POST",

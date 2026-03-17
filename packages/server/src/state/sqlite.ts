@@ -95,7 +95,6 @@ function toScheduledTask(row: Record<string, unknown>): ScheduledTaskRecord {
     projectId: row.project_id ? String(row.project_id) : null,
     projectPath: String(row.project_path),
     provider: String(row.provider),
-    model: row.model ? String(row.model) : null,
     customDisplayName: row.custom_display_name ? String(row.custom_display_name) : null,
     customCommandTemplate: row.custom_command_template
       ? String(row.custom_command_template)
@@ -126,7 +125,6 @@ function toAutomation(row: Record<string, unknown>): AutomationRecord {
     agentProjectPath: String(row.agent_project_path),
     agentPromptTemplate: String(row.agent_prompt_template),
     agentProvider: String(row.agent_provider),
-    agentModel: row.agent_model ? String(row.agent_model) : null,
     agentCustomDisplayName: row.agent_custom_display_name
       ? String(row.agent_custom_display_name)
       : null,
@@ -186,10 +184,10 @@ export function createScheduledTaskRecord(
 
   db.prepare(`
     INSERT INTO scheduled_tasks (
-      id, name, prompt, schedule, project_id, project_path, provider, model,
+      id, name, prompt, schedule, project_id, project_path, provider,
       custom_display_name, custom_command_template, custom_env_json,
       skip_permissions, enabled, last_run_at, next_run_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     task.id,
     task.name,
@@ -198,7 +196,6 @@ export function createScheduledTaskRecord(
     task.projectId,
     task.projectPath,
     task.provider,
-    task.model,
     task.customDisplayName,
     task.customCommandTemplate,
     JSON.stringify(task.customEnv),
@@ -231,7 +228,7 @@ export function updateScheduledTaskRecord(
   db.prepare(`
     UPDATE scheduled_tasks SET
       name = ?, prompt = ?, schedule = ?, project_id = ?, project_path = ?,
-      provider = ?, model = ?, custom_display_name = ?, custom_command_template = ?,
+      provider = ?, custom_display_name = ?, custom_command_template = ?,
       custom_env_json = ?, skip_permissions = ?, enabled = ?, last_run_at = ?,
       next_run_at = ?, updated_at = ?
     WHERE id = ?
@@ -242,7 +239,6 @@ export function updateScheduledTaskRecord(
     next.projectId,
     next.projectPath,
     next.provider,
-    next.model,
     next.customDisplayName,
     next.customCommandTemplate,
     JSON.stringify(next.customEnv),
@@ -289,11 +285,11 @@ export function createAutomationRecord(
     INSERT INTO automations (
       id, name, description, enabled, source_type, source_config_json,
       trigger_type, agent_project_id, agent_project_path, agent_prompt_template,
-      agent_provider, agent_model, agent_custom_display_name,
+      agent_provider, agent_custom_display_name,
       agent_custom_command_template, agent_custom_env_json,
       agent_skip_permissions, poll_interval_minutes, last_poll_at,
       processed_hashes_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     automation.id,
     automation.name,
@@ -306,7 +302,6 @@ export function createAutomationRecord(
     automation.agentProjectPath,
     automation.agentPromptTemplate,
     automation.agentProvider,
-    automation.agentModel,
     automation.agentCustomDisplayName,
     automation.agentCustomCommandTemplate,
     JSON.stringify(automation.agentCustomEnv),
@@ -340,7 +335,7 @@ export function updateAutomationRecord(
     UPDATE automations SET
       name = ?, description = ?, enabled = ?, source_type = ?, source_config_json = ?,
       trigger_type = ?, agent_project_id = ?, agent_project_path = ?,
-      agent_prompt_template = ?, agent_provider = ?, agent_model = ?,
+      agent_prompt_template = ?, agent_provider = ?,
       agent_custom_display_name = ?, agent_custom_command_template = ?,
       agent_custom_env_json = ?, agent_skip_permissions = ?,
       poll_interval_minutes = ?, last_poll_at = ?, processed_hashes_json = ?,
@@ -357,7 +352,6 @@ export function updateAutomationRecord(
     next.agentProjectPath,
     next.agentPromptTemplate,
     next.agentProvider,
-    next.agentModel,
     next.agentCustomDisplayName,
     next.agentCustomCommandTemplate,
     JSON.stringify(next.agentCustomEnv),

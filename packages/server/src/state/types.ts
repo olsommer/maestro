@@ -18,7 +18,6 @@ export interface AgentRecord {
   id: string;
   name: string | null;
   provider: string;
-  model: string | null;
   projectId: string | null;
   projectPath: string;
   customDisplayName: string | null;
@@ -104,7 +103,6 @@ export interface ScheduledTaskRecord {
   projectId: string | null;
   projectPath: string;
   provider: string;
-  model: string | null;
   customDisplayName: string | null;
   customCommandTemplate: string | null;
   customEnv: Record<string, string> | null;
@@ -128,7 +126,6 @@ export interface AutomationRecord {
   agentProjectPath: string;
   agentPromptTemplate: string;
   agentProvider: string;
-  agentModel: string | null;
   agentCustomDisplayName: string | null;
   agentCustomCommandTemplate: string | null;
   agentCustomEnv: Record<string, string> | null;

@@ -54,7 +54,6 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
         agentProjectPath?: string;
         agentPromptTemplate: string;
         agentProvider?: string;
-        agentModel?: string;
         agentCustomDisplayName?: string;
         agentCustomCommandTemplate?: string;
         agentCustomEnv?: Record<string, string>;
@@ -90,7 +89,6 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
         agentProjectPath: projectContext.projectPath,
         agentPromptTemplate: body.agentPromptTemplate,
         agentProvider: body.agentProvider || "claude",
-        agentModel: body.agentModel || null,
         agentCustomDisplayName: body.agentCustomDisplayName || null,
         agentCustomCommandTemplate: body.agentCustomCommandTemplate || null,
         agentCustomEnv: body.agentCustomEnv || null,

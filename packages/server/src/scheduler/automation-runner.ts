@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { createAgent, startAgent } from "../agents/agent-manager.js";
-import type { AgentProvider, AgentModel } from "@maestro/wire";
+import type { AgentProvider } from "@maestro/wire";
 import {
   createAutomationRunRecord,
   listAutomationRecords,
@@ -71,7 +71,6 @@ async function runAutomation(auto: AutomationRecord) {
       const agent = await createAgent({
         name: `auto-${auto.name}-${Date.now()}`,
         provider: auto.agentProvider as AgentProvider,
-        model: auto.agentModel as AgentModel | null,
         projectId: auto.agentProjectId || undefined,
         projectPath: auto.agentProjectPath,
         customDisplayName: auto.agentCustomDisplayName || undefined,
@@ -80,7 +79,7 @@ async function runAutomation(auto: AutomationRecord) {
         skipPermissions: auto.agentSkipPermissions,
       });
 
-      await startAgent(agent.id, prompt, auto.agentModel || undefined);
+      await startAgent(agent.id, prompt);
 
       processedHashes = [...processedHashes, hash];
       updateAutomationRecord(auto.id, {

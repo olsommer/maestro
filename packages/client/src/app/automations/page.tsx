@@ -90,15 +90,7 @@ const SOURCE_TYPES = [
 const PROVIDERS = [
   { value: "claude", label: "Claude Code" },
   { value: "codex", label: "Codex" },
-  { value: "gemini", label: "Gemini CLI" },
   { value: "custom", label: "Custom CLI" },
-];
-
-const MODELS = [
-  { value: "default", label: "Default" },
-  { value: "sonnet", label: "Sonnet" },
-  { value: "opus", label: "Opus" },
-  { value: "haiku", label: "Haiku" },
 ];
 
 function runBadgeVariant(status: string): "secondary" | "destructive" | "outline" {
@@ -121,7 +113,6 @@ function AutomationsView() {
   const [repo, setRepo] = useState("");
   const [rssUrl, setRssUrl] = useState("");
   const [provider, setProvider] = useState("claude");
-  const [model, setModel] = useState("");
   const [customDisplayName, setCustomDisplayName] = useState("");
   const [customCommandTemplate, setCustomCommandTemplate] = useState("");
   const [customEnvText, setCustomEnvText] = useState("");
@@ -238,7 +229,6 @@ function AutomationsView() {
           sourceType,
           sourceConfig,
           agentProvider: provider,
-          agentModel: !isCustomProvider ? model || undefined : undefined,
           agentCustomDisplayName: isCustomProvider
             ? customDisplayName.trim() || undefined
             : undefined,
@@ -260,7 +250,6 @@ function AutomationsView() {
       setRepo("");
       setRssUrl("");
       setProvider("claude");
-      setModel("");
       setCustomDisplayName("");
       setCustomCommandTemplate("");
       setCustomEnvText("");
@@ -409,30 +398,6 @@ function AutomationsView() {
                     <SelectContent>
                       <SelectGroup>
                         {PROVIDERS.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="automation-model">Model</FieldLabel>
-                  <Select
-                    value={model || "default"}
-                    onValueChange={(value) =>
-                      setModel(value === "default" ? "" : String(value ?? ""))
-                    }
-                    disabled={isCustomProvider}
-                  >
-                    <SelectTrigger id="automation-model" className="w-full">
-                      <SelectValue placeholder="Default" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {MODELS.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
                             {item.label}
                           </SelectItem>

@@ -6,6 +6,7 @@ const DEFAULTS: Settings = {
   autoUpdateIntervalHours: 24,
   piOllamaModel: "",
   telegramBotToken: "",
+  sandboxEnabled: false,
 };
 
 export function getSettings(): Settings {
@@ -14,12 +15,14 @@ export function getSettings(): Settings {
   const piModel = getSetting("piOllamaModel");
 
   const telegramToken = getSetting("telegramBotToken");
+  const sandbox = getSetting("sandboxEnabled");
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
     autoUpdateIntervalHours: interval !== null ? Number(interval) : DEFAULTS.autoUpdateIntervalHours,
     piOllamaModel: piModel !== null ? piModel : DEFAULTS.piOllamaModel,
     telegramBotToken: telegramToken !== null ? telegramToken : DEFAULTS.telegramBotToken,
+    sandboxEnabled: sandbox !== null ? sandbox === "true" : DEFAULTS.sandboxEnabled,
   };
 }
 
@@ -35,6 +38,9 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   }
   if (patch.telegramBotToken !== undefined) {
     setSetting("telegramBotToken", patch.telegramBotToken);
+  }
+  if (patch.sandboxEnabled !== undefined) {
+    setSetting("sandboxEnabled", String(patch.sandboxEnabled));
   }
   return getSettings();
 }

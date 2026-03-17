@@ -11,10 +11,19 @@ services:
       HOST: 0.0.0.0
       PORT: 4800
       OLLAMA_HOST: http://ollama:11434
+    # nsjail needs these capabilities to create Linux namespaces
+    cap_add:
+      - SYS_PTRACE     # for process tracing
+      - SYS_ADMIN      # for mount/PID/user namespaces
+      - NET_ADMIN       # for network namespace (optional, if restricting network later)
+    security_opt:
+      - seccomp=unconfined  # nsjail manages its own seccomp filters
     volumes:
       - maestro_data:/root/.maestro
       - maestro_projects:/root/maestro-projects
       - maestro_gh:/root/.config/gh
+      # cgroup v2 mount needed for nsjail memory/CPU limits
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
 
   ollama:
     image: ollama/ollama:latest

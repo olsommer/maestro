@@ -5,10 +5,17 @@ import {
   getGitHubConnectionStatus,
   searchGitHubRepositories,
 } from "../integrations/github.js";
+import { getCachedGitHubConnectionStatus } from "../services/auth-status-checker.js";
 
 export async function registerGitHubIntegrationRoutes(app: FastifyInstance) {
-  app.get("/api/integrations/github", async () => {
-    const github = await getGitHubConnectionStatus();
+  app.get("/api/integrations/github", async (req) => {
+    const fresh = (req.query as Record<string, string>).fresh === "1";
+    if (fresh) {
+      const github = await getGitHubConnectionStatus();
+      return { github };
+    }
+    const cached = getCachedGitHubConnectionStatus();
+    const github = cached ?? await getGitHubConnectionStatus();
     return { github };
   });
 

@@ -71,7 +71,6 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       const createdAgent = await createAgent({
         name: options.name,
         provider: options.provider,
-        model: options.model,
         projectId: options.projectId,
         projectPath,
         worktreePath,
@@ -85,7 +84,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
 
       // If prompt provided, start immediately
       if (options.prompt) {
-        await startAgent(createdAgent.id, options.prompt, options.model);
+        await startAgent(createdAgent.id, options.prompt);
       }
 
       const agent = await getAgent(createdAgent.id);
@@ -105,8 +104,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         const input = AgentStartInput.parse(req.body);
         const result = await startAgent(
           req.params.id,
-          input.prompt,
-          input.model
+          input.prompt
         );
         return { ok: true, ...result };
       } catch (err) {

@@ -5,18 +5,34 @@ import {
   startCodexDeviceAuth,
   connectCodexWithApiKey,
 } from "../integrations/cli-auth.js";
+import {
+  getCachedClaudeAuthStatus,
+  getCachedCodexAuthStatus,
+  refreshAuthStatus,
+} from "../services/auth-status-checker.js";
 
 export async function registerCliAuthRoutes(app: FastifyInstance) {
   // ─── Claude Code ────────────────────────────────────────────────────────
 
-  app.get("/api/integrations/claude/status", async () => {
-    return getClaudeAuthStatus();
+  app.get("/api/integrations/claude/status", async (req) => {
+    const fresh = (req.query as Record<string, string>).fresh === "1";
+    if (fresh) return getClaudeAuthStatus();
+    return getCachedClaudeAuthStatus() ?? getClaudeAuthStatus();
   });
 
   // ─── Codex ──────────────────────────────────────────────────────────────
 
-  app.get("/api/integrations/codex/status", async () => {
-    return getCodexAuthStatus();
+  app.get("/api/integrations/codex/status", async (req) => {
+    const fresh = (req.query as Record<string, string>).fresh === "1";
+    if (fresh) return getCodexAuthStatus();
+    return getCachedCodexAuthStatus() ?? getCodexAuthStatus();
+  });
+
+  // ─── Refresh all auth status ──────────────────────────────────────────
+
+  app.post("/api/integrations/auth/refresh", async () => {
+    await refreshAuthStatus();
+    return { ok: true };
   });
 
   app.post("/api/integrations/codex/device-auth/start", async (_req, reply) => {

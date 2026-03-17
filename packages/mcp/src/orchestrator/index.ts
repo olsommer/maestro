@@ -86,10 +86,9 @@ server.tool(
     localPath: z.string().optional().describe("Local path (auto-resolved if omitted)"),
     syncIssues: z.boolean().optional().default(false).describe("Sync GitHub issues to kanban"),
     provider: z
-      .enum(["claude", "codex", "gemini", "custom"])
+      .enum(["claude", "codex", "custom"])
       .optional()
       .describe("Default provider for agents"),
-    model: z.string().optional().describe("Default model for agents"),
   },
   async (params) => {
     try {
@@ -280,10 +279,10 @@ server.tool(
       .default(true)
       .describe("Run in autonomous mode (default: true)"),
     provider: z
-      .enum(["claude", "codex", "gemini", "custom"])
+      .enum(["claude", "codex", "custom"])
       .optional()
       .describe("CLI provider"),
-    model: z.string().optional().describe("Model override"),
+
     customDisplayName: z.string().optional().describe("Label for custom CLI"),
     customCommandTemplate: z
       .string()
@@ -301,7 +300,6 @@ server.tool(
     skills,
     skipPermissions = true,
     provider,
-    model,
     customDisplayName,
     customCommandTemplate,
     customEnv,
@@ -317,7 +315,6 @@ server.tool(
         skills,
         skipPermissions,
         provider,
-        model,
         customDisplayName,
         customCommandTemplate,
         customEnv,
@@ -354,9 +351,8 @@ server.tool(
       .optional()
       .default("")
       .describe("Optional task/instruction for the agent"),
-    model: z.string().optional().describe("Model override (sonnet, opus, haiku)"),
   },
-  async ({ id, prompt, model }) => {
+  async ({ id, prompt }) => {
     try {
       const agentData = (await apiRequest(`/api/agents/${id}`)) as {
         agent: { status: string; name?: string };
@@ -389,7 +385,7 @@ server.tool(
         };
       }
 
-      await apiRequest(`/api/agents/${id}/start`, "POST", { prompt, model });
+      await apiRequest(`/api/agents/${id}/start`, "POST", { prompt });
       return {
         content: [
           {
@@ -844,10 +840,10 @@ server.tool(
     projectId: z.string().optional().describe("Project ID"),
     projectPath: z.string().optional().describe("Project directory"),
     provider: z
-      .enum(["claude", "codex", "gemini", "custom"])
+      .enum(["claude", "codex", "custom"])
       .optional()
       .describe("CLI provider"),
-    model: z.string().optional().describe("Model override"),
+
     customDisplayName: z.string().optional().describe("Label for custom CLI"),
     customCommandTemplate: z
       .string()
@@ -906,10 +902,10 @@ server.tool(
     prompt: z.string().optional().describe("New prompt"),
     schedule: z.string().optional().describe("New cron expression"),
     provider: z
-      .enum(["claude", "codex", "gemini", "custom"])
+      .enum(["claude", "codex", "custom"])
       .optional()
       .describe("CLI provider"),
-    model: z.string().optional().describe("Model override"),
+
     skipPermissions: z.boolean().optional().describe("Autonomous mode"),
     enabled: z.boolean().optional().describe("Enable or disable the schedule"),
   },
@@ -1011,10 +1007,10 @@ server.tool(
     prompt: z.string().describe("Task for the agent"),
     name: z.string().optional().describe("Agent name"),
     provider: z
-      .enum(["claude", "codex", "gemini", "custom"])
+      .enum(["claude", "codex", "custom"])
       .optional()
       .describe("CLI provider"),
-    model: z.string().optional().describe("Model override"),
+
     customDisplayName: z.string().optional().describe("Label for custom CLI"),
     customCommandTemplate: z
       .string()
@@ -1036,7 +1032,6 @@ server.tool(
     prompt,
     name,
     provider,
-    model,
     customDisplayName,
     customCommandTemplate,
     customEnv,
@@ -1052,7 +1047,6 @@ server.tool(
         projectPath,
         name: name || `delegate-${Date.now()}`,
         provider,
-        model,
         customDisplayName,
         customCommandTemplate,
         customEnv,
@@ -1065,7 +1059,6 @@ server.tool(
       // Start with prompt
       await apiRequest(`/api/agents/${agentId}/start`, "POST", {
         prompt,
-        model,
       });
 
       // Poll for completion (since we don't have long-poll /wait endpoint yet)

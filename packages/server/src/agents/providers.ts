@@ -6,7 +6,6 @@ import type { AgentProvider } from "@maestro/wire";
 export interface InteractiveCommandParams {
   binaryPath: string;
   prompt: string;
-  model?: string;
   projectPath: string;
   skipPermissions?: boolean;
   secondaryProjectPaths?: string[];
@@ -83,10 +82,6 @@ export class ClaudeProvider implements CLIProvider {
       cmd += ` --mcp-config ${quoteShell(params.mcpConfigPath)}`;
     }
 
-    if (params.model) {
-      cmd += ` --model ${quoteShell(params.model)}`;
-    }
-
     if (params.skipPermissions) {
       cmd += " --dangerously-skip-permissions";
     }
@@ -137,44 +132,8 @@ export class CodexProvider implements CLIProvider {
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let cmd = quoteShell(params.binaryPath);
 
-    if (params.model) {
-      cmd += ` --model ${quoteShell(params.model)}`;
-    }
-
     if (params.skipPermissions) {
       cmd += " --full-auto";
-    }
-
-    if (params.prompt) {
-      cmd += ` ${quoteShell(params.prompt)}`;
-    }
-
-    return cmd;
-  }
-
-  getPtyEnvVars(): Record<string, string> {
-    return {};
-  }
-}
-
-export class GeminiProvider implements CLIProvider {
-  readonly id = "gemini";
-  readonly displayName = "Gemini CLI";
-  readonly binaryName = "gemini";
-
-  resolveBinaryPath(): string {
-    return "gemini";
-  }
-
-  buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let cmd = quoteShell(params.binaryPath);
-
-    if (params.model) {
-      cmd += ` --model ${quoteShell(params.model)}`;
-    }
-
-    if (params.skipPermissions) {
-      cmd += " --sandbox";
     }
 
     if (params.prompt) {
@@ -211,13 +170,12 @@ export class CustomProvider implements CLIProvider {
 
     const values: Record<string, string | undefined> = {
       prompt: params.prompt,
-      model: params.model,
       projectPath: params.projectPath,
     };
 
     let command = template.replace(
-      /\{\{\s*(prompt|model|projectPath)\s*\}\}/g,
-      (_match, key: "prompt" | "model" | "projectPath") =>
+      /\{\{\s*(prompt|projectPath)\s*\}\}/g,
+      (_match, key: "prompt" | "projectPath") =>
         quoteShell(values[key] ?? "")
     );
 
@@ -243,7 +201,6 @@ export class CustomProvider implements CLIProvider {
 const providers: Record<string, CLIProvider> = {
   claude: new ClaudeProvider(),
   codex: new CodexProvider(),
-  gemini: new GeminiProvider(),
 };
 
 export function getProvider(

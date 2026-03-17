@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentModel, AgentProvider } from "./agent.js";
+import { AgentProvider } from "./agent.js";
 
 export const ProjectStatus = z.enum(["ready", "error"]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
@@ -14,7 +14,6 @@ export const ProjectCreateInput = z.object({
 
   syncIssues: z.boolean().default(false),
   provider: AgentProvider.default("claude"),
-  model: AgentModel.optional(),
 });
 export type ProjectCreateInput = z.infer<typeof ProjectCreateInput>;
 
