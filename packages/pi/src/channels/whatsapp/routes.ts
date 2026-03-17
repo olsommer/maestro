@@ -12,12 +12,10 @@ export async function registerWhatsAppRoutes(
   app: FastifyInstance,
   io: SocketServer
 ) {
-  // Get connection status
   app.get("/api/integrations/whatsapp", async () => {
     return getWhatsAppStatus();
   });
 
-  // Connect (start Baileys, triggers QR)
   app.post("/api/integrations/whatsapp/connect", async (_req, reply) => {
     try {
       await startWhatsApp(io);
@@ -32,13 +30,11 @@ export async function registerWhatsAppRoutes(
     }
   });
 
-  // Disconnect
   app.delete("/api/integrations/whatsapp/connect", async () => {
     await stopWhatsApp();
     return { ok: true };
   });
 
-  // Message history
   app.get("/api/integrations/whatsapp/messages", async (req) => {
     const query = req.query as { chatJid?: string; limit?: string };
     const chatJid = query.chatJid || undefined;
@@ -46,7 +42,6 @@ export async function registerWhatsAppRoutes(
     return listWhatsAppMessages(chatJid, limit);
   });
 
-  // Manual send (for testing)
   app.post("/api/integrations/whatsapp/send", async (req, reply) => {
     try {
       const body = req.body as { jid: string; text: string };

@@ -18,7 +18,7 @@ if command -v gh &>/dev/null; then
     echo "GitHub CLI is not authenticated."
     echo "Running: gh auth login"
     echo ""
-    gh auth login --web -p https || echo "(gh auth login exited with error)"
+    printf '%s' "$GH_PAT" | gh auth login --with-token || echo "(gh auth login exited with error)"
   fi
 else
   echo "GitHub CLI (gh) not found, skipping."
@@ -51,7 +51,7 @@ if [[ "$use_codex" =~ ^[Yy]$ ]]; then
   if command -v codex &>/dev/null; then
     echo "Running: codex login"
     echo ""
-    codex login || echo "(codex login exited with error)"
+    codex login --device-auth || echo "(codex login exited with error)"
   else
     echo "Codex CLI not found, skipping."
   fi

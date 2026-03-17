@@ -70,6 +70,20 @@ export interface GitHubConnectionStatus {
   verifiedAt: string | null;
 }
 
+export interface ClaudeAuthStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  email: string | null;
+  orgName: string | null;
+  authMethod: string | null;
+}
+
+export interface CodexAuthStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  detail: string | null;
+}
+
 export interface Settings {
   autoUpdateEnabled: boolean;
   autoUpdateIntervalHours: number;
@@ -110,6 +124,11 @@ export interface UpdateStatus {
     latestVersion: string | null;
     updateAvailable: boolean;
   };
+  gh: {
+    currentVersion: string | null;
+    latestVersion: string | null;
+    updateAvailable: boolean;
+  };
   updating: boolean;
   lastError: string | null;
 }
@@ -136,6 +155,47 @@ export const api = {
         new URLSearchParams({ q: query }).toString()
       }`
     ),
+  connectGitHub: (token: string) =>
+    request<{ github: GitHubConnectionStatus }>("/api/integrations/github/connect", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  disconnectGitHub: () =>
+    request<{ ok: boolean; github: GitHubConnectionStatus }>("/api/integrations/github/connect", {
+      method: "DELETE",
+    }),
+  startGitHubDeviceAuth: () =>
+    request<{ code: string; url: string }>("/api/integrations/github/device-auth/start", {
+      method: "POST",
+    }),
+  completeGitHubDeviceAuth: () =>
+    request<{ github: GitHubConnectionStatus }>("/api/integrations/github/device-auth/complete", {
+      method: "POST",
+    }),
+
+  // Claude Code auth
+  getClaudeAuthStatus: () => request<ClaudeAuthStatus>("/api/integrations/claude/status"),
+  startClaudeSetupToken: () =>
+    request<{ url: string }>("/api/integrations/claude/setup-token/start", {
+      method: "POST",
+    }),
+  completeClaudeSetupToken: (token: string) =>
+    request<ClaudeAuthStatus>("/api/integrations/claude/setup-token/complete", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
+  // Codex auth
+  getCodexAuthStatus: () => request<CodexAuthStatus>("/api/integrations/codex/status"),
+  startCodexDeviceAuth: () =>
+    request<{ code: string; url: string }>("/api/integrations/codex/device-auth/start", {
+      method: "POST",
+    }),
+  connectCodexWithApiKey: (apiKey: string) =>
+    request<CodexAuthStatus>("/api/integrations/codex/connect-api-key", {
+      method: "POST",
+      body: JSON.stringify({ apiKey }),
+    }),
 
   // Setup
   getSetupStatus: () =>
@@ -165,7 +225,6 @@ export const api = {
     githubRepo?: string;
     defaultBranch?: string;
     localPath?: string;
-    bootstrap?: boolean;
     syncIssues?: boolean;
     provider?: string;
     model?: string;
@@ -324,8 +383,7 @@ export interface Project {
   defaultBranch: string | null;
   localPath: string;
   status: string;
-  bootstrapAgentId: string | null;
-  bootstrapError: string | null;
+
   lastSyncedAt: string | null;
   lastSyncError: string | null;
   createdAt: string;

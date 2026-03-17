@@ -11,9 +11,11 @@ let lastError: string | null = null;
 let cachedStatus: {
   claude: { current: string | null; latest: string | null };
   codex: { current: string | null; latest: string | null };
+  gh: { current: string | null; latest: string | null };
 } = {
   claude: { current: null, latest: null },
   codex: { current: null, latest: null },
+  gh: { current: null, latest: null },
 };
 
 function run(cmd: string): string {
@@ -53,6 +55,13 @@ function getLatestVersion(pkg: string): string | null {
   return output || null;
 }
 
+function getGhLatestVersion(): string | null {
+  const output = run(`gh api repos/cli/cli/releases/latest --jq '.tag_name' 2>/dev/null`);
+  if (!output) return null;
+  const match = output.match(/(\d+\.\d+\.\d+(?:-[\w.]+)?)/);
+  return match?.[1] ?? null;
+}
+
 function updatePackage(pkg: string, binary: string): { success: boolean; version: string | null; error: string | null } {
   try {
     execSync(`npm install -g ${pkg}@latest`, {
@@ -79,10 +88,13 @@ export async function checkForUpdates(): Promise<void> {
     const claudeLatest = getLatestVersion("@anthropic-ai/claude-code");
     const codexCurrent = getInstalledVersion("@openai/codex", "codex");
     const codexLatest = getLatestVersion("@openai/codex");
+    const ghCurrent = getInstalledVersionViaCli("gh");
+    const ghLatest = getGhLatestVersion();
 
     cachedStatus = {
       claude: { current: claudeCurrent, latest: claudeLatest },
       codex: { current: codexCurrent, latest: codexLatest },
+      gh: { current: ghCurrent, latest: ghLatest },
     };
 
     lastCheckAt = new Date().toISOString();
@@ -171,6 +183,11 @@ export function getUpdateStatus(): UpdateStatus {
     cachedStatus.codex.latest !== null &&
     cachedStatus.codex.current !== cachedStatus.codex.latest;
 
+  const ghUpdateAvailable =
+    cachedStatus.gh.current !== null &&
+    cachedStatus.gh.latest !== null &&
+    cachedStatus.gh.current !== cachedStatus.gh.latest;
+
   return {
     lastCheckAt,
     lastUpdateAt,
@@ -183,6 +200,11 @@ export function getUpdateStatus(): UpdateStatus {
       currentVersion: cachedStatus.codex.current,
       latestVersion: cachedStatus.codex.latest,
       updateAvailable: codexUpdateAvailable,
+    },
+    gh: {
+      currentVersion: cachedStatus.gh.current,
+      latestVersion: cachedStatus.gh.latest,
+      updateAvailable: ghUpdateAvailable,
     },
     updating,
     lastError,

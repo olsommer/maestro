@@ -14,6 +14,7 @@ import { startScheduler, stopScheduler } from "./scheduler/scheduler.js";
 import { startAutomationRunner, stopAutomationRunner } from "./scheduler/automation-runner.js";
 import { initAuth, registerAuthHook, registerAuthRoutes, verifySessionToken } from "./auth/auth.js";
 import { registerSystemRoutes } from "./routes/system-routes.js";
+import { registerCliAuthRoutes } from "./routes/cli-auth-routes.js";
 import { registerGitHubIntegrationRoutes } from "./routes/github-integration-routes.js";
 import { registerWebhookRoutes } from "./routes/webhook-routes.js";
 import { registerSettingsRoutes } from "./routes/settings-routes.js";
@@ -84,6 +85,7 @@ async function main() {
   await registerSchedulerRoutes(app);
   await registerAutomationRoutes(app);
   await registerSystemRoutes(app);
+  await registerCliAuthRoutes(app);
   await registerGitHubIntegrationRoutes(app);
   await registerWebhookRoutes(app, io);
   await registerSettingsRoutes(app);

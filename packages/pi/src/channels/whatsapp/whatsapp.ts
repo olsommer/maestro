@@ -114,7 +114,6 @@ async function connectBaileys(): Promise<void> {
           return;
         }
 
-        // QR timeout (code 515) — reconnect immediately to show a fresh QR
         const isQrTimeout = statusCode === DisconnectReason.timedOut || statusCode === 515;
         if (isQrTimeout) {
           console.log("[whatsapp] QR expired, reconnecting immediately for a fresh code...");
@@ -123,7 +122,6 @@ async function connectBaileys(): Promise<void> {
           return;
         }
 
-        // Other disconnects — reconnect with exponential backoff
         reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 60000);
         console.log(`[whatsapp] Connection closed (code=${statusCode}), reconnecting in ${delay}ms...`);
@@ -144,7 +142,6 @@ async function connectBaileys(): Promise<void> {
       if (m.type !== "notify") return;
 
       for (const msg of m.messages) {
-        // Skip non-text messages
         const text =
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text;

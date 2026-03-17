@@ -68,12 +68,7 @@ function ProjectStatusBadge({ status }: { status: string }) {
         variant: "secondary" as const,
         label: "Ready",
       }
-      : status === "bootstrapping"
-        ? {
-          variant: "outline" as const,
-          label: "Bootstrapping",
-        }
-        : {
+      : {
           variant: "destructive" as const,
           label: "Error",
         };
@@ -106,7 +101,6 @@ function ProjectsView(props: Props) {
   const [repoUrl, setRepoUrl] = useState("");
   const [localPath, setLocalPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
-  const [bootstrap, setBootstrap] = useState(true);
   const [syncIssues, setSyncIssues] = useState(true);
   const [loading, setLoading] = useState(false);
   const [syncingProjectId, setSyncingProjectId] = useState<string | null>(null);
@@ -223,7 +217,6 @@ function ProjectsView(props: Props) {
         repoUrl: repoQuery || undefined,
         localPath: localPath.trim() || undefined,
         defaultBranch: defaultBranch.trim() || undefined,
-        bootstrap,
         syncIssues,
       });
       addProject(project);
@@ -231,7 +224,6 @@ function ProjectsView(props: Props) {
       setRepoUrl("");
       setLocalPath("");
       setDefaultBranch("main");
-      setBootstrap(true);
       setSyncIssues(true);
       setRepoSuggestions([]);
       setRepoSearchError("");
@@ -448,8 +440,7 @@ function ProjectsView(props: Props) {
               <CardHeader>
                 <CardTitle>Create Project</CardTitle>
                 <CardDescription>
-                  Create from a repo URL or local checkout. Bootstrap starts a
-                  provisioning agent.
+                  Create from a repo URL or local checkout.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -499,21 +490,6 @@ function ProjectsView(props: Props) {
 
                     <FieldSet>
                       <FieldLegend variant="label">Project Options</FieldLegend>
-                      <Field orientation="horizontal">
-                        <Switch
-                          id="project-bootstrap"
-                          checked={bootstrap}
-                          onCheckedChange={setBootstrap}
-                        />
-                        <FieldContent>
-                          <FieldLabel htmlFor="project-bootstrap">
-                            Bootstrap with agent
-                          </FieldLabel>
-                          <FieldDescription>
-                            Start a provisioning agent after the project is created.
-                          </FieldDescription>
-                        </FieldContent>
-                      </Field>
                       <Field orientation="horizontal">
                         <Switch
                           id="project-sync"
@@ -604,10 +580,6 @@ function ProjectsView(props: Props) {
                         value: selectedProject.defaultBranch || "Not set",
                       },
                       {
-                        label: "Bootstrap Agent",
-                        value: selectedProject.bootstrapAgentId || "Not started",
-                      },
-                      {
                         label: "Last Issue Sync",
                         value: selectedProject.lastSyncedAt
                           ? new Date(selectedProject.lastSyncedAt).toLocaleString()
@@ -622,14 +594,6 @@ function ProjectsView(props: Props) {
                       </Card>
                     ))}
                   </div>
-
-                  {selectedProject.bootstrapError && (
-                    <Alert variant="destructive">
-                      <TriangleAlertIcon />
-                      <AlertTitle>Bootstrap failed</AlertTitle>
-                      <AlertDescription>{selectedProject.bootstrapError}</AlertDescription>
-                    </Alert>
-                  )}
 
                   {selectedProject.lastSyncError && (
                     <Alert variant="destructive">
@@ -704,21 +668,6 @@ function ProjectsView(props: Props) {
 
                     <FieldSet>
                       <FieldLegend variant="label">Project Options</FieldLegend>
-                      <Field orientation="horizontal">
-                        <Switch
-                          id="project-bootstrap-dialog"
-                          checked={bootstrap}
-                          onCheckedChange={setBootstrap}
-                        />
-                        <FieldContent>
-                          <FieldLabel htmlFor="project-bootstrap-dialog">
-                            Bootstrap with agent
-                          </FieldLabel>
-                          <FieldDescription>
-                            Start a provisioning agent after the project is created.
-                          </FieldDescription>
-                        </FieldContent>
-                      </Field>
                       <Field orientation="horizontal">
                         <Switch
                           id="project-sync-dialog"

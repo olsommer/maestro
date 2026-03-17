@@ -7,9 +7,7 @@ export interface ProjectRecord {
   githubRepo: string | null;
   defaultBranch: string | null;
   localPath: string;
-  status: "ready" | "bootstrapping" | "error";
-  bootstrapAgentId: string | null;
-  bootstrapError: string | null;
+  status: "ready" | "error";
   lastSyncedAt: string | null;
   lastSyncError: string | null;
   createdAt: string;

@@ -42,6 +42,11 @@ export const UpdateStatus = z.object({
     latestVersion: z.string().nullable(),
     updateAvailable: z.boolean(),
   }),
+  gh: z.object({
+    currentVersion: z.string().nullable(),
+    latestVersion: z.string().nullable(),
+    updateAvailable: z.boolean(),
+  }),
   updating: z.boolean(),
   lastError: z.string().nullable(),
 });

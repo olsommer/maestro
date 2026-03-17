@@ -76,7 +76,7 @@ server.tool(
 
 server.tool(
   "create_project",
-  "Create a new Maestro project. Can optionally bootstrap from a GitHub repo.",
+  "Create a new Maestro project. Can optionally link a GitHub repo.",
   {
     name: z.string().describe("Project name"),
     repoUrl: z.string().optional().describe("Git repository URL to clone"),
@@ -84,7 +84,6 @@ server.tool(
     githubRepo: z.string().optional().describe("GitHub repo name"),
     defaultBranch: z.string().optional().describe("Default branch name"),
     localPath: z.string().optional().describe("Local path (auto-resolved if omitted)"),
-    bootstrap: z.boolean().optional().default(true).describe("Run bootstrap agent"),
     syncIssues: z.boolean().optional().default(false).describe("Sync GitHub issues to kanban"),
     provider: z
       .enum(["claude", "codex", "gemini", "custom"])

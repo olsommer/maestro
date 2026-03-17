@@ -50,7 +50,7 @@ export function GitHubStatusBanner() {
           <AlertDescription>
             {status.github.warningMessage} Add <code>GITHUB_TOKEN</code> or{" "}
             <code>GH_TOKEN</code> to the server/container environment to enable private
-            repo bootstrap, issue sync, and GitHub automations.
+            issue sync and GitHub automations.
           </AlertDescription>
         </Alert>
       </div>

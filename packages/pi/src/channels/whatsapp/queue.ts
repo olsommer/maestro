@@ -2,6 +2,7 @@ import {
   AuthStorage,
   createAgentSession,
   createCodingTools,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   type AgentSession,
@@ -16,6 +17,7 @@ import {
   onWhatsAppMessage,
   sendWhatsAppMessage,
 } from "./whatsapp.js";
+import { buildAppendSections } from "../../system-prompt.js";
 
 let session: AgentSession | null = null;
 let isProcessing = false;
@@ -35,12 +37,29 @@ async function ensureSession(): Promise<AgentSession> {
   const authStorage = AuthStorage.create();
   const modelRegistry = new ModelRegistry(authStorage);
 
+  const available = await modelRegistry.getAvailable();
+  const model = available[0];
+  if (!model) {
+    throw new Error(
+      "No model available. Configure an Ollama model in Settings > Pi Agent."
+    );
+  }
+  console.log(`[whatsapp-queue] Using model: ${model.id} (provider: ${model.provider})`);
+
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: PI_PROJECT_PATH,
+    appendSystemPromptOverride: (base) => buildAppendSections(base),
+  });
+  await resourceLoader.reload();
+
   const { session: s } = await createAgentSession({
     cwd: PI_PROJECT_PATH,
     tools: createCodingTools(PI_PROJECT_PATH),
     sessionManager: SessionManager.continueRecent(PI_PROJECT_PATH),
+    resourceLoader,
     authStorage,
     modelRegistry,
+    model,
   });
 
   session = s;
@@ -71,7 +90,6 @@ function sendPrompt(s: AgentSession, message: string): Promise<string> {
         clearTimeout(timer);
         unsubscribe();
 
-        // Check for errors in the last assistant message
         const messages = event.messages || [];
         const lastAssistant = messages.findLast((m: any) => m.role === "assistant");
         if (lastAssistant?.stopReason === "error" && lastAssistant?.errorMessage) {
@@ -146,7 +164,6 @@ async function processNext(): Promise<void> {
 
     const s = await ensureSession();
 
-    // Reset session on "reset" command
     if (msg.body.trim().toLowerCase() === "reset") {
       await s.newSession();
       await sendWhatsAppMessage(msg.chatJid, "Session reset.");

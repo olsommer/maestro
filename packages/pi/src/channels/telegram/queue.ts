@@ -2,6 +2,7 @@ import {
   AuthStorage,
   createAgentSession,
   createCodingTools,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   type AgentSession,
@@ -11,11 +12,12 @@ import {
   getNextQueuedTelegramMessage,
   updateTelegramMessage,
   telegramMessageExists,
-} from "./telegram-store.js";
+} from "./store.js";
 import {
   onTelegramMessage,
   sendTelegramMessage,
 } from "./telegram.js";
+import { buildAppendSections } from "../../system-prompt.js";
 
 let session: AgentSession | null = null;
 let isProcessing = false;
@@ -35,7 +37,6 @@ async function ensureSession(): Promise<AgentSession> {
   const authStorage = AuthStorage.create();
   const modelRegistry = new ModelRegistry(authStorage);
 
-  // Pick the first available model from the registry (populated from ~/.pi/agent/models.json)
   const available = await modelRegistry.getAvailable();
   const model = available[0];
   if (!model) {
@@ -45,10 +46,17 @@ async function ensureSession(): Promise<AgentSession> {
   }
   console.log(`[telegram-queue] Using model: ${model.id} (provider: ${model.provider})`);
 
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: PI_PROJECT_PATH,
+    appendSystemPromptOverride: (base) => buildAppendSections(base),
+  });
+  await resourceLoader.reload();
+
   const { session: s } = await createAgentSession({
     cwd: PI_PROJECT_PATH,
     tools: createCodingTools(PI_PROJECT_PATH),
     sessionManager: SessionManager.continueRecent(PI_PROJECT_PATH),
+    resourceLoader,
     authStorage,
     modelRegistry,
     model,
@@ -156,7 +164,6 @@ async function processNext(): Promise<void> {
 
     const s = await ensureSession();
 
-    // Reset session on "reset" command
     if (msg.body.trim().toLowerCase() === "reset") {
       await s.newSession();
       await sendTelegramMessage(msg.chatId, "Session reset.");

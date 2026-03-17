@@ -26,6 +26,10 @@ COPY packages/server/ packages/server/
 # Build wire protocol
 RUN cd packages/wire && pnpm exec tsc
 
+# Make setup script callable as "init"
+RUN chmod +x packages/server/scripts/setup.sh \
+ && ln -s /app/packages/server/scripts/setup.sh /usr/local/bin/init
+
 EXPOSE 4800
 
 ENV NODE_ENV=production

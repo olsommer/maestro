@@ -3,10 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import type { ProjectCreateInput } from "@maestro/wire";
 import {
-  createAgent,
   deleteAgent,
-  getAgent,
-  startAgent,
 } from "../agents/agent-manager.js";
 import { unregisterJob } from "../scheduler/scheduler.js";
 import { listAgentRecords } from "../state/agents.js";
@@ -114,85 +111,12 @@ function deriveLocalPath(
   return path.join(MANAGED_PROJECTS_DIR, slugify(githubRepo || name));
 }
 
-function buildBootstrapPrompt(project: ProjectRecord): string {
-  const repoLabel =
-    project.githubOwner && project.githubRepo
-      ? `${project.githubOwner}/${project.githubRepo}`
-      : project.repoUrl;
-
-  const steps = [
-    `You are provisioning the Maestro project "${project.name}".`,
-    `Work only inside ${project.localPath}.`,
-  ];
-
-  if (repoLabel) {
-    steps.push(
-      `If this directory is not already a git checkout, clone ${repoLabel} into the current directory.`,
-      project.githubOwner && project.githubRepo
-        ? [
-            "Do not require GitHub CLI.",
-            "If GITHUB_TOKEN is set, prefer `git clone \"https://x-access-token:${GITHUB_TOKEN}@github.com/"
-              + `${project.githubOwner}/${project.githubRepo}.git\" .` + "`.",
-            "If GH_TOKEN is set instead, use the same command with `${GH_TOKEN}`.",
-            `If no token is available, fall back to \`git clone '${project.repoUrl}' .\`.`,
-            "Do not print any token values in logs or summaries.",
-          ].join(" ")
-        : `Use \`git clone '${project.repoUrl}' .\`.`
-    );
-  } else {
-    steps.push(
-      "Initialize the directory for a new repository, inspect the workspace, and wait for further instructions."
-    );
-  }
-
-  if (project.defaultBranch) {
-    steps.push(
-      `If the repository already exists, make sure ${project.defaultBranch} is checked out.`
-    );
-  }
-
-  steps.push("Print a concise setup summary and then wait for more input.");
-  return steps.join("\n");
-}
-
-export async function refreshProjectState(project: ProjectRecord): Promise<ProjectRecord> {
-  if (project.status !== "bootstrapping" || !project.bootstrapAgentId) {
-    return project;
-  }
-
-  const bootstrapAgent = await getAgent(project.bootstrapAgentId);
-  if (!bootstrapAgent) {
-    return updateProjectRecord(project.id, {
-      status: "error",
-      bootstrapError: "Bootstrap agent no longer exists",
-    });
-  }
-
-  if (bootstrapAgent.status === "completed") {
-    return updateProjectRecord(project.id, {
-      status: "ready",
-      bootstrapError: null,
-    });
-  }
-
-  if (bootstrapAgent.status === "error") {
-    return updateProjectRecord(project.id, {
-      status: "error",
-      bootstrapError: bootstrapAgent.error ?? "Bootstrap agent failed",
-    });
-  }
-
-  return project;
-}
-
 export async function listProjects(): Promise<ProjectRecord[]> {
-  return Promise.all(listProjectRecords().map((project) => refreshProjectState(project)));
+  return listProjectRecords();
 }
 
 export async function getProjectById(projectId: string): Promise<ProjectRecord | null> {
-  const project = getProjectRecordById(projectId);
-  if (!project) return null;
-  return refreshProjectState(project);
+  return getProjectRecordById(projectId);
 }
 
 export async function resolveProjectContext(input: {
@@ -270,11 +194,10 @@ export async function createProject(
   const repo = parseGitHubRepo(input.repoUrl, input.githubOwner, input.githubRepo);
   const slug = getUniqueSlug(input.name);
   const localPath = deriveLocalPath(input.localPath, input.name, repo.githubRepo);
-  const shouldBootstrap = Boolean(input.bootstrap && repo.repoUrl);
 
   fs.mkdirSync(localPath, { recursive: true });
 
-  let project = createProjectRecord({
+  const project = createProjectRecord({
     name: input.name.trim(),
     slug,
     repoUrl: repo.repoUrl,
@@ -282,30 +205,10 @@ export async function createProject(
     githubRepo: repo.githubRepo,
     defaultBranch: input.defaultBranch?.trim() || null,
     localPath,
-    status: shouldBootstrap ? "bootstrapping" : "ready",
-    bootstrapAgentId: null,
-    bootstrapError: null,
+    status: "ready",
     lastSyncedAt: null,
     lastSyncError: null,
   });
-
-  if (shouldBootstrap) {
-    const bootstrapAgent = await createAgent({
-      name: `bootstrap-${project.slug}`,
-      provider: input.provider,
-      model: input.model,
-      projectId: project.id,
-      projectPath: localPath,
-      skipPermissions: true,
-    });
-
-    await startAgent(bootstrapAgent.id, buildBootstrapPrompt(project), input.model);
-
-    project = updateProjectRecord(project.id, {
-      bootstrapAgentId: bootstrapAgent.id,
-      bootstrapError: null,
-    });
-  }
 
   if (input.syncIssues && project.githubOwner && project.githubRepo) {
     try {

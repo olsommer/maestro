@@ -5,8 +5,8 @@ import {
   getTelegramStatus,
   sendTelegramMessage,
 } from "./telegram.js";
-import { startTelegramQueue } from "./telegram-queue.js";
-import { listTelegramMessages } from "./telegram-store.js";
+import { startTelegramQueue } from "./queue.js";
+import { listTelegramMessages } from "./store.js";
 import type { Server as SocketServer } from "socket.io";
 
 export async function registerTelegramRoutes(
@@ -14,12 +14,10 @@ export async function registerTelegramRoutes(
   io: SocketServer,
   getToken?: () => string
 ) {
-  // Get connection status
   app.get("/api/integrations/telegram", async () => {
     return getTelegramStatus();
   });
 
-  // Connect (start bot polling)
   app.post("/api/integrations/telegram/connect", async (_req, reply) => {
     try {
       const token = getToken?.() || undefined;
@@ -36,13 +34,11 @@ export async function registerTelegramRoutes(
     }
   });
 
-  // Disconnect
   app.delete("/api/integrations/telegram/connect", async () => {
     await stopTelegram();
     return { ok: true };
   });
 
-  // Message history
   app.get("/api/integrations/telegram/messages", async (req) => {
     const query = req.query as { chatId?: string; limit?: string };
     const chatId = query.chatId || undefined;
@@ -50,7 +46,6 @@ export async function registerTelegramRoutes(
     return listTelegramMessages(chatId, limit);
   });
 
-  // Manual send (for testing)
   app.post("/api/integrations/telegram/send", async (req, reply) => {
     try {
       const body = req.body as { chatId: string; text: string };

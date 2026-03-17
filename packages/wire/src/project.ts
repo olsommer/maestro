@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AgentModel, AgentProvider } from "./agent.js";
 
-export const ProjectStatus = z.enum(["ready", "bootstrapping", "error"]);
+export const ProjectStatus = z.enum(["ready", "error"]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
 
 export const ProjectCreateInput = z.object({
@@ -11,7 +11,7 @@ export const ProjectCreateInput = z.object({
   githubRepo: z.string().optional(),
   defaultBranch: z.string().optional(),
   localPath: z.string().optional(),
-  bootstrap: z.boolean().default(true),
+
   syncIssues: z.boolean().default(false),
   provider: AgentProvider.default("claude"),
   model: AgentModel.optional(),
@@ -28,8 +28,7 @@ export const ProjectInfo = z.object({
   defaultBranch: z.string().nullable(),
   localPath: z.string(),
   status: ProjectStatus,
-  bootstrapAgentId: z.string().nullable(),
-  bootstrapError: z.string().nullable(),
+
   lastSyncedAt: z.string().nullable(),
   lastSyncError: z.string().nullable(),
   createdAt: z.string(),

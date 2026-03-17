@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus } from "@/lib/api";
+import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import {
   FieldLabel,
   FieldSeparator,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -69,6 +70,555 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function GitHubConnectionCard() {
+  const [status, setStatus] = useState<GitHubConnectionStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tokenInput, setTokenInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState("");
+  const [deviceAuth, setDeviceAuth] = useState<{ code: string; url: string } | null>(null);
+  const [waitingForDevice, setWaitingForDevice] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.getGitHubIntegration()
+      .then((res) => setStatus(res.github))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleConnectWithToken() {
+    if (!tokenInput.trim()) return;
+    setConnecting(true);
+    setError("");
+    try {
+      const res = await api.connectGitHub(tokenInput.trim());
+      setStatus(res.github);
+      setTokenInput("");
+      window.dispatchEvent(new Event("maestro:github-status-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleDeviceAuth() {
+    setConnecting(true);
+    setError("");
+    setDeviceAuth(null);
+    try {
+      const result = await api.startGitHubDeviceAuth();
+      setDeviceAuth(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start device auth");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleCompleteDeviceAuth() {
+    setWaitingForDevice(true);
+    setError("");
+    try {
+      const res = await api.completeGitHubDeviceAuth();
+      setStatus(res.github);
+      setDeviceAuth(null);
+      window.dispatchEvent(new Event("maestro:github-status-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Auth not completed yet. Open the link and enter the code, then try again.");
+    } finally {
+      setWaitingForDevice(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    try {
+      const res = await api.disconnectGitHub();
+      setStatus(res.github);
+      window.dispatchEvent(new Event("maestro:github-status-changed"));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function handleCopyCode(code: string) {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  if (loading) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <GithubIcon className="size-4" />
+          GitHub
+        </CardTitle>
+        <CardDescription>
+          {status?.connected
+            ? `Connected as ${status.login}${status.source === "env" ? " (via environment)" : ""}`
+            : "Connect to GitHub for issue sync and automations."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {status?.connected ? (
+          <>
+            <FieldGroup>
+              <Field orientation="horizontal">
+                <FieldLabel>Account</FieldLabel>
+                <FieldContent className="items-end">
+                  <span className="text-sm">{status.name ?? status.login}</span>
+                </FieldContent>
+              </Field>
+              {status.scopes.length > 0 && (
+                <>
+                  <FieldSeparator />
+                  <Field orientation="horizontal">
+                    <FieldLabel>Scopes</FieldLabel>
+                    <FieldContent className="items-end">
+                      <span className="font-mono text-xs">{status.scopes.join(", ")}</span>
+                    </FieldContent>
+                  </Field>
+                </>
+              )}
+              <FieldSeparator />
+              <Field orientation="horizontal">
+                <FieldLabel>Source</FieldLabel>
+                <FieldContent className="items-end">
+                  <Badge variant="secondary">{status.source === "env" ? "Environment" : "Stored"}</Badge>
+                </FieldContent>
+              </Field>
+            </FieldGroup>
+            {status.canDisconnect && (
+              <Button variant="outline" onClick={() => void handleDisconnect()}>
+                <UnlinkIcon className="mr-2 size-4" />
+                Disconnect
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            {deviceAuth ? (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-md border p-4 text-center">
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    Copy this code and enter it on GitHub:
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-lg font-bold tracking-widest transition-colors hover:bg-muted"
+                    onClick={() => handleCopyCode(deviceAuth.code)}
+                  >
+                    {deviceAuth.code}
+                    {copied ? (
+                      <CheckCircleIcon className="size-4 text-green-500" />
+                    ) : (
+                      <CopyIcon className="size-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    variant="outline"
+                    onClick={() => window.open(deviceAuth.url, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLinkIcon className="mr-2 size-4" />
+                    Open GitHub
+                  </Button>
+                  <Button
+                    disabled={waitingForDevice}
+                    onClick={() => void handleCompleteDeviceAuth()}
+                  >
+                    {waitingForDevice ? (
+                      <LoaderIcon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <CheckCircleIcon className="mr-2 size-4" />
+                    )}
+                    I've entered the code
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <Button
+                  variant="outline"
+                  disabled={connecting}
+                  onClick={() => void handleDeviceAuth()}
+                >
+                  {connecting ? (
+                    <LoaderIcon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <GithubIcon className="mr-2 size-4" />
+                  )}
+                  Sign in with GitHub
+                </Button>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-px flex-1 bg-border" />
+                  or paste a token
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="ghp_..."
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleConnectWithToken();
+                    }}
+                  />
+                  <Button
+                    disabled={connecting || !tokenInput.trim()}
+                    onClick={() => void handleConnectWithToken()}
+                  >
+                    Connect
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <TriangleAlertIcon />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClaudeConnectionCard() {
+  const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [setupUrl, setSetupUrl] = useState<string | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api.getClaudeAuthStatus()
+      .then(setStatus)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleStartSetup() {
+    setConnecting(true);
+    setError("");
+    setSetupUrl(null);
+    try {
+      const result = await api.startClaudeSetupToken();
+      setSetupUrl(result.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start setup");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleSubmitToken() {
+    if (!tokenInput.trim()) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await api.completeClaudeSetupToken(tokenInput.trim());
+      setStatus(result);
+      setSetupUrl(null);
+      setTokenInput("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to complete setup");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) return null;
+
+  if (status && !status.installed) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Claude Code</CardTitle>
+          <CardDescription>Claude Code CLI is not installed.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Claude Code</CardTitle>
+        <CardDescription>
+          {status?.loggedIn
+            ? `Connected as ${status.email ?? "unknown"}${status.orgName ? ` (${status.orgName})` : ""}`
+            : "Connect to Claude Code for AI-powered agents."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {status?.loggedIn ? (
+          <FieldGroup>
+            <Field orientation="horizontal">
+              <FieldLabel>Account</FieldLabel>
+              <FieldContent className="items-end">
+                <span className="text-sm">{status.email}</span>
+              </FieldContent>
+            </Field>
+            {status.authMethod && (
+              <>
+                <FieldSeparator />
+                <Field orientation="horizontal">
+                  <FieldLabel>Auth method</FieldLabel>
+                  <FieldContent className="items-end">
+                    <Badge variant="secondary">{status.authMethod}</Badge>
+                  </FieldContent>
+                </Field>
+              </>
+            )}
+          </FieldGroup>
+        ) : (
+          <>
+            {setupUrl ? (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-md border p-4 text-center">
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    Open the link below, sign in, and paste the token back here:
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mb-3"
+                    onClick={() => window.open(setupUrl, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLinkIcon className="mr-2 size-4" />
+                    Open Claude Auth
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Paste your token here..."
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSubmitToken();
+                    }}
+                  />
+                  <Button
+                    disabled={submitting || !tokenInput.trim()}
+                    onClick={() => void handleSubmitToken()}
+                  >
+                    {submitting ? (
+                      <LoaderIcon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <CheckCircleIcon className="mr-2 size-4" />
+                    )}
+                    Connect
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                disabled={connecting}
+                onClick={() => void handleStartSetup()}
+              >
+                {connecting ? (
+                  <LoaderIcon className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <ExternalLinkIcon className="mr-2 size-4" />
+                )}
+                Sign in to Claude
+              </Button>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <TriangleAlertIcon />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CodexConnectionCard() {
+  const [status, setStatus] = useState<CodexAuthStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [deviceAuth, setDeviceAuth] = useState<{ code: string; url: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api.getCodexAuthStatus()
+      .then(setStatus)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDeviceAuth() {
+    setConnecting(true);
+    setError("");
+    setDeviceAuth(null);
+    try {
+      const result = await api.startCodexDeviceAuth();
+      setDeviceAuth(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start device auth");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleConnectApiKey() {
+    if (!apiKeyInput.trim()) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await api.connectCodexWithApiKey(apiKeyInput.trim());
+      setStatus(result);
+      setApiKeyInput("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleCopyCode(code: string) {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  if (loading) return null;
+
+  if (status && !status.installed) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Codex</CardTitle>
+          <CardDescription>Codex CLI is not installed.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Codex</CardTitle>
+        <CardDescription>
+          {status?.loggedIn
+            ? status.detail ?? "Connected"
+            : "Connect to Codex for OpenAI-powered agents."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {status?.loggedIn ? (
+          <FieldGroup>
+            <Field orientation="horizontal">
+              <FieldLabel>Status</FieldLabel>
+              <FieldContent className="items-end">
+                <Badge variant="secondary">Connected</Badge>
+              </FieldContent>
+            </Field>
+          </FieldGroup>
+        ) : (
+          <>
+            {deviceAuth ? (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-md border p-4 text-center">
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    Copy this code and enter it on OpenAI:
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-lg font-bold tracking-widest transition-colors hover:bg-muted"
+                    onClick={() => handleCopyCode(deviceAuth.code)}
+                  >
+                    {deviceAuth.code}
+                    {copied ? (
+                      <CheckCircleIcon className="size-4 text-green-500" />
+                    ) : (
+                      <CopyIcon className="size-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(deviceAuth.url, "_blank", "noopener,noreferrer")}
+                >
+                  <ExternalLinkIcon className="mr-2 size-4" />
+                  Open OpenAI
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <Button
+                  variant="outline"
+                  disabled={connecting}
+                  onClick={() => void handleDeviceAuth()}
+                >
+                  {connecting ? (
+                    <LoaderIcon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <ExternalLinkIcon className="mr-2 size-4" />
+                  )}
+                  Sign in with OpenAI
+                </Button>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-px flex-1 bg-border" />
+                  or paste an API key
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="sk-..."
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleConnectApiKey();
+                    }}
+                  />
+                  <Button
+                    disabled={submitting || !apiKeyInput.trim()}
+                    onClick={() => void handleConnectApiKey()}
+                  >
+                    Connect
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <TriangleAlertIcon />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function PiAgentCard({ settings, onSettingsUpdate }: {
@@ -585,7 +1135,7 @@ function SettingsView() {
               <div>
                 <CardTitle className="text-sm">CLI Updates</CardTitle>
                 <CardDescription>
-                  Manage automatic updates for Claude Code and Codex CLI tools.
+                  Manage automatic updates for Claude Code, Codex, and GitHub CLI tools.
                 </CardDescription>
               </div>
               {updateStatus?.updating && (
@@ -663,6 +1213,20 @@ function SettingsView() {
                       )}
                     </FieldContent>
                   </Field>
+                  <FieldSeparator />
+                  <Field orientation="horizontal">
+                    <FieldLabel>GitHub CLI</FieldLabel>
+                    <FieldContent className="items-end">
+                      <span className="font-mono text-xs">
+                        {updateStatus.gh.currentVersion ?? "Not installed"}
+                      </span>
+                      {updateStatus.gh.updateAvailable && (
+                        <Badge variant="secondary" className="text-xs">
+                          {updateStatus.gh.latestVersion} available
+                        </Badge>
+                      )}
+                    </FieldContent>
+                  </Field>
                   {updateStatus.lastCheckAt && (
                     <>
                       <FieldSeparator />
@@ -713,6 +1277,10 @@ function SettingsView() {
               </div>
             </CardContent>
           </Card>
+
+          <ClaudeConnectionCard />
+          <CodexConnectionCard />
+          <GitHubConnectionCard />
 
           <PiAgentCard settings={settings} onSettingsUpdate={setSettings} />
           <TelegramCard settings={settings} onSettingsUpdate={setSettings} />
