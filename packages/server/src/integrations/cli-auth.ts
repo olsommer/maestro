@@ -1,4 +1,5 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import * as pty from "node-pty";
 
 const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
 
@@ -60,69 +61,52 @@ export interface ClaudeSetupTokenResult {
   url: string;
 }
 
-let activeClaudeAuth: { abort: () => void; child: ReturnType<typeof spawn> } | null = null;
+let activeClaudePty: pty.IPty | null = null;
 
 export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
-  if (activeClaudeAuth) {
-    activeClaudeAuth.abort();
-    activeClaudeAuth = null;
+  if (activeClaudePty) {
+    activeClaudePty.kill();
+    activeClaudePty = null;
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["setup-token"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+    const proc = pty.spawn("claude", ["setup-token"], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 30,
+      env: process.env as Record<string, string>,
     });
 
+    activeClaudePty = proc;
     let output = "";
     let resolved = false;
 
-    const cleanup = () => {
-      activeClaudeAuth = null;
-    };
-
-    activeClaudeAuth = {
-      child,
-      abort: () => {
-        child.kill();
-        cleanup();
-      },
-    };
-
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString();
-
-      // claude setup-token prints ASCII art, ANSI escapes, then a URL.
-      // Strip escape codes before matching.
+    proc.onData((data) => {
+      output += data;
       const clean = stripAnsi(output);
+
+      // claude setup-token prints ASCII art, then:
+      //   "Browser didn't open? Use the url below to sign in (c to copy)"
+      //   https://claude.ai/oauth/authorize?...
+      //   "Paste code here if prompted >"
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
         resolve({ url: urlMatch[1] });
       }
-    };
-
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
-
-    child.on("close", (exitCode) => {
-      cleanup();
-      if (!resolved) {
-        reject(new Error(output || `claude setup-token exited with code ${exitCode}`));
-      }
     });
 
-    child.on("error", (err) => {
-      cleanup();
+    proc.onExit(({ exitCode }) => {
+      if (activeClaudePty === proc) activeClaudePty = null;
       if (!resolved) {
-        reject(err);
+        reject(new Error(stripAnsi(output) || `claude setup-token exited with code ${exitCode}`));
       }
     });
 
     setTimeout(() => {
       if (!resolved) {
-        child.kill();
-        cleanup();
+        proc.kill();
+        if (activeClaudePty === proc) activeClaudePty = null;
         reject(new Error("Claude setup-token timed out"));
       }
     }, 5 * 60 * 1000);
@@ -130,30 +114,29 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
 }
 
 export async function completeClaudeSetupToken(token: string): Promise<ClaudeAuthStatus> {
-  if (!activeClaudeAuth) {
+  if (!activeClaudePty) {
     throw new Error("No active Claude setup-token session");
   }
 
-  const { child } = activeClaudeAuth;
+  const proc = activeClaudePty;
 
-  // Write the token to stdin of the waiting claude setup-token process
-  child.stdin?.write(token + "\n");
-  child.stdin?.end();
+  // Write the token to the PTY — claude is waiting at "Paste code here if prompted >"
+  proc.write(token + "\r");
 
   // Wait for the process to exit (up to 10s)
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(() => {
-      child.kill();
+      proc.kill();
       resolve();
     }, 10_000);
 
-    child.on("close", () => {
+    proc.onExit(() => {
       clearTimeout(timeout);
       resolve();
     });
   });
 
-  activeClaudeAuth = null;
+  activeClaudePty = null;
   return getClaudeAuthStatus();
 }
 
@@ -195,44 +178,36 @@ export interface DeviceAuthResult {
   url: string;
 }
 
-let activeCodexAuth: { abort: () => void } | null = null;
+let activeCodexPty: pty.IPty | null = null;
 
 export function startCodexDeviceAuth(): Promise<DeviceAuthResult> {
-  if (activeCodexAuth) {
-    activeCodexAuth.abort();
-    activeCodexAuth = null;
+  if (activeCodexPty) {
+    activeCodexPty.kill();
+    activeCodexPty = null;
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn("codex", ["login", "--device-auth"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+    const proc = pty.spawn("codex", ["login", "--device-auth"], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 30,
+      env: process.env as Record<string, string>,
     });
 
+    activeCodexPty = proc;
     let output = "";
     let resolved = false;
 
-    const cleanup = () => {
-      activeCodexAuth = null;
-    };
-
-    activeCodexAuth = {
-      abort: () => {
-        child.kill();
-        cleanup();
-      },
-    };
-
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString();
+    proc.onData((data) => {
+      output += data;
       const clean = stripAnsi(output);
 
       // Codex outputs:
-      //   "1. Open this link in your browser..."
+      //   "1. Open this link in your browser and sign in to your account"
       //   "   https://auth.openai.com/codex/device"
-      //   "2. Enter this one-time code..."
+      //   ""
+      //   "2. Enter this one-time code (expires in 15 minutes)"
       //   "   1ASV-BFRAY"
-      // The code is on its own line, indented with spaces.
       const urlMatch = clean.match(/(https:\/\/auth\.openai\.com\/[^\s"'<>]+)/);
       const codeMatch = clean.match(/one-time code[^\n]*\n\s+([A-Z0-9]+-[A-Z0-9]+)/i);
 
@@ -240,29 +215,19 @@ export function startCodexDeviceAuth(): Promise<DeviceAuthResult> {
         resolved = true;
         resolve({ code: codeMatch[1], url: urlMatch[1] });
       }
-    };
-
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
-
-    child.on("close", (exitCode) => {
-      cleanup();
-      if (!resolved) {
-        reject(new Error(output || `codex login exited with code ${exitCode}`));
-      }
     });
 
-    child.on("error", (err) => {
-      cleanup();
+    proc.onExit(({ exitCode }) => {
+      if (activeCodexPty === proc) activeCodexPty = null;
       if (!resolved) {
-        reject(err);
+        reject(new Error(stripAnsi(output) || `codex login exited with code ${exitCode}`));
       }
     });
 
     setTimeout(() => {
       if (!resolved) {
-        child.kill();
-        cleanup();
+        proc.kill();
+        if (activeCodexPty === proc) activeCodexPty = null;
         reject(new Error("Codex device auth timed out"));
       }
     }, 5 * 60 * 1000);

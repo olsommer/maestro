@@ -1,7 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import * as pty from "node-pty";
 import { ensureDataDir, nowIso, readJsonFile, writeJsonFile } from "../state/files.js";
+
+const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
 
 const GITHUB_CONNECTION_PATH = path.join(ensureDataDir(), "github-connection.json");
 
@@ -307,40 +310,35 @@ export interface DeviceAuthResult {
   url: string;
 }
 
-let activeDeviceAuth: { abort: () => void } | null = null;
+let activeGhPty: pty.IPty | null = null;
 
 export function startGhDeviceAuth(): Promise<DeviceAuthResult> {
-  if (activeDeviceAuth) {
-    activeDeviceAuth.abort();
-    activeDeviceAuth = null;
+  if (activeGhPty) {
+    activeGhPty.kill();
+    activeGhPty = null;
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", ["auth", "login", "-w"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+    const proc = pty.spawn("gh", ["auth", "login", "-w"], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 30,
+      env: process.env as Record<string, string>,
     });
 
-    let stderr = "";
+    activeGhPty = proc;
+    let output = "";
     let resolved = false;
 
-    const cleanup = () => {
-      activeDeviceAuth = null;
-    };
+    proc.onData((data) => {
+      output += data;
+      const clean = output.replace(ANSI_RE, "");
 
-    activeDeviceAuth = {
-      abort: () => {
-        child.kill();
-        cleanup();
-      },
-    };
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-
-      // gh outputs the code and URL to stderr
-      const codeMatch = stderr.match(/one-time code:\s*([A-Z0-9-]+)/i);
-      const urlMatch = stderr.match(/(https:\/\/github\.com\/login\/device)/);
+      // gh outputs:
+      //   "! First copy your one-time code: A933-423D"
+      //   "Open this URL to continue in your web browser: https://github.com/login/device"
+      const codeMatch = clean.match(/one-time code:\s*([A-Z0-9-]+)/i);
+      const urlMatch = clean.match(/(https:\/\/github\.com\/login\/device)/);
 
       if (codeMatch && urlMatch && !resolved) {
         resolved = true;
@@ -348,25 +346,17 @@ export function startGhDeviceAuth(): Promise<DeviceAuthResult> {
       }
     });
 
-    child.on("close", (exitCode) => {
-      cleanup();
+    proc.onExit(({ exitCode }) => {
+      if (activeGhPty === proc) activeGhPty = null;
       if (!resolved) {
-        reject(new Error(stderr || `gh auth login exited with code ${exitCode}`));
+        reject(new Error(output.replace(ANSI_RE, "") || `gh auth login exited with code ${exitCode}`));
       }
     });
 
-    child.on("error", (err) => {
-      cleanup();
-      if (!resolved) {
-        reject(err);
-      }
-    });
-
-    // Timeout after 5 minutes
     setTimeout(() => {
       if (!resolved) {
-        child.kill();
-        cleanup();
+        proc.kill();
+        if (activeGhPty === proc) activeGhPty = null;
         reject(new Error("Device auth timed out"));
       }
     }, 5 * 60 * 1000);
