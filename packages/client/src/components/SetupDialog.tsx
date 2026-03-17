@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import "@xterm/xterm/css/xterm.css";
 import {
   Dialog,
   DialogContent,
@@ -38,24 +37,20 @@ export function SetupDialog({
 
     let mounted = true;
 
-    async function init() {
-      const { Terminal } = await import("@xterm/xterm");
-      const { FitAddon } = await import("@xterm/addon-fit");
-      const { WebLinksAddon } = await import("@xterm/addon-web-links");
+    async function setup() {
+      const { init, Terminal, FitAddon } = await import("ghostty-web");
+
+      await init();
 
       if (!mounted || !containerEl) return;
 
       const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon((_event, uri) => {
-        window.open(uri, "_blank");
-      });
 
       const term = new Terminal({
         theme: {
           background: "#09090b",
           foreground: "#fafafa",
           cursor: "#fafafa",
-          selectionBackground: "#27272a",
         },
         fontFamily: "monospace",
         fontSize: 13,
@@ -63,7 +58,6 @@ export function SetupDialog({
       });
 
       term.loadAddon(fitAddon);
-      term.loadAddon(webLinksAddon);
       term.open(containerEl);
 
       // Wait for the dialog open animation to finish so the container
@@ -71,6 +65,7 @@ export function SetupDialog({
       await new Promise((r) => setTimeout(r, 300));
       if (!mounted) return;
       fitAddon.fit();
+      fitAddon.observeResize();
 
       const socket = getSocket();
 
@@ -101,7 +96,7 @@ export function SetupDialog({
       socket.on("setup:complete", handleSetupComplete);
 
       // Forward input
-      term.onData((data) => {
+      term.onData((data: string) => {
         socket.emit("setup:input", { data });
       });
 
@@ -111,20 +106,16 @@ export function SetupDialog({
         term.focus();
       };
 
-      // Subscribe and start PTY in one step — server auto-starts
-      // the PTY with these dimensions when no PTY is running yet
+      // Subscribe and start PTY
       fitAddon.fit();
       socket.emit("setup:subscribe", { cols: term.cols, rows: term.rows });
 
       // Handle resize
-      const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit();
-        socket.emit("setup:resize", { cols: term.cols, rows: term.rows });
+      term.onResize((size: { cols: number; rows: number }) => {
+        socket.emit("setup:resize", { cols: size.cols, rows: size.rows });
       });
-      resizeObserver.observe(containerEl);
 
       return () => {
-        resizeObserver.disconnect();
         socket.off("setup:output", handleOutput);
         socket.off("setup:url", handleUrl);
         socket.off("setup:clear-url", handleClearUrl);
@@ -135,7 +126,7 @@ export function SetupDialog({
       };
     }
 
-    const cleanup = init();
+    const cleanup = setup();
 
     return () => {
       mounted = false;

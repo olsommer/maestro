@@ -7,20 +7,20 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { ClipboardPasteIcon, KeyboardIcon, MicIcon, TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
+import type { Terminal as GhosttyTerminal } from "ghostty-web";
 
 function MobileTerminalToolbar({
   agentId,
   socketRef,
-  termRef,
   onShowText,
 }: {
   agentId: string;
   socketRef: React.RefObject<Socket | null>;
-  termRef: React.RefObject<import("@xterm/xterm").Terminal | null>;
   onShowText: () => void;
 }) {
   const isMobile = useIsMobile();
   const [listening, setListening] = useState(false);
+
   if (!isMobile) return null;
 
   const send = (data: string) => {
@@ -125,14 +125,13 @@ function MobileTerminalToolbar({
   );
 }
 
-function extractBufferText(term: import("@xterm/xterm").Terminal): string {
+function extractBufferText(term: GhosttyTerminal): string {
   const buffer = term.buffer.active;
   const lines: string[] = [];
   for (let i = 0; i < buffer.length; i++) {
     const line = buffer.getLine(i);
     if (line) lines.push(line.translateToString(true));
   }
-  // Trim trailing empty lines
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
     lines.pop();
   }
@@ -141,45 +140,38 @@ function extractBufferText(term: import("@xterm/xterm").Terminal): string {
 
 export function Terminal({ agentId, isActive }: { agentId: string; isActive?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
-  const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
+  const termRef = useRef<GhosttyTerminal | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    async function init() {
-      const { Terminal } = await import("@xterm/xterm");
-      const { FitAddon } = await import("@xterm/addon-fit");
-      const { WebLinksAddon } = await import("@xterm/addon-web-links");
+    async function setup() {
+      const { init, Terminal, FitAddon } = await import("ghostty-web");
+
+      await init();
 
       if (!mounted || !containerRef.current) return;
 
       const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon((_event, uri) => {
-        window.open(uri, "_blank", "noopener,noreferrer");
-      });
       const term = new Terminal({
         theme: {
           background: "#09090b",
           foreground: "#fafafa",
           cursor: "#fafafa",
-          selectionBackground: "#27272a",
         },
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: window.innerWidth < 768 ? 10 : 13,
         cursorBlink: true,
-        convertEol: true,
       });
 
       term.loadAddon(fitAddon);
-      term.loadAddon(webLinksAddon);
       term.open(containerRef.current);
       fitAddon.fit();
+      fitAddon.observeResize();
 
       termRef.current = term;
-      fitRef.current = fitAddon;
 
       // Load existing output buffer
       try {
@@ -196,11 +188,20 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       socketRef.current = socket;
       socket.emit("agent:subscribe", { agentId });
 
-      // Send initial dimensions so the PTY matches the actual terminal size
+      // Send initial dimensions
       socket.emit("agent:resize", {
         agentId,
         cols: term.cols,
         rows: term.rows,
+      });
+
+      // Handle terminal resize
+      term.onResize((size: { cols: number; rows: number }) => {
+        socket.emit("agent:resize", {
+          agentId,
+          cols: size.cols,
+          rows: size.rows,
+        });
       });
 
       const handleOutput = (data: { agentId: string; data: string }) => {
@@ -211,23 +212,11 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       socket.on("agent:output", handleOutput);
 
       // Send keystrokes to server
-      term.onData((data) => {
+      term.onData((data: string) => {
         socket.emit("agent:input", { agentId, data });
       });
 
-      // Handle resize
-      const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit();
-        socket.emit("agent:resize", {
-          agentId,
-          cols: term.cols,
-          rows: term.rows,
-        });
-      });
-      resizeObserver.observe(containerRef.current);
-
       return () => {
-        resizeObserver.disconnect();
         socket.off("agent:output", handleOutput);
         socket.emit("agent:unsubscribe", { agentId });
         term.dispose();
@@ -235,7 +224,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       };
     }
 
-    const cleanup = init();
+    const cleanup = setup();
 
     return () => {
       mounted = false;
@@ -250,39 +239,32 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
   };
 
   return (
-    <>
-      <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css"
-      />
-      <div className="relative flex h-full min-h-0 flex-col">
-        <div ref={containerRef} className="w-full min-h-0 flex-1" />
+    <div className="relative flex h-full min-h-0 flex-col">
+      <div ref={containerRef} className="w-full min-h-0 flex-1" />
 
-        {textOverlay !== null && (
-          <div className="absolute inset-0 z-10 flex flex-col bg-background">
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                Select text to copy
-              </span>
-              <Button size="xs" variant="ghost" onClick={() => setTextOverlay(null)}>
-                <XIcon className="size-3.5" />
-              </Button>
-            </div>
-            <pre className="flex-1 overflow-auto whitespace-pre-wrap break-all p-3 select-text font-mono text-foreground" style={{ fontSize: "9px", lineHeight: "1.4" }}>
-              {textOverlay}
-            </pre>
+      {textOverlay !== null && (
+        <div className="absolute inset-0 z-10 flex flex-col bg-background">
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              Select text to copy
+            </span>
+            <Button size="xs" variant="ghost" onClick={() => setTextOverlay(null)}>
+              <XIcon className="size-3.5" />
+            </Button>
           </div>
-        )}
+          <pre className="flex-1 overflow-auto whitespace-pre-wrap break-all p-3 select-text font-mono text-foreground" style={{ fontSize: "9px", lineHeight: "1.4" }}>
+            {textOverlay}
+          </pre>
+        </div>
+      )}
 
-        {isActive && (
-          <MobileTerminalToolbar
-            agentId={agentId}
-            socketRef={socketRef}
-            termRef={termRef}
-            onShowText={handleShowText}
-          />
-        )}
-      </div>
-    </>
+      {isActive && (
+        <MobileTerminalToolbar
+          agentId={agentId}
+          socketRef={socketRef}
+          onShowText={handleShowText}
+        />
+      )}
+    </div>
   );
 }
