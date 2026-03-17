@@ -84,12 +84,21 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
   }
 
   return new Promise((resolve, reject) => {
-    const proc = pty.spawn("claude", [], {
-      name: "xterm-256color",
-      cols: 1000,
-      rows: 30,
-      env: process.env as Record<string, string>,
-    });
+    console.log("[claude-login] Spawning claude PTY...");
+    let proc: pty.IPty;
+    try {
+      proc = pty.spawn("claude", [], {
+        name: "xterm-256color",
+        cols: 1000,
+        rows: 30,
+        env: process.env as Record<string, string>,
+      });
+      console.log("[claude-login] PTY spawned successfully, pid:", proc.pid);
+    } catch (err) {
+      console.error("[claude-login] Failed to spawn PTY:", err);
+      reject(new Error(`Failed to spawn claude: ${err}`));
+      return;
+    }
 
     const session = {
       proc,
@@ -107,9 +116,13 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
       session.output += data;
       const clean = stripAnsi(session.output);
 
+      console.log("[claude-login] chunk:", JSON.stringify(data).slice(0, 300));
+      console.log("[claude-login] state: sentLogin=%s sentOption=%s resolved=%s", sentLogin, sentOption, resolved);
+
       // Step 1: Wait for the input prompt (❯), then send /login
       if (!sentLogin && /❯/.test(clean)) {
         sentLogin = true;
+        console.log("[claude-login] Sending /login");
         proc.write("/login\r");
         return;
       }
@@ -117,6 +130,7 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
       // Step 2: Wait for the login method selection, then send "1" for subscription
       if (sentLogin && !sentOption && /Select login method/i.test(clean)) {
         sentOption = true;
+        console.log("[claude-login] Sending option 1");
         proc.write("1");
         return;
       }
@@ -124,13 +138,20 @@ export function startClaudeLogin(): Promise<ClaudeLoginResult> {
       // Step 3: Track when the "Paste code" prompt appears
       if (/paste\s*code\s*here/i.test(clean) || /Pastecodehereifprompted/i.test(clean)) {
         session.promptReady = true;
+        console.log("[claude-login] Paste prompt ready");
       }
 
       // Step 4: Extract the OAuth URL
       const urlMatch = clean.match(/(https:\/\/claude\.ai\/oauth\/authorize[^\s"'<>]+)/);
       if (urlMatch && !resolved) {
         resolved = true;
+        console.log("[claude-login] URL extracted:", urlMatch[1].slice(0, 80));
         resolve({ url: urlMatch[1] });
+      }
+
+      // Debug: show last 300 chars of clean output periodically
+      if (!resolved) {
+        console.log("[claude-login] clean tail:", clean.slice(-300));
       }
     });
 

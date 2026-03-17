@@ -16,8 +16,10 @@ export async function registerCliAuthRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/integrations/claude/setup-token/start", async (_req, reply) => {
+    console.log("[claude-route] POST /setup-token/start hit");
     try {
       const result = await startClaudeLogin();
+      console.log("[claude-route] startClaudeLogin resolved:", JSON.stringify(result));
       return result;
     } catch (error) {
       return reply.status(400).send({
