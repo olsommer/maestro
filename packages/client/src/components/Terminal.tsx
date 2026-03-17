@@ -55,7 +55,7 @@ function MobileTerminalToolbar({
       hiddenInputRef.current?.blur();
       setKeyboardOpen(false);
     } else {
-      hiddenInputRef.current?.focus();
+      hiddenInputRef.current?.focus({ preventScroll: true });
       setKeyboardOpen(true);
     }
   };
@@ -105,8 +105,9 @@ function MobileTerminalToolbar({
       </Button>
       <input
         ref={hiddenInputRef}
-        className="sr-only absolute bottom-0 left-0"
+        style={{ width: 0, height: 0, padding: 0, border: 0, opacity: 0, position: "absolute", bottom: 0, left: 0 }}
         aria-hidden
+        tabIndex={-1}
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
@@ -118,6 +119,10 @@ function MobileTerminalToolbar({
             send(value);
             (e.target as HTMLInputElement).value = "";
           }
+        }}
+        onFocus={() => {
+          // Prevent browser from scrolling to this input
+          window.scrollTo(0, 0);
         }}
         onBlur={() => setKeyboardOpen(false)}
       />
