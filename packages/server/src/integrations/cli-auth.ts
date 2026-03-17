@@ -97,6 +97,8 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       session.output += data;
       const clean = stripAnsi(session.output);
 
+      console.log("[claude-auth] chunk:", JSON.stringify(data).slice(0, 200));
+
       // Track when the "Paste code" prompt appears
       if (/Paste code here/i.test(clean)) {
         session.promptReady = true;
@@ -111,12 +113,14 @@ export function startClaudeSetupToken(): Promise<ClaudeSetupTokenResult> {
       if (urlMatch && !resolved) {
         resolved = true;
         console.log("[claude-auth] URL extracted, PTY still running");
+        console.log("[claude-auth] Full clean output so far:", clean.slice(-500));
         resolve({ url: urlMatch[1] });
       }
     });
 
     proc.onExit(({ exitCode }) => {
       console.log(`[claude-auth] PTY exited with code ${exitCode}`);
+      console.log("[claude-auth] Full output at exit:", stripAnsi(session.output));
       session.exited = true;
       if (activeClaudeSession === session) activeClaudeSession = null;
       if (!resolved) {
