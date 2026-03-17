@@ -53,6 +53,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
   const [customEnvText, setCustomEnvText] = useState("");
   const [prompt, setPrompt] = useState("");
   const [skipPermissions, setSkipPermissions] = useState(false);
+  const [disableSandbox, setDisableSandbox] = useState(false);
   const [useWorktree, setUseWorktree] = useState(false);
   const [worktreePath, setWorktreePath] = useState("");
   const [loading, setLoading] = useState(false);
@@ -126,6 +127,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
           : undefined,
         customEnv,
         skipPermissions,
+        disableSandbox,
         useWorktree,
         worktreePath: useWorktree ? worktreePath.trim() : undefined,
         prompt: prompt.trim() || undefined,
@@ -326,6 +328,23 @@ export function NewAgentDialog({ open, onClose }: Props) {
 
             <Field orientation="responsive">
               <FieldContent>
+                <FieldLabel htmlFor="disable-sandbox">Disable Sandbox</FieldLabel>
+                <FieldDescription>
+                  Run the agent without nsjail sandboxing, even if it&apos;s globally enabled.
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="disable-sandbox"
+                checked={disableSandbox}
+                onCheckedChange={(checked) => {
+                  setDisableSandbox(checked);
+                  if (checked) setSkipPermissions(false);
+                }}
+              />
+            </Field>
+
+            <Field orientation="responsive">
+              <FieldContent>
                 <FieldLabel htmlFor="skip-permissions">YOLO mode</FieldLabel>
                 <FieldDescription>
                   Allow the agent to run without approval prompts when the provider supports it.
@@ -335,6 +354,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
                 id="skip-permissions"
                 checked={skipPermissions}
                 onCheckedChange={setSkipPermissions}
+                disabled={disableSandbox}
               />
             </Field>
           </FieldGroup>

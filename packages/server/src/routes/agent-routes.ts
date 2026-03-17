@@ -80,6 +80,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         secondaryProjectPaths: options.secondaryProjectPaths,
         skills: options.skills,
         skipPermissions: options.skipPermissions,
+        disableSandbox: options.disableSandbox,
       });
 
       // If prompt provided, start immediately

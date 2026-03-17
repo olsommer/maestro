@@ -86,6 +86,7 @@ export async function createAgent(options: {
   secondaryProjectPaths?: string[];
   skills?: string[];
   skipPermissions?: boolean;
+  disableSandbox?: boolean;
 }) {
   const agent = createAgentRecord({
     name: options.name ?? null,
@@ -103,6 +104,7 @@ export async function createAgent(options: {
     error: null,
     lastActivity: null,
     skipPermissions: options.skipPermissions ?? false,
+    disableSandbox: options.disableSandbox ?? false,
     kanbanTaskId: null,
   });
 
@@ -154,7 +156,7 @@ export async function startAgent(
   rt.outputBuffer = [];
 
   const settings = getSettings();
-  const sandboxEnabled = options?.sandbox ?? settings.sandboxEnabled;
+  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
 
   const ptyInstance = spawnPty({
     agentId,

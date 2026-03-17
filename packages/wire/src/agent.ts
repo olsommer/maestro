@@ -24,6 +24,7 @@ export const AgentSpawnOptions = z
     secondaryProjectPaths: z.array(z.string()).optional(),
     skills: z.array(z.string()).optional(),
     skipPermissions: z.boolean().default(false),
+    disableSandbox: z.boolean().default(false),
     useWorktree: z.boolean().optional(),
     worktree: z.boolean().optional(),
     worktreePath: z.string().optional(),

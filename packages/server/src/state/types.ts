@@ -31,6 +31,7 @@ export interface AgentRecord {
   error: string | null;
   lastActivity: string | null;
   skipPermissions: boolean;
+  disableSandbox: boolean;
   kanbanTaskId: string | null;
   createdAt: string;
   updatedAt: string;

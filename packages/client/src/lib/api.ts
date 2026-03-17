@@ -43,6 +43,7 @@ export interface Agent {
   error: string | null;
   lastActivity: string | null;
   skipPermissions: boolean;
+  disableSandbox: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -246,6 +247,7 @@ export const api = {
     customEnv?: Record<string, string>;
     skills?: string[];
     skipPermissions?: boolean;
+    disableSandbox?: boolean;
     useWorktree?: boolean;
     worktreePath?: string;
     prompt?: string;
