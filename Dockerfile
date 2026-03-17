@@ -1,8 +1,15 @@
 FROM node:22-slim AS base
 
 RUN corepack enable pnpm
-RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git python3 make g++ curl && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @anthropic-ai/claude-code @openai/codex
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
 
 # Mark Claude Code onboarding as complete (required for headless auth)
 RUN mkdir -p /root/.claude && echo '{"hasCompletedOnboarding":true}' > /root/.claude.json
