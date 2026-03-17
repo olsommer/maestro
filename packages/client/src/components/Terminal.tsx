@@ -42,13 +42,22 @@ function MobileTerminalToolbar({
 
   const handleCopyUrl = async () => {
     if (!termRef.current) return;
-    // Extract all text from the terminal buffer and find URLs
+    // Extract all text from the terminal buffer
+    // Join lines without newlines first since URLs may wrap across PTY lines
     const buffer = termRef.current.buffer.active;
-    let text = "";
+    const lines: string[] = [];
     for (let i = 0; i < buffer.length; i++) {
       const line = buffer.getLine(i);
-      if (line) text += line.translateToString(true) + "\n";
+      if (line) {
+        // isWrapped means this line is a continuation of the previous
+        if (line.isWrapped && lines.length > 0) {
+          lines[lines.length - 1] += line.translateToString(true).trimStart();
+        } else {
+          lines.push(line.translateToString(true));
+        }
+      }
     }
+    const text = lines.join("\n");
     const urls = text.match(/https?:\/\/[^\s"'<>]+/g);
     if (urls && urls.length > 0) {
       const lastUrl = urls[urls.length - 1];
@@ -297,7 +306,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
                 <XIcon className="size-3.5" />
               </Button>
             </div>
-            <pre className="flex-1 overflow-auto whitespace-pre-wrap break-all p-3 text-xs select-text font-mono text-foreground">
+            <pre className="flex-1 overflow-auto whitespace-pre-wrap break-all p-3 select-text font-mono text-foreground" style={{ fontSize: "9px", lineHeight: "1.4" }}>
               {textOverlay}
             </pre>
           </div>
