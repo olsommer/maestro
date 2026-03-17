@@ -231,7 +231,7 @@ function ClaudeConnectionCard() {
       // Create a temporary Claude agent with /login prompt
       const { agent } = await api.createAgent({
         name: "Claude Login",
-        provider: "claude-code",
+        provider: "claude",
         projectPath: "/tmp",
         prompt: "/login",
         skipPermissions: true,
