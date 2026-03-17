@@ -216,9 +216,6 @@ function ClaudeConnectionCard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [setupUrl, setSetupUrl] = useState<string | null>(null);
-  const [tokenInput, setTokenInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     api.getClaudeAuthStatus()
@@ -227,33 +224,24 @@ function ClaudeConnectionCard() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleStartSetup() {
+  async function handleLogin() {
     setConnecting(true);
     setError("");
-    setSetupUrl(null);
     try {
-      const result = await api.startClaudeSetupToken();
-      setSetupUrl(result.url);
+      // Create a temporary Claude agent with /login prompt
+      const { agent } = await api.createAgent({
+        name: "Claude Login",
+        provider: "claude-code",
+        projectPath: "/tmp",
+        prompt: "/login",
+        skipPermissions: true,
+      });
+      await api.startAgent(agent.id, "/login");
+      // Navigate to agents page so user can interact with the login flow
+      window.location.href = `/agents/${agent.id}`;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start setup");
-    } finally {
+      setError(err instanceof Error ? err.message : "Failed to start login");
       setConnecting(false);
-    }
-  }
-
-  async function handleSubmitToken() {
-    if (!tokenInput.trim()) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const result = await api.completeClaudeSetupToken(tokenInput.trim());
-      setStatus(result);
-      setSetupUrl(null);
-      setTokenInput("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to complete setup");
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -303,57 +291,21 @@ function ClaudeConnectionCard() {
           </FieldGroup>
         ) : (
           <>
-            {setupUrl ? (
-              <div className="flex flex-col gap-3">
-                <div className="rounded-md border p-4 text-center">
-                  <p className="mb-2 text-sm text-muted-foreground">
-                    Open the link below, sign in, and paste the token back here:
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mb-3"
-                    onClick={() => window.open(setupUrl, "_blank", "noopener,noreferrer")}
-                  >
-                    <ExternalLinkIcon className="mr-2 size-4" />
-                    Open Claude Auth
-                  </Button>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Paste your token here..."
-                    value={tokenInput}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleSubmitToken();
-                    }}
-                  />
-                  <Button
-                    disabled={submitting || !tokenInput.trim()}
-                    onClick={() => void handleSubmitToken()}
-                  >
-                    {submitting ? (
-                      <LoaderIcon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <CheckCircleIcon className="mr-2 size-4" />
-                    )}
-                    Connect
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                disabled={connecting}
-                onClick={() => void handleStartSetup()}
-              >
-                {connecting ? (
-                  <LoaderIcon className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <ExternalLinkIcon className="mr-2 size-4" />
-                )}
-                Sign in to Claude
-              </Button>
-            )}
+            <p className="text-sm text-muted-foreground">
+              This will open a Claude agent where you can complete the login flow interactively.
+            </p>
+            <Button
+              variant="outline"
+              disabled={connecting}
+              onClick={() => void handleLogin()}
+            >
+              {connecting ? (
+                <LoaderIcon className="mr-2 size-4 animate-spin" />
+              ) : (
+                <ExternalLinkIcon className="mr-2 size-4" />
+              )}
+              Sign in to Claude
+            </Button>
 
             {error && (
               <Alert variant="destructive">

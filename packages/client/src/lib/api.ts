@@ -167,15 +167,6 @@ export const api = {
 
   // Claude Code auth
   getClaudeAuthStatus: () => request<ClaudeAuthStatus>("/api/integrations/claude/status"),
-  startClaudeSetupToken: () =>
-    request<{ url: string }>("/api/integrations/claude/setup-token/start", {
-      method: "POST",
-    }),
-  completeClaudeSetupToken: (token: string) =>
-    request<ClaudeAuthStatus>("/api/integrations/claude/setup-token/complete", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
 
   // Codex auth
   getCodexAuthStatus: () => request<CodexAuthStatus>("/api/integrations/codex/status"),
