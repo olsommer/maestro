@@ -91,7 +91,12 @@ export interface Settings {
   autoUpdateIntervalHours: number;
   piOllamaModel: string;
   telegramBotToken: string;
+  sandboxEnabled: boolean;
   deepgramApiKey: string;
+  agentDefaultProvider: "claude" | "codex";
+  agentDefaultDisableSandbox: boolean;
+  agentDefaultSkipPermissions: boolean;
+  agentDefaultWorktreeMode: "none" | "new";
 }
 
 export interface OllamaModelInfo {

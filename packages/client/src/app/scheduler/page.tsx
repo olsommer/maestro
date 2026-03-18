@@ -66,9 +66,8 @@ interface ScheduledTask {
   createdAt: string;
 }
 
-const PROVIDERS = [
-  { value: "claude", label: "Claude Code" },
-  { value: "codex", label: "Codex" },
+const AGENT_MODES = [
+  { value: "default", label: "Default coding agent" },
   { value: "custom", label: "Custom CLI" },
 ];
 
@@ -81,7 +80,7 @@ function SchedulerView() {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [schedule, setSchedule] = useState("0 * * * *");
-  const [provider, setProvider] = useState("claude");
+  const [agentMode, setAgentMode] = useState<"default" | "custom">("default");
   const [customDisplayName, setCustomDisplayName] = useState("");
   const [customCommandTemplate, setCustomCommandTemplate] = useState("");
   const [customEnvText, setCustomEnvText] = useState("");
@@ -99,7 +98,7 @@ function SchedulerView() {
           task.projectPath === selectedProject?.localPath
       )
     : tasks;
-  const isCustomProvider = provider === "custom";
+  const isCustomProvider = agentMode === "custom";
 
   useEffect(() => {
     if (!showNew) return;
@@ -175,7 +174,7 @@ function SchedulerView() {
           name: name.trim(),
           prompt: prompt.trim(),
           schedule,
-          provider,
+          provider: isCustomProvider ? "custom" : undefined,
           customDisplayName: isCustomProvider
             ? customDisplayName.trim() || undefined
             : undefined,
@@ -185,7 +184,7 @@ function SchedulerView() {
           customEnv,
           projectId: trimmedProjectId,
           projectPath: trimmedProjectId ? undefined : trimmedProjectPath,
-          skipPermissions: true,
+          skipPermissions: isCustomProvider ? true : undefined,
         }),
       });
 
@@ -193,7 +192,7 @@ function SchedulerView() {
       setShowNew(false);
       setName("");
       setPrompt("");
-      setProvider("claude");
+      setAgentMode("default");
       setCustomDisplayName("");
       setCustomCommandTemplate("");
       setCustomEnvText("");
@@ -282,7 +281,7 @@ function SchedulerView() {
           <CardHeader>
             <CardTitle>Create Scheduled Task</CardTitle>
             <CardDescription>
-              Define a recurring prompt and the project context it should run in.
+              Define a recurring prompt and project context. Default coding-agent runs use Settings &gt; Agents.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -320,17 +319,17 @@ function SchedulerView() {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="scheduler-provider">Provider</FieldLabel>
+                  <FieldLabel htmlFor="scheduler-provider">Agent</FieldLabel>
                   <Select
-                    value={provider}
-                    onValueChange={(value) => setProvider(String(value ?? "claude"))}
+                    value={agentMode}
+                    onValueChange={(value) => setAgentMode((value as "default" | "custom") ?? "default")}
                   >
                     <SelectTrigger id="scheduler-provider" className="w-full">
                       <SelectValue placeholder="Select a provider" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        {PROVIDERS.map((item) => (
+                        {AGENT_MODES.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
                             {item.label}
                           </SelectItem>
@@ -338,6 +337,11 @@ function SchedulerView() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  {!isCustomProvider && (
+                    <FieldDescription>
+                      Provider, sandbox, YOLO mode, and worktrees come from Settings &gt; Agents.
+                    </FieldDescription>
+                  )}
                 </Field>
 
                 {projects.length > 0 && (
@@ -491,7 +495,7 @@ function SchedulerView() {
                     <Badge variant="secondary" className="text-[10px]">
                       {task.provider === "custom"
                         ? task.customDisplayName || "Custom CLI"
-                        : task.provider}
+                        : "Default agent"}
                     </Badge>
                     <Badge variant="outline" className="max-w-full truncate text-[10px]">
                       {task.project?.name || task.projectPath}

@@ -1,5 +1,9 @@
 import cron from "node-cron";
-import { createAgent, startAgent } from "../agents/agent-manager.js";
+import {
+  createAgent,
+  createAutoSpawnAgent,
+  startAgent,
+} from "../agents/agent-manager.js";
 import type { AgentProvider } from "@maestro/wire";
 import {
   listScheduledTaskRecords,
@@ -58,16 +62,23 @@ export function unregisterJob(taskId: string) {
 
 async function executeScheduledTask(task: ScheduledTaskRecord) {
   try {
-    const agent = await createAgent({
-      name: `scheduled-${task.name}-${Date.now()}`,
-      provider: task.provider as AgentProvider,
-      projectId: task.projectId || undefined,
-      projectPath: task.projectPath,
-      customDisplayName: task.customDisplayName || undefined,
-      customCommandTemplate: task.customCommandTemplate || undefined,
-      customEnv: task.customEnv || undefined,
-      skipPermissions: task.skipPermissions,
-    });
+    const name = `scheduled-${task.name}-${Date.now()}`;
+    const agent = task.provider === "custom"
+      ? await createAgent({
+          name,
+          provider: task.provider as AgentProvider,
+          projectId: task.projectId || undefined,
+          projectPath: task.projectPath,
+          customDisplayName: task.customDisplayName || undefined,
+          customCommandTemplate: task.customCommandTemplate || undefined,
+          customEnv: task.customEnv || undefined,
+          skipPermissions: task.skipPermissions,
+        })
+      : await createAutoSpawnAgent({
+          name,
+          projectId: task.projectId || undefined,
+          projectPath: task.projectPath,
+        });
 
     await startAgent(agent.id, task.prompt);
     updateScheduledTaskRecord(task.id, {

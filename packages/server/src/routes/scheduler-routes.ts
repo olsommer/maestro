@@ -170,18 +170,25 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
         const task = getScheduledTaskRecord(req.params.id);
         if (!task) return reply.status(404).send({ error: "Task not found" });
 
-        const { createAgent, startAgent } = await import("../agents/agent-manager.js");
+        const { createAgent, createAutoSpawnAgent, startAgent } = await import("../agents/agent-manager.js");
 
-        const agent = await createAgent({
-          name: `manual-${task.name}-${Date.now()}`,
-          provider: task.provider as "claude" | "codex",
-          projectId: task.projectId || undefined,
-          projectPath: task.projectPath,
-          customDisplayName: task.customDisplayName || undefined,
-          customCommandTemplate: task.customCommandTemplate || undefined,
-          customEnv: task.customEnv || undefined,
-          skipPermissions: task.skipPermissions,
-        });
+        const name = `manual-${task.name}-${Date.now()}`;
+        const agent = task.provider === "custom"
+          ? await createAgent({
+              name,
+              provider: task.provider as "custom",
+              projectId: task.projectId || undefined,
+              projectPath: task.projectPath,
+              customDisplayName: task.customDisplayName || undefined,
+              customCommandTemplate: task.customCommandTemplate || undefined,
+              customEnv: task.customEnv || undefined,
+              skipPermissions: task.skipPermissions,
+            })
+          : await createAutoSpawnAgent({
+              name,
+              projectId: task.projectId || undefined,
+              projectPath: task.projectPath,
+            });
 
         await startAgent(agent.id, task.prompt);
         updateScheduledTaskRecord(task.id, {

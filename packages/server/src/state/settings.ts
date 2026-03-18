@@ -8,6 +8,10 @@ const DEFAULTS: Settings = {
   telegramBotToken: "",
   sandboxEnabled: false,
   deepgramApiKey: "",
+  agentDefaultProvider: "claude",
+  agentDefaultDisableSandbox: false,
+  agentDefaultSkipPermissions: true,
+  agentDefaultWorktreeMode: "none",
 };
 
 export function getSettings(): Settings {
@@ -18,6 +22,10 @@ export function getSettings(): Settings {
   const telegramToken = getSetting("telegramBotToken");
   const sandbox = getSetting("sandboxEnabled");
   const deepgramKey = getSetting("deepgramApiKey");
+  const agentDefaultProvider = getSetting("agentDefaultProvider");
+  const agentDefaultDisableSandbox = getSetting("agentDefaultDisableSandbox");
+  const agentDefaultSkipPermissions = getSetting("agentDefaultSkipPermissions");
+  const agentDefaultWorktreeMode = getSetting("agentDefaultWorktreeMode");
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
@@ -26,6 +34,18 @@ export function getSettings(): Settings {
     telegramBotToken: telegramToken !== null ? telegramToken : DEFAULTS.telegramBotToken,
     sandboxEnabled: sandbox !== null ? sandbox === "true" : DEFAULTS.sandboxEnabled,
     deepgramApiKey: deepgramKey !== null ? deepgramKey : DEFAULTS.deepgramApiKey,
+    agentDefaultProvider:
+      agentDefaultProvider === "codex" ? "codex" : DEFAULTS.agentDefaultProvider,
+    agentDefaultDisableSandbox:
+      agentDefaultDisableSandbox !== null
+        ? agentDefaultDisableSandbox === "true"
+        : DEFAULTS.agentDefaultDisableSandbox,
+    agentDefaultSkipPermissions:
+      agentDefaultSkipPermissions !== null
+        ? agentDefaultSkipPermissions === "true"
+        : DEFAULTS.agentDefaultSkipPermissions,
+    agentDefaultWorktreeMode:
+      agentDefaultWorktreeMode === "new" ? "new" : DEFAULTS.agentDefaultWorktreeMode,
   };
 }
 
@@ -47,6 +67,18 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   }
   if (patch.deepgramApiKey !== undefined) {
     setSetting("deepgramApiKey", patch.deepgramApiKey);
+  }
+  if (patch.agentDefaultProvider !== undefined) {
+    setSetting("agentDefaultProvider", patch.agentDefaultProvider);
+  }
+  if (patch.agentDefaultDisableSandbox !== undefined) {
+    setSetting("agentDefaultDisableSandbox", String(patch.agentDefaultDisableSandbox));
+  }
+  if (patch.agentDefaultSkipPermissions !== undefined) {
+    setSetting("agentDefaultSkipPermissions", String(patch.agentDefaultSkipPermissions));
+  }
+  if (patch.agentDefaultWorktreeMode !== undefined) {
+    setSetting("agentDefaultWorktreeMode", patch.agentDefaultWorktreeMode);
   }
   return getSettings();
 }

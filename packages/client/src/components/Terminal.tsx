@@ -6,7 +6,15 @@ import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
-import { ArrowRightToLineIcon, ClipboardPasteIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
+import {
+  ArrowRightToLineIcon,
+  ClipboardPasteIcon,
+  CornerDownLeftIcon,
+  MicIcon,
+  MicOffIcon,
+  TextIcon,
+  XIcon,
+} from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as GhosttyTerminal } from "ghostty-web";
 
@@ -64,36 +72,67 @@ function MobileTerminalToolbar({
 
   const isListening = voiceStatus === "listening";
   const isVoiceConnecting = voiceStatus === "connecting";
+  const toolbarButtonClassName =
+    "h-9 w-full min-w-0 rounded-md px-0 text-[0.8rem] [&_svg:not([class*='size-'])]:size-[18px]";
 
   return (
     <div
-      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-t bg-card px-2 py-2"
+      className="grid shrink-0 grid-cols-5 gap-2 border-t bg-card px-3 py-2.5"
       onTouchMove={(e) => e.stopPropagation()}
     >
-      <Button size="sm" variant="secondary" onClick={handleEsc}>
+      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={handleEsc}>
         Esc
       </Button>
-      <Button size="sm" variant="secondary" onClick={() => send("\t")}>
+      <Button
+        size="sm"
+        variant="secondary"
+        className={toolbarButtonClassName}
+        aria-label="Send tab"
+        onClick={() => send("\t")}
+      >
         <ArrowRightToLineIcon className="size-4" />
       </Button>
-      <Button size="sm" variant="secondary" onClick={() => send("1")}>
+      <Button
+        size="sm"
+        variant="secondary"
+        className={toolbarButtonClassName}
+        aria-label="Send enter"
+        onClick={() => send("\r")}
+      >
+        <CornerDownLeftIcon className="size-4" />
+      </Button>
+      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("1")}>
         1
       </Button>
-      <Button size="sm" variant="secondary" onClick={() => send("2")}>
+      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("2")}>
         2
       </Button>
-      <Button size="sm" variant="secondary" onClick={() => send("3")}>
+      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("3")}>
         3
       </Button>
-      <Button size="sm" variant="secondary" onClick={handlePaste}>
+      <Button
+        size="sm"
+        variant="secondary"
+        className={toolbarButtonClassName}
+        aria-label="Paste from clipboard"
+        onClick={handlePaste}
+      >
         <ClipboardPasteIcon className="size-4" />
       </Button>
-      <Button size="sm" variant="secondary" onClick={onShowText}>
+      <Button
+        size="sm"
+        variant="secondary"
+        className={toolbarButtonClassName}
+        aria-label="Show terminal text"
+        onClick={onShowText}
+      >
         <TextIcon className="size-4" />
       </Button>
       <Button
         size="sm"
         variant={isListening ? "destructive" : "secondary"}
+        className={toolbarButtonClassName}
+        aria-label={isListening ? "Stop voice input" : "Start voice input"}
         onClick={toggleVoice}
         disabled={isVoiceConnecting}
       >
@@ -291,7 +330,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none" />
+      <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
 
       {textOverlay !== null && (
         <div className="absolute inset-0 z-10 flex flex-col bg-background">

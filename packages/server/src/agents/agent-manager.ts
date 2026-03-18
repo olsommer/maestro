@@ -120,6 +120,23 @@ export async function createAgent(options: {
   return agent;
 }
 
+export async function createAutoSpawnAgent(options: {
+  name?: string;
+  projectId?: string;
+  projectPath: string;
+}) {
+  const settings = getSettings();
+  return createAgent({
+    name: options.name,
+    provider: settings.agentDefaultProvider,
+    projectId: options.projectId,
+    projectPath: options.projectPath,
+    skipPermissions: settings.agentDefaultSkipPermissions,
+    disableSandbox: settings.agentDefaultDisableSandbox,
+    autoWorktree: settings.agentDefaultWorktreeMode === "new",
+  });
+}
+
 export async function startAgent(
   agentId: string,
   prompt: string,
@@ -148,15 +165,11 @@ export async function startAgent(
   const settings = getSettings();
   const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
 
-  // When running inside a sandbox, always force skip-permissions (yolo mode)
-  // so the CLI agent doesn't block on approval prompts — the sandbox is the security boundary.
-  const skipPermissions = sandboxEnabled ? true : agent.skipPermissions;
-
   const command = provider.buildInteractiveCommand({
     binaryPath,
     prompt,
     projectPath: cwd,
-    skipPermissions,
+    skipPermissions: agent.skipPermissions,
     mcpConfigPath: options?.mcpConfigPath,
     secondaryProjectPaths: agent.secondaryProjectPaths,
     skills: agent.skills,

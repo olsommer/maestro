@@ -1,7 +1,7 @@
 import type { Server as SocketServer } from "socket.io";
-import { startAgent } from "./agent-manager.js";
+import { createAutoSpawnAgent, startAgent, deleteAgent } from "./agent-manager.js";
 import { listKanbanTasks, updateKanbanTaskRecord } from "../state/kanban.js";
-import { listAgentRecords, updateAgentRecord } from "../state/agents.js";
+import { updateAgentRecord } from "../state/agents.js";
 
 const POLL_INTERVAL = 10_000;
 
@@ -34,20 +34,8 @@ async function tick(io: SocketServer) {
     );
     if (assignableTasks.length === 0) return;
 
-    const idleAgents = listAgentRecords().filter(
-      (agent) => agent.status === "idle" && !agent.kanbanTaskId
-    );
-    if (idleAgents.length === 0) return;
-
     for (const task of assignableTasks) {
-      const match = findBestAgent(idleAgents, task);
-      if (!match) continue;
-
-      await assignTaskToAgent(io, task, match);
-
-      const idx = idleAgents.findIndex((agent) => agent.id === match.id);
-      if (idx !== -1) idleAgents.splice(idx, 1);
-      if (idleAgents.length === 0) break;
+      await assignTaskToAgent(io, task);
     }
   } catch (err) {
     console.error("Kanban assigner error:", err);
@@ -62,49 +50,55 @@ interface TaskLike {
   projectPath: string;
 }
 
-interface AgentLike {
-  id: string;
-  projectId?: string | null;
-  projectPath: string;
-}
-
-function findBestAgent(agents: AgentLike[], task: TaskLike): AgentLike | null {
-  const sameProject = agents.find(
-    (agent) =>
-      (task.projectId && agent.projectId === task.projectId) ||
-      agent.projectPath === task.projectPath
-  );
-  if (sameProject) return sameProject;
-
-  return agents[0] ?? null;
-}
-
 async function assignTaskToAgent(
   io: SocketServer,
-  task: TaskLike,
-  agent: { id: string }
+  task: TaskLike
 ) {
+  let agentId: string | null = null;
   try {
+    const agent = await createAutoSpawnAgent({
+      name: `kanban-${task.title}-${Date.now()}`,
+      projectId: task.projectId ?? undefined,
+      projectPath: task.projectPath,
+    });
+    agentId = agent.id;
+
     await updateKanbanTaskRecord(task.id, {
       column: "ongoing",
-      assignedAgentId: agent.id,
+      assignedAgentId: agentId,
     });
 
-    updateAgentRecord(agent.id, {
+    updateAgentRecord(agentId, {
       kanbanTaskId: task.id,
     });
 
     const prompt = `Task: ${task.title}\n\n${task.description}`;
-    await startAgent(agent.id, prompt);
+    await startAgent(agentId, prompt);
 
     io.emit("kanban:updated", {
       taskId: task.id,
       column: "ongoing",
-      assignedAgentId: agent.id,
+      assignedAgentId: agentId,
     });
 
-    console.log(`Kanban: assigned task "${task.title}" to agent ${agent.id}`);
+    console.log(`Kanban: assigned task "${task.title}" to agent ${agentId}`);
   } catch (err) {
-    console.error(`Failed to assign task ${task.id} to agent ${agent.id}:`, err);
+    if (agentId) {
+      try {
+        await deleteAgent(agentId);
+      } catch {
+        // Best effort cleanup for partially created agents.
+      }
+    }
+    await updateKanbanTaskRecord(task.id, {
+      column: "planned",
+      assignedAgentId: null,
+    });
+    io.emit("kanban:updated", {
+      taskId: task.id,
+      column: "planned",
+      assignedAgentId: null,
+    });
+    console.error(`Failed to assign task ${task.id} to an auto-spawned agent:`, err);
   }
 }

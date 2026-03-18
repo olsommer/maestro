@@ -31,6 +31,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -493,6 +494,207 @@ function CodexConnectionCard({ refreshKey }: { refreshKey: number }) {
             )}
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgentDefaultsCard({
+  settings,
+  onSettingsUpdate,
+  refreshKey,
+}: {
+  settings: Settings | null;
+  onSettingsUpdate: (s: Settings) => void;
+  refreshKey: number;
+}) {
+  const [provider, setProvider] = useState<"claude" | "codex">("claude");
+  const [disableSandbox, setDisableSandbox] = useState(false);
+  const [skipPermissions, setSkipPermissions] = useState(true);
+  const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
+  const [saving, setSaving] = useState(false);
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
+  const [codexStatus, setCodexStatus] = useState<CodexAuthStatus | null>(null);
+  const [loadingProviders, setLoadingProviders] = useState(true);
+
+  useEffect(() => {
+    if (!settings) return;
+    setProvider(settings.agentDefaultProvider);
+    setDisableSandbox(settings.agentDefaultDisableSandbox);
+    setSkipPermissions(settings.agentDefaultSkipPermissions);
+    setWorktreeMode(settings.agentDefaultWorktreeMode);
+  }, [settings]);
+
+  useEffect(() => {
+    setLoadingProviders(true);
+    Promise.all([
+      api.getClaudeAuthStatus(refreshKey > 0).catch(() => null),
+      api.getCodexAuthStatus(refreshKey > 0).catch(() => null),
+    ])
+      .then(([claude, codex]) => {
+        setClaudeStatus(claude);
+        setCodexStatus(codex);
+      })
+      .finally(() => setLoadingProviders(false));
+  }, [refreshKey]);
+
+  const claudeAvailable = Boolean(claudeStatus?.installed && claudeStatus.loggedIn);
+  const codexAvailable = Boolean(codexStatus?.installed && codexStatus.loggedIn);
+  const selectedProviderAvailable =
+    provider === "claude" ? claudeAvailable : codexAvailable;
+  const hasAvailableProvider = claudeAvailable || codexAvailable;
+  const isDirty =
+    provider !== (settings?.agentDefaultProvider ?? "claude") ||
+    disableSandbox !== (settings?.agentDefaultDisableSandbox ?? false) ||
+    skipPermissions !== (settings?.agentDefaultSkipPermissions ?? true) ||
+    worktreeMode !== (settings?.agentDefaultWorktreeMode ?? "none");
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await api.updateSettings({
+        agentDefaultProvider: provider,
+        agentDefaultDisableSandbox: disableSandbox,
+        agentDefaultSkipPermissions: skipPermissions,
+        agentDefaultWorktreeMode: worktreeMode,
+      });
+      onSettingsUpdate(updated);
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Agents</CardTitle>
+        <CardDescription>
+          Defaults for coding agents that Maestro spawns automatically from kanban and scheduler.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {loadingProviders ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderIcon className="size-4 animate-spin" />
+            Checking agent providers...
+          </div>
+        ) : !hasAvailableProvider ? (
+          <Alert>
+            <TriangleAlertIcon />
+            <AlertTitle>No coding agent available</AlertTitle>
+            <AlertDescription>
+              Sign in to Claude Code or Codex above before enabling automatic agent spawning.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="agent-default-provider">Coding agent</FieldLabel>
+            <Select
+              value={provider}
+              onValueChange={(value) => setProvider((value as "claude" | "codex") ?? "claude")}
+            >
+              <SelectTrigger id="agent-default-provider" className="w-full">
+                <SelectValue placeholder="Select a coding agent" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="claude" disabled={!claudeAvailable}>
+                    {claudeAvailable ? "Claude Code" : "Claude Code (sign in required)"}
+                  </SelectItem>
+                  <SelectItem value="codex" disabled={!codexAvailable}>
+                    {codexAvailable ? "Codex" : "Codex (sign in required)"}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Only logged-in coding agents can be used for automatic spawns.
+            </FieldDescription>
+          </Field>
+
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="agent-default-sandbox">Sandbox</FieldLabel>
+              <FieldDescription>
+                Run automatically spawned agents inside nsjail when available.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="agent-default-sandbox"
+              checked={!disableSandbox}
+              onCheckedChange={(checked) => {
+                setDisableSandbox(!checked);
+                if (!checked) {
+                  setSkipPermissions(false);
+                }
+              }}
+            />
+          </Field>
+
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="agent-default-yolo">YOLO mode</FieldLabel>
+              <FieldDescription>
+                {disableSandbox
+                  ? "Disabled because sandboxing is off."
+                  : "Run without approval prompts for automatically spawned agents."}
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="agent-default-yolo"
+              checked={skipPermissions}
+              onCheckedChange={setSkipPermissions}
+              disabled={disableSandbox}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="agent-default-worktree">Worktrees</FieldLabel>
+            <Select
+              value={worktreeMode}
+              onValueChange={(value) => setWorktreeMode((value as "none" | "new") ?? "none")}
+            >
+              <SelectTrigger id="agent-default-worktree" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="new">Create new worktree</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Auto-spawned agents can either work in the project directly or create a fresh git worktree.
+            </FieldDescription>
+          </Field>
+        </FieldGroup>
+
+        {!selectedProviderAvailable && hasAvailableProvider && (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>Selected provider unavailable</AlertTitle>
+            <AlertDescription>
+              Choose a logged-in coding agent before saving these defaults.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Button
+          disabled={!isDirty || saving || !selectedProviderAvailable}
+          onClick={() => void handleSave()}
+        >
+          {saving ? (
+            <LoaderIcon className="mr-2 size-4 animate-spin" />
+          ) : (
+            <CheckCircleIcon className="mr-2 size-4" />
+          )}
+          {saving ? "Saving..." : isDirty ? "Save" : "Saved"}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -1268,6 +1470,11 @@ function SettingsView() {
           <GitHubConnectionCard refreshKey={authRefreshKey} />
 
           <DeepgramCard settings={settings} onSettingsUpdate={setSettings} />
+          <AgentDefaultsCard
+            settings={settings}
+            onSettingsUpdate={setSettings}
+            refreshKey={authRefreshKey}
+          />
           <PiAgentCard settings={settings} onSettingsUpdate={setSettings} />
           <TelegramCard settings={settings} onSettingsUpdate={setSettings} />
 

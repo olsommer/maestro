@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const AutoSpawnAgentProviderSchema = z.enum(["claude", "codex"]);
+export type AutoSpawnAgentProvider = z.infer<typeof AutoSpawnAgentProviderSchema>;
+
+export const AutoSpawnAgentWorktreeModeSchema = z.enum(["none", "new"]);
+export type AutoSpawnAgentWorktreeMode = z.infer<typeof AutoSpawnAgentWorktreeModeSchema>;
+
 export const SettingsSchema = z.object({
   autoUpdateEnabled: z.boolean().default(false),
   autoUpdateIntervalHours: z.number().min(1).max(168).default(24),
@@ -9,6 +15,14 @@ export const SettingsSchema = z.object({
   sandboxEnabled: z.boolean().default(false),
   /** Deepgram API key for voice-to-text on mobile */
   deepgramApiKey: z.string().default(""),
+  /** Default coding agent provider used for automatic spawns */
+  agentDefaultProvider: AutoSpawnAgentProviderSchema.default("claude"),
+  /** Disable sandbox for automatically spawned agents */
+  agentDefaultDisableSandbox: z.boolean().default(false),
+  /** Run automatically spawned agents without approval prompts */
+  agentDefaultSkipPermissions: z.boolean().default(true),
+  /** Worktree mode for automatically spawned agents */
+  agentDefaultWorktreeMode: AutoSpawnAgentWorktreeModeSchema.default("none"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

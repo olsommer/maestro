@@ -17,7 +17,7 @@ function KanbanPage() {
         <div>
           <h2 className="text-xl font-bold sm:text-2xl">Kanban Board</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Drag tasks to &quot;Planned&quot; to auto-assign to idle agents
+            Drag tasks to &quot;Planned&quot; to auto-spawn agents from your default settings
           </p>
         </div>
         <Button size="sm" onClick={() => setShowNew(true)}>
