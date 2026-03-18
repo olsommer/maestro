@@ -197,9 +197,9 @@ export function NewAgentDialog({ open, onClose }: Props) {
               </Select>
             </Field>
 
-            {projects.length > 0 && (
-              <Field>
-                <FieldLabel htmlFor="project">Project</FieldLabel>
+            <Field>
+              <FieldLabel htmlFor="project">Project</FieldLabel>
+              {projects.length > 0 ? (
                 <Select
                   value={projectId}
                   onValueChange={(value) => setProjectId(String(value ?? ""))}
@@ -218,14 +218,16 @@ export function NewAgentDialog({ open, onClose }: Props) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                {selectedProject && (
-                  <FieldDescription>{selectedProject.localPath}</FieldDescription>
-                )}
-                {projectId === "__root__" && (
-                  <FieldDescription>Agent will run from the filesystem root.</FieldDescription>
-                )}
-              </Field>
-            )}
+              ) : (
+                <FieldDescription>No projects configured. Add a project in Settings first.</FieldDescription>
+              )}
+              {selectedProject && (
+                <FieldDescription>{selectedProject.localPath}</FieldDescription>
+              )}
+              {projectId === "__root__" && (
+                <FieldDescription>Agent will run from the filesystem root.</FieldDescription>
+              )}
+            </Field>
 
             {isCustomProvider && (
               <>
