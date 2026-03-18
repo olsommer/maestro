@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
-import { ClipboardPasteIcon, KeyboardIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
+import { ArrowRightToLineIcon, ClipboardPasteIcon, KeyboardIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as GhosttyTerminal } from "ghostty-web";
 
@@ -69,7 +69,7 @@ function MobileTerminalToolbar({
         Esc
       </Button>
       <Button size="sm" variant="secondary" onClick={() => send("\t")}>
-        Tab
+        <ArrowRightToLineIcon className="size-4" />
       </Button>
       <Button size="sm" variant="secondary" onClick={() => send("1")}>
         1
@@ -85,7 +85,6 @@ function MobileTerminalToolbar({
       </Button>
       <Button size="sm" variant="secondary" onClick={onShowText}>
         <TextIcon className="size-4" />
-        Text
       </Button>
       <Button
         size="sm"
