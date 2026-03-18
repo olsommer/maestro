@@ -84,6 +84,23 @@ type StartDialogState =
   | { mode: "single"; agent: Agent }
   | { mode: "all" };
 
+function useMobileKeyboard() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const threshold = 100; // px difference to consider keyboard open
+    const check = () => setOpen(window.innerHeight - vv.height > threshold);
+    check();
+    vv.addEventListener("resize", check);
+    return () => vv.removeEventListener("resize", check);
+  }, []);
+
+  return open;
+}
+
 function AgentTerminalPanel({
   agent,
   isSelected,
@@ -91,6 +108,7 @@ function AgentTerminalPanel({
   onStart,
   onStop,
   onDelete,
+  mobileKeyboardOpen,
 }: {
   agent: Agent;
   isSelected: boolean;
@@ -98,6 +116,7 @@ function AgentTerminalPanel({
   onStart: () => void;
   onStop: () => void;
   onDelete: () => void;
+  mobileKeyboardOpen?: boolean;
 }) {
   const providerLabel = getProviderLabel(agent);
   const canStart = agent.status === "idle" || agent.status === "completed" || agent.status === "error";
@@ -111,73 +130,75 @@ function AgentTerminalPanel({
         isSelected ? "ring-ring/50 shadow-lg" : "ring-border"
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b bg-card px-2 py-1.5 md:px-3 md:py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 md:block">
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <span className="truncate text-xs font-medium md:text-sm">
-              {agent.name || `Agent ${agent.id.slice(0, 8)}`}
-            </span>
-            <StatusDot status={agent.status} className="md:hidden" />
-            <span className="hidden md:inline-flex"><StatusBadge status={agent.status} /></span>
-          </div>
-          <div className="hidden flex-wrap items-center gap-1.5 md:mt-1 md:flex">
-            <Badge variant="secondary" className="text-[10px]">
-              {providerLabel}
-            </Badge>
-            {agent.model && (
-              <Badge variant="outline" className="text-[10px]">
-                {agent.model}
+      {!mobileKeyboardOpen && (
+        <div className="flex items-center justify-between gap-2 border-b bg-card px-2 py-1.5 md:px-3 md:py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 md:block">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <span className="truncate text-xs font-medium md:text-sm">
+                {agent.name || `Agent ${agent.id.slice(0, 8)}`}
+              </span>
+              <StatusDot status={agent.status} className="md:hidden" />
+              <span className="hidden md:inline-flex"><StatusBadge status={agent.status} /></span>
+            </div>
+            <div className="hidden flex-wrap items-center gap-1.5 md:mt-1 md:flex">
+              <Badge variant="secondary" className="text-[10px]">
+                {providerLabel}
               </Badge>
-            )}
-            <Badge variant="outline" className="max-w-full truncate text-[10px]">
-              {agent.project?.name || agent.projectPath}
-            </Badge>
-          </div>
-          {/* Mobile inline badges */}
-          <div className="flex items-center gap-1 md:hidden">
-            {agent.model && (
-              <Badge variant="outline" className="text-[9px] px-1 py-0">
-                {agent.model}
+              {agent.model && (
+                <Badge variant="outline" className="text-[10px]">
+                  {agent.model}
+                </Badge>
+              )}
+              <Badge variant="outline" className="max-w-full truncate text-[10px]">
+                {agent.project?.name || agent.projectPath}
               </Badge>
+            </div>
+            {/* Mobile inline badges */}
+            <div className="flex items-center gap-1 md:hidden">
+              {agent.model && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0">
+                  {agent.model}
+                </Badge>
+              )}
+              <Badge variant="outline" className="max-w-[120px] truncate text-[9px] px-1 py-0">
+                {agent.project?.name || agent.projectPath}
+              </Badge>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {canStart && (
+              <Button
+                size="xs"
+                variant="default"
+                onClick={(e) => { e.stopPropagation(); onStart(); }}
+              >
+                <PlayIcon data-icon="inline-start" />
+                Start
+              </Button>
             )}
-            <Badge variant="outline" className="max-w-[120px] truncate text-[9px] px-1 py-0">
-              {agent.project?.name || agent.projectPath}
-            </Badge>
+            {canStop && (
+              <Button
+                size="xs"
+                variant="secondary"
+                onClick={(e) => { e.stopPropagation(); onStop(); }}
+              >
+                <SquareIcon data-icon="inline-start" />
+                Stop
+              </Button>
+            )}
+            <Button
+              size="icon-xs"
+              variant="destructive"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            >
+              <Trash2Icon />
+              <span className="sr-only">Delete agent</span>
+            </Button>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {canStart && (
-            <Button
-              size="xs"
-              variant="default"
-              onClick={(e) => { e.stopPropagation(); onStart(); }}
-            >
-              <PlayIcon data-icon="inline-start" />
-              Start
-            </Button>
-          )}
-          {canStop && (
-            <Button
-              size="xs"
-              variant="secondary"
-              onClick={(e) => { e.stopPropagation(); onStop(); }}
-            >
-              <SquareIcon data-icon="inline-start" />
-              Stop
-            </Button>
-          )}
-          <Button
-            size="icon-xs"
-            variant="destructive"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          >
-            <Trash2Icon />
-            <span className="sr-only">Delete agent</span>
-          </Button>
-        </div>
-      </div>
+      )}
 
-      {(agent.error || agent.currentTask) && (
+      {!mobileKeyboardOpen && (agent.error || agent.currentTask) && (
         <div className="border-b bg-card/50 px-3 py-1.5 text-[11px] text-muted-foreground">
           {agent.error ? (
             <Alert variant="destructive" className="px-2 py-1.5 text-[11px]">
@@ -213,6 +234,7 @@ function AgentPanel() {
   const [startPrompt, setStartPrompt] = useState("");
   const [startError, setStartError] = useState("");
   const [startingAgents, setStartingAgents] = useState(false);
+  const mobileKeyboardOpen = useMobileKeyboard();
 
   const uniqueProjects = useMemo(() => {
     const seen = new Map<string, { id: string; name: string }>();
@@ -375,7 +397,7 @@ function AgentPanel() {
 
 
       {/* Toolbar */}
-      <div className="border-b bg-background h-auto md:h-16 sticky top-0 flex shrink-0 items-center gap-2 px-2 py-2 md:px-4 md:py-3">
+      <div className={cn("border-b bg-background h-auto md:h-16 sticky top-0 flex shrink-0 items-center gap-2 px-2 py-2 md:px-4 md:py-3", mobileKeyboardOpen && "hidden md:flex")}>
         <div className="flex flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-between">
           <SidebarTrigger className="-ml-1 md:hidden" />
           <div className="hidden md:contents">
@@ -498,6 +520,7 @@ function AgentPanel() {
               onStart={() => openStartDialog({ mode: "single", agent: selectedAgent })}
               onStop={() => handleStopAgent(selectedAgent.id)}
               onDelete={() => setPendingDeleteAgent(selectedAgent)}
+              mobileKeyboardOpen={mobileKeyboardOpen}
             />
           </div>
         ) : (
