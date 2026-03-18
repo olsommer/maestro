@@ -61,7 +61,10 @@ function MobileTerminalToolbar({
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t bg-card px-2 py-1.5">
+    <div
+      className="flex shrink-0 items-center gap-1 overflow-x-auto border-t bg-card px-2 py-1.5"
+      onTouchMove={(e) => e.stopPropagation()}
+    >
       <Button size="xs" variant="secondary" onClick={handleEsc}>
         Esc
       </Button>
@@ -122,7 +125,7 @@ function MobileTerminalToolbar({
         }}
         onFocus={() => {
           // Prevent browser from scrolling to this input
-          window.scrollTo(0, 0);
+          requestAnimationFrame(() => window.scrollTo(0, 0));
         }}
         onBlur={() => setKeyboardOpen(false)}
       />
