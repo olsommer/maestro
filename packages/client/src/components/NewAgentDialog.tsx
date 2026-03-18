@@ -54,7 +54,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
   const [prompt, setPrompt] = useState("");
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
-  const [useWorktree, setUseWorktree] = useState(false);
+  const [worktreeMode, setWorktreeMode] = useState<"none" | "new" | "existing">("none");
   const [worktreePath, setWorktreePath] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -93,11 +93,11 @@ export function NewAgentDialog({ open, onClose }: Props) {
       setError("Project is required");
       return;
     }
-    if (useWorktree && isRoot) {
+    if (worktreeMode !== "none" && isRoot) {
       setError("Worktrees require a project");
       return;
     }
-    if (useWorktree && !worktreePath.trim()) {
+    if (worktreeMode === "existing" && !worktreePath.trim()) {
       setError("Worktree path is required");
       return;
     }
@@ -128,8 +128,9 @@ export function NewAgentDialog({ open, onClose }: Props) {
         customEnv,
         skipPermissions,
         disableSandbox,
-        useWorktree,
-        worktreePath: useWorktree ? worktreePath.trim() : undefined,
+        useWorktree: worktreeMode === "existing",
+        worktreePath: worktreeMode === "existing" ? worktreePath.trim() : undefined,
+        autoWorktree: worktreeMode === "new",
         prompt: prompt.trim() || undefined,
       });
       addAgent(agent);
@@ -140,7 +141,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
       setCustomDisplayName("");
       setCustomCommandTemplate("");
       setCustomEnvText("");
-      setUseWorktree(false);
+      setWorktreeMode("none");
       setWorktreePath("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
@@ -295,21 +296,36 @@ export function NewAgentDialog({ open, onClose }: Props) {
               </FieldDescription>
             </Field>
 
-            <Field orientation="responsive">
-              <FieldContent>
-                <FieldLabel htmlFor="use-worktree">Worktree</FieldLabel>
+            <Field>
+              <FieldLabel htmlFor="worktree-mode">Worktree</FieldLabel>
+              <Select
+                value={worktreeMode}
+                onValueChange={(value) => setWorktreeMode(value as "none" | "new" | "existing")}
+              >
+                <SelectTrigger id="worktree-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="new">Create new worktree</SelectItem>
+                    <SelectItem value="existing">Use existing worktree</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {worktreeMode === "none" && (
                 <FieldDescription>
-                  Run the agent in an isolated git worktree so it won't affect your working copy.
+                  Agent works directly in the project directory. Other agents on the same project may conflict.
                 </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="use-worktree"
-                checked={useWorktree}
-                onCheckedChange={setUseWorktree}
-              />
+              )}
+              {worktreeMode === "new" && (
+                <FieldDescription>
+                  A new git worktree and branch will be created automatically. The agent works in an isolated copy and can&apos;t conflict with other agents.
+                </FieldDescription>
+              )}
             </Field>
 
-            {useWorktree && (
+            {worktreeMode === "existing" && (
               <Field>
                 <FieldLabel htmlFor="worktree-path">Worktree Path</FieldLabel>
                 <Input
@@ -323,7 +339,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
                   }
                 />
                 <FieldDescription>
-                  Existing git worktree path for this agent.
+                  Path to an existing git worktree for this agent.
                 </FieldDescription>
               </Field>
             )}

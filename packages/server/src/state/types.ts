@@ -25,6 +25,7 @@ export interface AgentRecord {
   customEnv: Record<string, string> | null;
   secondaryProjectPaths: string[];
   worktreePath: string | null;
+  autoWorktree: boolean;
   skills: string[];
   status: "idle" | "running" | "waiting" | "completed" | "error";
   currentTask: string | null;

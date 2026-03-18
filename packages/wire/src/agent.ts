@@ -28,6 +28,7 @@ export const AgentSpawnOptions = z
     useWorktree: z.boolean().optional(),
     worktree: z.boolean().optional(),
     worktreePath: z.string().optional(),
+    autoWorktree: z.boolean().optional(),
     prompt: z.string().optional(),
   })
   .refine((data) => Boolean(data.projectId || data.projectPath), {

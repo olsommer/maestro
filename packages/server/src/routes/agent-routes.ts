@@ -12,6 +12,8 @@ import {
   getAgentOutput,
 } from "../agents/agent-manager.js";
 import { getProjectRecordById } from "../state/projects.js";
+import { updateAgentRecord } from "../state/agents.js";
+import { createAgentWorktree, isGitRepo } from "../agents/worktree.js";
 
 export async function registerAgentRoutes(app: FastifyInstance) {
   // List all agents
@@ -56,7 +58,8 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       }
 
       const wantsWorktree = options.useWorktree ?? options.worktree ?? false;
-      const worktreePath = options.worktreePath?.trim() || null;
+      const wantsAutoWorktree = options.autoWorktree ?? false;
+      let worktreePath = options.worktreePath?.trim() || null;
 
       if (wantsWorktree && !worktreePath) {
         return reply.status(400).send({
@@ -68,12 +71,22 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "worktreePath does not exist" });
       }
 
+      // Validate auto-worktree precondition (git repo check)
+      if (wantsAutoWorktree && !worktreePath) {
+        if (!isGitRepo(projectPath)) {
+          return reply.status(400).send({
+            error: "Auto-worktree requires the project to be a git repository",
+          });
+        }
+      }
+
       const createdAgent = await createAgent({
         name: options.name,
         provider: options.provider,
         projectId: options.projectId,
         projectPath,
         worktreePath,
+        autoWorktree: wantsAutoWorktree,
         customDisplayName: options.customDisplayName,
         customCommandTemplate: options.customCommandTemplate,
         customEnv: options.customEnv,
@@ -82,6 +95,20 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         skipPermissions: options.skipPermissions,
         disableSandbox: options.disableSandbox,
       });
+
+      // Auto-create a new worktree using the real agent ID
+      if (wantsAutoWorktree && !worktreePath) {
+        try {
+          const autoPath = createAgentWorktree(projectPath, createdAgent.id);
+          updateAgentRecord(createdAgent.id, { worktreePath: autoPath });
+        } catch (err) {
+          // Clean up the agent if worktree creation fails
+          await deleteAgent(createdAgent.id);
+          return reply.status(500).send({
+            error: `Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
 
       // If prompt provided, start immediately
       if (options.prompt) {

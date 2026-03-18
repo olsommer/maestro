@@ -32,6 +32,7 @@ export interface Agent {
   customCommandTemplate?: string | null;
   customEnv?: Record<string, string> | null;
   worktreePath?: string | null;
+  autoWorktree?: boolean;
   project?: {
     id: string;
     name: string;
@@ -252,6 +253,7 @@ export const api = {
     disableSandbox?: boolean;
     useWorktree?: boolean;
     worktreePath?: string;
+    autoWorktree?: boolean;
     prompt?: string;
   }) =>
     request<{ agent: Agent }>("/api/agents", {

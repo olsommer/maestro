@@ -1,0 +1,115 @@
+import * as fs from "fs";
+import * as path from "path";
+import { execSync } from "child_process";
+
+const WORKTREE_BASE = "/tmp/maestro-worktrees";
+
+/**
+ * Create a git worktree for an agent.
+ * Creates a new branch `agent/<agentId>` from the current HEAD of the project repo.
+ * Returns the absolute path to the new worktree.
+ */
+export function createAgentWorktree(
+  projectPath: string,
+  agentId: string
+): string {
+  const worktreeDir = path.join(WORKTREE_BASE, agentId);
+  const branchName = `agent/${agentId}`;
+
+  // Ensure base directory exists
+  fs.mkdirSync(WORKTREE_BASE, { recursive: true });
+
+  // Clean up stale worktree at this path if it exists
+  if (fs.existsSync(worktreeDir)) {
+    try {
+      execSync(`git worktree remove --force ${JSON.stringify(worktreeDir)}`, {
+        cwd: projectPath,
+        stdio: "ignore",
+      });
+    } catch {
+      // May fail if the main repo moved; force-remove the directory
+      fs.rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  }
+
+  // Delete the branch if it already exists (stale from a previous agent)
+  try {
+    execSync(`git branch -D ${JSON.stringify(branchName)}`, {
+      cwd: projectPath,
+      stdio: "ignore",
+    });
+  } catch {
+    // Branch doesn't exist — fine
+  }
+
+  // Create the worktree with a new branch from HEAD
+  execSync(
+    `git worktree add -b ${JSON.stringify(branchName)} ${JSON.stringify(worktreeDir)}`,
+    { cwd: projectPath, stdio: "pipe" }
+  );
+
+  console.log(
+    `Created worktree for agent ${agentId}: ${worktreeDir} (branch: ${branchName})`
+  );
+
+  return worktreeDir;
+}
+
+/**
+ * Remove a git worktree created for an agent.
+ * Also deletes the associated branch.
+ */
+export function removeAgentWorktree(
+  projectPath: string,
+  agentId: string
+): void {
+  const worktreeDir = path.join(WORKTREE_BASE, agentId);
+  const branchName = `agent/${agentId}`;
+
+  // Remove the worktree
+  if (fs.existsSync(worktreeDir)) {
+    try {
+      execSync(
+        `git worktree remove --force ${JSON.stringify(worktreeDir)}`,
+        { cwd: projectPath, stdio: "ignore" }
+      );
+    } catch {
+      // Fallback: just delete the directory
+      fs.rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  }
+
+  // Prune stale worktree references
+  try {
+    execSync("git worktree prune", { cwd: projectPath, stdio: "ignore" });
+  } catch {
+    // Best effort
+  }
+
+  // Delete the branch
+  try {
+    execSync(`git branch -D ${JSON.stringify(branchName)}`, {
+      cwd: projectPath,
+      stdio: "ignore",
+    });
+  } catch {
+    // Branch may already be gone
+  }
+
+  console.log(`Removed worktree for agent ${agentId}`);
+}
+
+/**
+ * Check if a project path is a git repository.
+ */
+export function isGitRepo(projectPath: string): boolean {
+  try {
+    execSync("git rev-parse --is-inside-work-tree", {
+      cwd: projectPath,
+      stdio: "pipe",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}

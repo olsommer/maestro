@@ -10,6 +10,7 @@ import {
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
 import { isNsjailAvailable } from "./sandbox.js";
+import { removeAgentWorktree } from "./worktree.js";
 import {
   appendAgentHistory,
   readAgentHistory,
@@ -80,6 +81,7 @@ export async function createAgent(options: {
   projectId?: string;
   projectPath: string;
   worktreePath?: string | null;
+  autoWorktree?: boolean;
   customDisplayName?: string;
   customCommandTemplate?: string;
   customEnv?: Record<string, string>;
@@ -94,6 +96,7 @@ export async function createAgent(options: {
     projectId: options.projectId ?? null,
     projectPath: options.projectPath,
     worktreePath: options.worktreePath ?? null,
+    autoWorktree: options.autoWorktree ?? false,
     customDisplayName: options.customDisplayName ?? null,
     customCommandTemplate: options.customCommandTemplate ?? null,
     customEnv: options.customEnv ?? null,
@@ -289,11 +292,22 @@ export async function stopAgent(agentId: string) {
 }
 
 export async function deleteAgent(agentId: string) {
+  const agent = getAgentRecord(agentId);
   const rt = agentRuntimes.get(agentId);
   if (rt?.ptyId) {
     killPty(rt.ptyId);
   }
   agentRuntimes.delete(agentId);
+
+  // Clean up auto-created worktree
+  if (agent?.autoWorktree && agent.worktreePath) {
+    try {
+      removeAgentWorktree(agent.projectPath, agentId);
+    } catch (err) {
+      console.warn(`Failed to remove worktree for agent ${agentId}:`, err);
+    }
+  }
+
   deleteAgentRecord(agentId);
 
   deps.io.emit("agent:status", {
