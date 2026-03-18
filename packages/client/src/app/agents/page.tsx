@@ -198,17 +198,18 @@ function AgentTerminalPanel({
         </div>
       )}
 
-      {!mobileKeyboardOpen && (agent.error || agent.currentTask) && (
+      {agent.error && !mobileKeyboardOpen && (
         <div className="border-b bg-card/50 px-3 py-1.5 text-[11px] text-muted-foreground">
-          {agent.error ? (
-            <Alert variant="destructive" className="px-2 py-1.5 text-[11px]">
-              <TriangleAlertIcon />
-              <AlertTitle>Agent error</AlertTitle>
-              <AlertDescription>{agent.error}</AlertDescription>
-            </Alert>
-          ) : (
-            <span className="block truncate">{agent.currentTask}</span>
-          )}
+          <Alert variant="destructive" className="px-2 py-1.5 text-[11px]">
+            <TriangleAlertIcon />
+            <AlertTitle>Agent error</AlertTitle>
+            <AlertDescription>{agent.error}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+      {agent.currentTask && !agent.error && (
+        <div className="hidden border-b bg-card/50 px-3 py-1.5 text-[11px] text-muted-foreground md:block">
+          <span className="block truncate">{agent.currentTask}</span>
         </div>
       )}
 
