@@ -200,28 +200,24 @@ export function NewAgentDialog({ open, onClose }: Props) {
 
             <Field>
               <FieldLabel htmlFor="project">Project</FieldLabel>
-              {projects.length > 0 ? (
-                <Select
-                  value={projectId}
-                  onValueChange={(value) => setProjectId(String(value ?? ""))}
-                >
-                  <SelectTrigger id="project" className="w-full">
-                    <SelectValue placeholder="Select a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {projects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="__root__">Root (/)</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <FieldDescription>No projects configured. Add a project in Settings first.</FieldDescription>
-              )}
+              <Select
+                value={projectId}
+                onValueChange={(value) => setProjectId(String(value ?? ""))}
+              >
+                <SelectTrigger id="project" className="w-full">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__root__">Root (/)</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
               {selectedProject && (
                 <FieldDescription>{selectedProject.localPath}</FieldDescription>
               )}
@@ -369,14 +365,14 @@ export function NewAgentDialog({ open, onClose }: Props) {
                 <FieldDescription>
                   {disableSandbox
                     ? "Disabled — no sandbox means no safety net for auto-approval."
-                    : "Auto-enabled in sandbox — the sandbox is the security boundary."}
+                    : "Run without approval prompts. Enabled by default when sandboxed."}
                 </FieldDescription>
               </FieldContent>
               <Switch
                 id="skip-permissions"
                 checked={skipPermissions}
                 onCheckedChange={setSkipPermissions}
-                disabled
+                disabled={disableSandbox}
               />
             </Field>
           </FieldGroup>
