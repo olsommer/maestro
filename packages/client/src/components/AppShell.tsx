@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GitHubStatusBanner } from "@/components/GitHubStatusBanner";
 import { Sidebar } from "@/components/Sidebar";
 import { SetupDialog } from "@/components/SetupDialog";
@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNode; hideMobileHeader?: boolean }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [checked, setChecked] = useState(false);
+  const insetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api
@@ -24,6 +25,33 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
       });
   }, []);
 
+  // On pages that manage their own mobile header (e.g. agents with terminal),
+  // track visualViewport height to resize when the keyboard opens/closes.
+  useEffect(() => {
+    if (!hideMobileHeader) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      if (insetRef.current) {
+        const h = `${vv.height}px`;
+        insetRef.current.style.height = h;
+        insetRef.current.style.minHeight = h;
+        insetRef.current.style.maxHeight = h;
+      }
+    };
+    update();
+    vv.addEventListener("resize", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      if (insetRef.current) {
+        insetRef.current.style.height = "";
+        insetRef.current.style.minHeight = "";
+        insetRef.current.style.maxHeight = "";
+      }
+    };
+  }, [hideMobileHeader]);
+
   return (
     <>
       {checked && needsSetup && (
@@ -33,7 +61,10 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
         <Sidebar />
 
         {/* Main */}
-        <SidebarInset className="min-h-dvh max-h-dvh">
+        <SidebarInset
+          ref={insetRef}
+          className={hideMobileHeader ? "min-h-dvh max-h-dvh overflow-hidden" : "min-h-dvh max-h-dvh"}
+        >
           <GitHubStatusBanner />
           {!hideMobileHeader && (
             <header className="sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:hidden">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Terminal } from "@/components/Terminal";
@@ -610,38 +610,12 @@ function AgentPanel() {
   );
 }
 
-function ViewportHeightWrapper({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const update = () => {
-      if (ref.current) {
-        ref.current.style.height = `${vv.height}px`;
-      }
-    };
-    update();
-    vv.addEventListener("resize", update);
-    return () => vv.removeEventListener("resize", update);
-  }, []);
-
-  return (
-    <div ref={ref} className="flex min-h-0 flex-1 overflow-hidden">
-      {children}
-    </div>
-  );
-}
-
 export default function AgentsPage() {
   return (
     <AppShell hideMobileHeader>
-      <ViewportHeightWrapper>
-        <main className="flex min-h-0 flex-1">
-          <AgentPanel />
-        </main>
-      </ViewportHeightWrapper>
+      <main className="flex min-h-0 flex-1">
+        <AgentPanel />
+      </main>
     </AppShell>
   );
 }
