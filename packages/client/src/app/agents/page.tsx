@@ -393,7 +393,7 @@ function AgentPanel() {
   }, [selectedIndex, visibleAgents, selectAgent]);
 
   return (
-    <div className="flex flex-1 h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex flex-1 h-full min-h-0 flex-col overflow-hidden touch-none md:touch-auto overscroll-none">
 
 
       {/* Toolbar */}

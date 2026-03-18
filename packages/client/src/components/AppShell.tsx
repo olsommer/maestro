@@ -27,17 +27,26 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
 
   // On pages that manage their own mobile header (e.g. agents with terminal),
   // track visualViewport height to resize when the keyboard opens/closes.
+  // Also constrain the sidebar wrapper to prevent page-level scrolling.
   useEffect(() => {
     if (!hideMobileHeader) return;
     const vv = window.visualViewport;
     if (!vv) return;
 
+    const wrapper = insetRef.current?.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
+
     const update = () => {
+      const h = `${vv.height}px`;
       if (insetRef.current) {
-        const h = `${vv.height}px`;
         insetRef.current.style.height = h;
         insetRef.current.style.minHeight = h;
         insetRef.current.style.maxHeight = h;
+      }
+      if (wrapper) {
+        wrapper.style.height = h;
+        wrapper.style.minHeight = h;
+        wrapper.style.maxHeight = h;
+        wrapper.style.overflow = "hidden";
       }
     };
     update();
@@ -48,6 +57,12 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
         insetRef.current.style.height = "";
         insetRef.current.style.minHeight = "";
         insetRef.current.style.maxHeight = "";
+      }
+      if (wrapper) {
+        wrapper.style.height = "";
+        wrapper.style.minHeight = "";
+        wrapper.style.maxHeight = "";
+        wrapper.style.overflow = "";
       }
     };
   }, [hideMobileHeader]);
