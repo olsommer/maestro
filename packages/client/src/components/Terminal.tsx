@@ -123,6 +123,7 @@ function extractBufferText(term: GhosttyTerminal): string {
 export function Terminal({ agentId, isActive }: { agentId: string; isActive?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<GhosttyTerminal | null>(null);
+  const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
@@ -154,6 +155,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       fitAddon.observeResize();
 
       termRef.current = term;
+      fitAddonRef.current = fitAddon;
 
       // Touch scrolling for mobile (ghostty-web has no built-in touch scroll)
       let touchStartY = 0;
@@ -201,8 +203,12 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       container.addEventListener("touchend", onTouchEnd, { capture: true, passive: false });
 
       // Refit terminal when mobile keyboard opens/closes (visualViewport resize)
+      let resizeTimer: ReturnType<typeof setTimeout>;
       const onViewportResize = () => {
+        // Immediate fit + delayed fit to catch layout reflows
         fitAddon.fit();
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => fitAddon.fit(), 100);
       };
       window.visualViewport?.addEventListener("resize", onViewportResize);
 
@@ -250,6 +256,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       });
 
       return () => {
+        clearTimeout(resizeTimer);
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
@@ -268,6 +275,13 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       cleanup.then((fn) => fn?.());
     };
   }, [agentId]);
+
+  // Refit when toolbar visibility changes (isActive controls toolbar rendering)
+  useEffect(() => {
+    // Small delay to let the DOM update after toolbar mount/unmount
+    const id = setTimeout(() => fitAddonRef.current?.fit(), 50);
+    return () => clearTimeout(id);
+  }, [isActive]);
 
   const handleShowText = () => {
     if (termRef.current) {
