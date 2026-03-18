@@ -62,49 +62,49 @@ function MobileTerminalToolbar({
 
   return (
     <div
-      className="flex shrink-0 items-center gap-1 overflow-x-auto border-t bg-card px-2 py-1.5"
+      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-t bg-card px-2 py-2"
       onTouchMove={(e) => e.stopPropagation()}
     >
-      <Button size="xs" variant="secondary" onClick={handleEsc}>
+      <Button size="sm" variant="secondary" onClick={handleEsc}>
         Esc
       </Button>
-      <Button size="xs" variant="secondary" onClick={() => send("\t")}>
+      <Button size="sm" variant="secondary" onClick={() => send("\t")}>
         Tab
       </Button>
-      <Button size="xs" variant="secondary" onClick={() => send("1")}>
+      <Button size="sm" variant="secondary" onClick={() => send("1")}>
         1
       </Button>
-      <Button size="xs" variant="secondary" onClick={() => send("2")}>
+      <Button size="sm" variant="secondary" onClick={() => send("2")}>
         2
       </Button>
-      <Button size="xs" variant="secondary" onClick={() => send("3")}>
+      <Button size="sm" variant="secondary" onClick={() => send("3")}>
         3
       </Button>
-      <Button size="xs" variant="secondary" onClick={handlePaste}>
-        <ClipboardPasteIcon className="size-3.5" />
+      <Button size="sm" variant="secondary" onClick={handlePaste}>
+        <ClipboardPasteIcon className="size-4" />
       </Button>
-      <Button size="xs" variant="secondary" onClick={onShowText}>
-        <TextIcon className="size-3.5" />
+      <Button size="sm" variant="secondary" onClick={onShowText}>
+        <TextIcon className="size-4" />
         Text
       </Button>
       <Button
-        size="xs"
+        size="sm"
         variant={isListening ? "destructive" : "secondary"}
         onClick={toggleVoice}
         disabled={isVoiceConnecting}
       >
         {isListening ? (
-          <MicOffIcon className="size-3.5" />
+          <MicOffIcon className="size-4" />
         ) : (
-          <MicIcon className="size-3.5" />
+          <MicIcon className="size-4" />
         )}
       </Button>
       <Button
-        size="xs"
+        size="sm"
         variant={keyboardOpen ? "default" : "secondary"}
         onClick={handleToggleKeyboard}
       >
-        <KeyboardIcon className="size-3.5" />
+        <KeyboardIcon className="size-4" />
       </Button>
       <input
         ref={hiddenInputRef}
