@@ -6,9 +6,25 @@ import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
-import { ArrowRightToLineIcon, ClipboardPasteIcon, KeyboardIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
+import { ArrowRightToLineIcon, ClipboardPasteIcon, MicIcon, MicOffIcon, TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as GhosttyTerminal } from "ghostty-web";
+
+function useMobileKeyboard() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const threshold = 100;
+    const check = () => setOpen(window.innerHeight - vv.height > threshold);
+    check();
+    vv.addEventListener("resize", check);
+    return () => vv.removeEventListener("resize", check);
+  }, []);
+
+  return open;
+}
 
 function MobileTerminalToolbar({
   agentId,
@@ -20,8 +36,7 @@ function MobileTerminalToolbar({
   onShowText: () => void;
 }) {
   const isMobile = useIsMobile();
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const keyboardOpen = useMobileKeyboard();
 
   const send = useCallback(
     (data: string) => {
@@ -34,7 +49,7 @@ function MobileTerminalToolbar({
     onTranscript: send,
   });
 
-  if (!isMobile) return null;
+  if (!isMobile || keyboardOpen) return null;
 
   const handleEsc = () => send("\x1b");
 
@@ -49,16 +64,6 @@ function MobileTerminalToolbar({
 
   const isListening = voiceStatus === "listening";
   const isVoiceConnecting = voiceStatus === "connecting";
-
-  const handleToggleKeyboard = () => {
-    if (keyboardOpen) {
-      hiddenInputRef.current?.blur();
-      setKeyboardOpen(false);
-    } else {
-      hiddenInputRef.current?.focus({ preventScroll: true });
-      setKeyboardOpen(true);
-    }
-  };
 
   return (
     <div
@@ -98,36 +103,6 @@ function MobileTerminalToolbar({
           <MicIcon className="size-4" />
         )}
       </Button>
-      <Button
-        size="sm"
-        variant={keyboardOpen ? "default" : "secondary"}
-        onClick={handleToggleKeyboard}
-      >
-        <KeyboardIcon className="size-4" />
-      </Button>
-      <input
-        ref={hiddenInputRef}
-        style={{ width: 0, height: 0, padding: 0, border: 0, opacity: 0, position: "absolute", bottom: 0, left: 0 }}
-        aria-hidden
-        tabIndex={-1}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        inputMode="text"
-        onInput={(e) => {
-          const value = (e.target as HTMLInputElement).value;
-          if (value) {
-            send(value);
-            (e.target as HTMLInputElement).value = "";
-          }
-        }}
-        onFocus={() => {
-          // Prevent browser from scrolling to this input
-          requestAnimationFrame(() => window.scrollTo(0, 0));
-        }}
-        onBlur={() => setKeyboardOpen(false)}
-      />
     </div>
   );
 }
