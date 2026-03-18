@@ -181,6 +181,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       // Touch scrolling for mobile (ghostty-web has no built-in touch scroll)
       let touchStartY = 0;
       let touchAccum = 0;
+      let didScroll = false;
       const container = containerRef.current;
 
       const lineHeight = term.rows > 0
@@ -190,12 +191,14 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       const onTouchStart = (e: TouchEvent) => {
         touchStartY = e.touches[0].clientY;
         touchAccum = 0;
+        didScroll = false;
       };
 
       const onTouchMove = (e: TouchEvent) => {
         const dy = touchStartY - e.touches[0].clientY;
         touchStartY = e.touches[0].clientY;
         touchAccum += dy;
+        didScroll = true;
 
         const linesToScroll = Math.trunc(touchAccum / lineHeight);
         if (linesToScroll !== 0) {
@@ -206,8 +209,19 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
         e.preventDefault();
       };
 
+      // Prevent ghostty's touchend handler from focusing the textarea (opening keyboard)
+      // when the user was scrolling rather than tapping.
+      const onTouchEnd = (e: TouchEvent) => {
+        if (didScroll) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+
       container.addEventListener("touchstart", onTouchStart, { passive: true });
       container.addEventListener("touchmove", onTouchMove, { passive: false });
+      // Use capture phase to intercept before ghostty's touchend handler
+      container.addEventListener("touchend", onTouchEnd, { capture: true, passive: false });
 
       // Refit terminal when mobile keyboard opens/closes (visualViewport resize)
       const onViewportResize = () => {
@@ -262,6 +276,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
+        container.removeEventListener("touchend", onTouchEnd);
         socket.off("agent:output", handleOutput);
         socket.emit("agent:unsubscribe", { agentId });
         term.dispose();
