@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import * as pty from "node-pty";
 
@@ -26,6 +29,86 @@ export interface ClaudeAuthStatus {
   authMethod: string | null;
 }
 
+interface ClaudeCliStatusPayload {
+  loggedIn?: boolean;
+  email?: string;
+  orgName?: string;
+  authMethod?: string;
+}
+
+interface ClaudeCredentialsFile {
+  claudeAiOauth?: {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    subscriptionType?: string;
+  };
+}
+
+function parseClaudeCliStatus(raw: string): ClaudeAuthStatus | null {
+  try {
+    const data = JSON.parse(raw) as ClaudeCliStatusPayload;
+    return {
+      installed: true,
+      loggedIn: Boolean(data.loggedIn),
+      email: data.email ?? null,
+      orgName: data.orgName ?? null,
+      authMethod: data.authMethod ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getClaudeCredentialHomes(): string[] {
+  const candidates = [
+    process.env.HOME,
+    os.homedir(),
+    "/root",
+    "/home/sandbox",
+  ];
+
+  return Array.from(new Set(candidates.filter((value): value is string => Boolean(value))));
+}
+
+function getClaudeAuthStatusFromCredentials(): ClaudeAuthStatus | null {
+  let bestStatus: ClaudeAuthStatus | null = null;
+  let bestExpiresAt = -Infinity;
+
+  for (const home of getClaudeCredentialHomes()) {
+    const credentialsPath = path.join(home, ".claude", ".credentials.json");
+    if (!fs.existsSync(credentialsPath)) continue;
+
+    try {
+      const raw = fs.readFileSync(credentialsPath, "utf8");
+      const data = JSON.parse(raw) as ClaudeCredentialsFile;
+      const oauth = data.claudeAiOauth;
+      if (!oauth?.accessToken) continue;
+
+      const expiresAt =
+        typeof oauth.expiresAt === "number" && Number.isFinite(oauth.expiresAt)
+          ? oauth.expiresAt
+          : null;
+      const loggedIn = expiresAt === null || expiresAt > Date.now();
+
+      if (loggedIn && (expiresAt ?? Number.MAX_SAFE_INTEGER) > bestExpiresAt) {
+        bestExpiresAt = expiresAt ?? Number.MAX_SAFE_INTEGER;
+        bestStatus = {
+          installed: true,
+          loggedIn: true,
+          email: null,
+          orgName: null,
+          authMethod: "oauth-credentials",
+        };
+      }
+    } catch {
+      // Ignore malformed credentials and continue checking other homes.
+    }
+  }
+
+  return bestStatus;
+}
+
 export function getClaudeAuthStatus(): ClaudeAuthStatus {
   if (!commandExists("claude")) {
     return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
@@ -38,22 +121,36 @@ export function getClaudeAuthStatus(): ClaudeAuthStatus {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
-    const data = JSON.parse(raw) as {
-      loggedIn?: boolean;
-      email?: string;
-      orgName?: string;
-      authMethod?: string;
-    };
+    const status = parseClaudeCliStatus(raw);
+    if (status?.loggedIn) {
+      return status;
+    }
 
-    return {
+    return getClaudeAuthStatusFromCredentials() ?? status ?? {
       installed: true,
-      loggedIn: Boolean(data.loggedIn),
-      email: data.email ?? null,
-      orgName: data.orgName ?? null,
-      authMethod: data.authMethod ?? null,
+      loggedIn: false,
+      email: null,
+      orgName: null,
+      authMethod: null,
     };
-  } catch {
-    return { installed: true, loggedIn: false, email: null, orgName: null, authMethod: null };
+  } catch (err) {
+    const stdout =
+      err instanceof Error && "stdout" in err && typeof err.stdout === "string"
+        ? err.stdout.trim()
+        : "";
+    const status = stdout ? parseClaudeCliStatus(stdout) : null;
+
+    if (status?.loggedIn) {
+      return status;
+    }
+
+    return getClaudeAuthStatusFromCredentials() ?? status ?? {
+      installed: true,
+      loggedIn: false,
+      email: null,
+      orgName: null,
+      authMethod: null,
+    };
   }
 }
 

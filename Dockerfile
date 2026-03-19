@@ -17,7 +17,7 @@ FROM node:22-slim AS base
 
 # Install nsjail runtime dependencies + build tools
 RUN apt-get update && apt-get install -y \
-    git python3 make g++ curl \
+    git python3 make g++ curl bubblewrap \
     libprotobuf32 libnl-3-200 libnl-route-3-200 \
  && rm -rf /var/lib/apt/lists/*
 
