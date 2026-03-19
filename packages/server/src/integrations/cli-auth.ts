@@ -117,7 +117,7 @@ export function startCodexDeviceAuth(): Promise<DeviceAuthResult> {
       output += data;
       const clean = stripAnsi(output);
 
-      const urlMatch = clean.match(/(https:\/\/auth\.openai\.com\/[^\s"'<>]+)/);
+      const urlMatch = clean.match(/(https:\/\/[^\s"'<>]+)/);
       const codeMatch = clean.match(/one-time code[^\n]*\n\s+([A-Z0-9]+-[A-Z0-9]+)/i);
 
       if (codeMatch && urlMatch && !resolved) {
