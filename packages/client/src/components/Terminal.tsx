@@ -160,6 +160,7 @@ function extractBufferText(term: XtermTerminal): string {
 }
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
+  const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
@@ -201,7 +202,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
       fitAddon.fit();
-      term.focus();
+      if (!isMobile) {
+        term.focus();
+      }
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
@@ -340,7 +343,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       cancelled = true;
       disposeTerminal?.();
     };
-  }, [terminalId]);
+  }, [terminalId, isMobile]);
 
   // Refit when toolbar visibility changes (isActive controls toolbar rendering)
   useEffect(() => {

@@ -337,6 +337,9 @@ function TerminalPagePanel() {
   const navigateTerminal = useCallback(
     (dir: -1 | 1) => {
       if (visibleTerminals.length === 0) return;
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
       const next = (selectedIndex + dir + visibleTerminals.length) % visibleTerminals.length;
       selectTerminal(visibleTerminals[next].id);
     },
