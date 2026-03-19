@@ -167,14 +167,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
+    let disposeTerminal: (() => void) | null = null;
 
-    async function setup() {
+    void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
 
       await init();
 
-      if (!mounted || !containerRef.current) return;
+      if (cancelled || !containerRef.current) return;
 
       const fitAddon = new FitAddon();
       const term = new Terminal({
@@ -195,6 +196,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
+      setTextOverlay(null);
 
       // Touch scrolling for mobile (ghostty-web has no built-in touch scroll)
       let touchStartY = 0;
@@ -250,27 +252,20 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         resizeTimer = setTimeout(() => fitAddon.fit(), 100);
       };
       window.visualViewport?.addEventListener("resize", onViewportResize);
+      let cleanedUp = false;
 
-      // Load existing output buffer
-      try {
-        const { output } = await api.getTerminalOutput(terminalId);
-        for (const chunk of output) {
-          term.write(chunk);
-        }
-      } catch {
-        // Ignore
-      }
-
-      // Subscribe to live output
       const socket = getSocket();
       socketRef.current = socket;
-      socket.emit("terminal:subscribe", { terminalId });
 
-      // Send initial dimensions
-      socket.emit("terminal:resize", {
-        terminalId,
-        cols: term.cols,
-        rows: term.rows,
+      const handleOutput = (data: { terminalId: string; data: string }) => {
+        if (data.terminalId === terminalId) {
+          term.write(data.data);
+        }
+      };
+
+      // Send keystrokes to server
+      term.onData((data: string) => {
+        socket.emit("terminal:input", { terminalId, data });
       });
 
       // Handle terminal resize
@@ -282,19 +277,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         });
       });
 
-      const handleOutput = (data: { terminalId: string; data: string }) => {
-        if (data.terminalId === terminalId) {
-          term.write(data.data);
-        }
-      };
-      socket.on("terminal:output", handleOutput);
-
-      // Send keystrokes to server
-      term.onData((data: string) => {
-        socket.emit("terminal:input", { terminalId, data });
-      });
-
-      return () => {
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
         clearTimeout(resizeTimer);
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         container.removeEventListener("touchstart", onTouchStart);
@@ -303,15 +288,47 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         socket.off("terminal:output", handleOutput);
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
+        termRef.current = null;
+        fitAddonRef.current = null;
         socketRef.current = null;
       };
-    }
 
-    const cleanup = setup();
+      disposeTerminal = cleanup;
+
+      // Load existing output buffer
+      try {
+        const { output } = await api.getTerminalOutput(terminalId);
+        if (cancelled) {
+          cleanup();
+          return;
+        }
+        for (const chunk of output) {
+          term.write(chunk);
+        }
+      } catch {
+        // Ignore
+      }
+
+      if (cancelled) {
+        cleanup();
+        return;
+      }
+
+      // Subscribe to live output
+      socket.emit("terminal:subscribe", { terminalId });
+
+      // Send initial dimensions
+      socket.emit("terminal:resize", {
+        terminalId,
+        cols: term.cols,
+        rows: term.rows,
+      });
+      socket.on("terminal:output", handleOutput);
+    })();
 
     return () => {
-      mounted = false;
-      cleanup.then((fn) => fn?.());
+      cancelled = true;
+      disposeTerminal?.();
     };
   }, [terminalId]);
 

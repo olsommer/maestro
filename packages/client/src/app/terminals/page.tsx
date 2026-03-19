@@ -456,6 +456,7 @@ function TerminalPagePanel() {
         ) : isMobile && selectedTerminal ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <TerminalPanel
+              key={selectedTerminal.id}
               terminal={selectedTerminal}
               isSelected
               onSelect={() => {}}
