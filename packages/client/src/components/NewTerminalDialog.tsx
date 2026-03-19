@@ -37,14 +37,18 @@ interface Props {
   onClose: () => void;
 }
 
+function generateDefaultTerminalName(): string {
+  const token = crypto.randomUUID().slice(0, 6);
+  return `terminal ${token}`;
+}
+
 export function NewTerminalDialog({ open, onClose }: Props) {
   const addTerminal = useStore((s) => s.addAgent);
   const selectTerminal = useStore((s) => s.selectAgent);
   const projects = useStore((s) => s.projects);
-  const selectedProjectId = useStore((s) => s.selectedProjectId);
 
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<"none" | "claude" | "codex">("claude");
+  const [provider, setProvider] = useState<"none" | "claude" | "codex">("none");
   const [projectId, setProjectId] = useState("");
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
@@ -53,8 +57,13 @@ export function NewTerminalDialog({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setProjectId(selectedProjectId ?? projects[0]?.id ?? "");
-  }, [open, projects, selectedProjectId]);
+    setName(generateDefaultTerminalName());
+    setProjectId("__root__");
+    setProvider("none");
+    setSkipPermissions(true);
+    setDisableSandbox(false);
+    setError("");
+  }, [open]);
 
   const hasCodingAgent = provider !== "none";
 
@@ -83,8 +92,9 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       addTerminal(terminal);
       selectTerminal(terminal.id);
       onClose();
-      setName("");
-      setProvider("claude");
+      setName(generateDefaultTerminalName());
+      setProjectId("__root__");
+      setProvider("none");
       setSkipPermissions(true);
       setDisableSandbox(false);
     } catch (err) {
@@ -122,7 +132,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 id="agent-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="terminal x"
+                placeholder="terminal a1b2c3"
               />
             </Field>
 
@@ -178,7 +188,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
               <Select
                 value={provider}
                 onValueChange={(value) =>
-                  setProvider((value as "none" | "claude" | "codex") ?? "claude")
+                  setProvider((value as "none" | "claude" | "codex") ?? "none")
                 }
               >
                 <SelectTrigger id="provider" className="w-full">
