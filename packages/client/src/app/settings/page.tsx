@@ -236,14 +236,14 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
     setConnecting(true);
     setError("");
     try {
-      // Create a temporary Claude terminal with /login prompt
+      // Create a temporary Claude terminal for interactive login in normal CLI mode.
       const { terminal } = await api.createTerminal({
         name: "Claude Login",
         provider: "claude",
         projectPath: "/tmp",
-        prompt: "/login",
+        prompt: "",
         skipPermissions: false,
-        disableSandbox: false,
+        disableSandbox: true,
       });
       // Select the terminal and navigate to the terminals page for the login flow
       addAgent(terminal);
