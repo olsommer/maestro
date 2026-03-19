@@ -169,6 +169,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   useEffect(() => {
     let cancelled = false;
     let disposeTerminal: (() => void) | null = null;
+    containerRef.current?.replaceChildren();
 
     void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
@@ -288,6 +289,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         socket.off("terminal:output", handleOutput);
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
+        container.replaceChildren();
         termRef.current = null;
         fitAddonRef.current = null;
         socketRef.current = null;
