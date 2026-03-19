@@ -126,6 +126,34 @@ export function NewTerminalDialog({ open, onClose }: Props) {
               />
             </Field>
 
+            <Field>
+              <FieldLabel htmlFor="project">Project</FieldLabel>
+              <Select
+                value={projectId}
+                onValueChange={(value) => setProjectId(String(value ?? ""))}
+              >
+                <SelectTrigger id="project" className="w-full">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__root__">Root (/)</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {selectedProject && (
+                <FieldDescription>{selectedProject.localPath}</FieldDescription>
+              )}
+              {projectId === "__root__" && (
+                <FieldDescription>Terminal will run from the filesystem root.</FieldDescription>
+              )}
+            </Field>
+
             <Field orientation="responsive">
               <FieldContent>
                 <FieldLabel htmlFor="sandbox-enabled">Sandbox</FieldLabel>
@@ -169,34 +197,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                   ? "Launch a plain terminal without starting a coding agent."
                   : "Launch the terminal and start the selected coding agent inside it."}
               </FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="project">Project</FieldLabel>
-              <Select
-                value={projectId}
-                onValueChange={(value) => setProjectId(String(value ?? ""))}
-              >
-                <SelectTrigger id="project" className="w-full">
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="__root__">Root (/)</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {selectedProject && (
-                <FieldDescription>{selectedProject.localPath}</FieldDescription>
-              )}
-              {projectId === "__root__" && (
-                <FieldDescription>Terminal will run from the filesystem root.</FieldDescription>
-              )}
             </Field>
 
             {hasCodingAgent && !disableSandbox && (
