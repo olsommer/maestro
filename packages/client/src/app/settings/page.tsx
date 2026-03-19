@@ -242,8 +242,8 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
         provider: "claude",
         projectPath: "/tmp",
         prompt: "/login",
-        skipPermissions: true,
-        disableSandbox: true,
+        skipPermissions: false,
+        disableSandbox: false,
       });
       // Select the terminal and navigate to the terminals page for the login flow
       addAgent(terminal);
