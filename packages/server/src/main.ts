@@ -1,9 +1,9 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { Server as SocketServer } from "socket.io";
-import { initAgentManager } from "./agents/agent-manager.js";
+import { initTerminalManager, restorePersistentTerminals } from "./agents/terminal-manager.js";
 import { killAllPty } from "./agents/pty-manager.js";
-import { registerAgentRoutes } from "./routes/agent-routes.js";
+import { registerTerminalRoutes } from "./routes/terminal-routes.js";
 import { registerProjectRoutes } from "./routes/project-routes.js";
 import { registerKanbanRoutes } from "./routes/kanban-routes.js";
 import { registerSocketHandlers } from "./socket/handlers.js";
@@ -75,12 +75,12 @@ async function main() {
     return next(new Error("Invalid auth token"));
   });
 
-  // 6. Initialize agent manager with dependencies
-  initAgentManager({ io });
+  // 6. Initialize terminal manager with dependencies
+  initTerminalManager({ io });
 
   // 7. Register routes
   await registerProjectRoutes(app);
-  await registerAgentRoutes(app);
+  await registerTerminalRoutes(app);
   await registerKanbanRoutes(app, io);
 
   await registerSchedulerRoutes(app);
@@ -100,6 +100,7 @@ async function main() {
 
   // 9. Start background services
   startKanbanAssigner(io);
+  await restorePersistentTerminals();
   await startScheduler();
   startAutomationRunner();
   startAutoUpdater();

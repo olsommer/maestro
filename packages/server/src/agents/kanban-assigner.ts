@@ -1,7 +1,7 @@
 import type { Server as SocketServer } from "socket.io";
-import { createAutoSpawnAgent, startAgent, deleteAgent } from "./agent-manager.js";
+import { createAutoSpawnTerminal, startTerminal, deleteTerminal } from "./terminal-manager.js";
 import { listKanbanTasks, updateKanbanTaskRecord } from "../state/kanban.js";
-import { updateAgentRecord } from "../state/agents.js";
+import { updateTerminalRecord } from "../state/terminals.js";
 
 const POLL_INTERVAL = 10_000;
 
@@ -54,40 +54,41 @@ async function assignTaskToAgent(
   io: SocketServer,
   task: TaskLike
 ) {
-  let agentId: string | null = null;
+  let terminalId: string | null = null;
   try {
-    const agent = await createAutoSpawnAgent({
+    const terminal = await createAutoSpawnTerminal({
       name: `kanban-${task.title}-${Date.now()}`,
+      kind: "kanban",
       projectId: task.projectId ?? undefined,
       projectPath: task.projectPath,
     });
-    agentId = agent.id;
+    terminalId = terminal.id;
 
     await updateKanbanTaskRecord(task.id, {
       column: "ongoing",
-      assignedAgentId: agentId,
+      assignedAgentId: terminalId,
     });
 
-    updateAgentRecord(agentId, {
+    updateTerminalRecord(terminalId, {
       kanbanTaskId: task.id,
     });
 
     const prompt = `Task: ${task.title}\n\n${task.description}`;
-    await startAgent(agentId, prompt);
+    await startTerminal(terminalId, prompt);
 
     io.emit("kanban:updated", {
       taskId: task.id,
       column: "ongoing",
-      assignedAgentId: agentId,
+      assignedAgentId: terminalId,
     });
 
-    console.log(`Kanban: assigned task "${task.title}" to agent ${agentId}`);
+    console.log(`Kanban: assigned task "${task.title}" to terminal ${terminalId}`);
   } catch (err) {
-    if (agentId) {
+    if (terminalId) {
       try {
-        await deleteAgent(agentId);
+        await deleteTerminal(terminalId);
       } catch {
-        // Best effort cleanup for partially created agents.
+        // Best effort cleanup for partially created terminals.
       }
     }
     await updateKanbanTaskRecord(task.id, {
@@ -99,6 +100,6 @@ async function assignTaskToAgent(
       column: "planned",
       assignedAgentId: null,
     });
-    console.error(`Failed to assign task ${task.id} to an auto-spawned agent:`, err);
+    console.error(`Failed to assign task ${task.id} to an auto-spawned terminal:`, err);
   }
 }

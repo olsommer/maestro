@@ -20,7 +20,7 @@ function SocketCore({ children }: { children: React.ReactNode }) {
 
   // Load base state on mount
   useEffect(() => {
-    api.getAgents().then(({ agents }) => setAgents(agents)).catch(reportLoadError);
+    api.getTerminals().then(({ terminals }) => setAgents(terminals)).catch(reportLoadError);
     api.getProjects()
       .then(({ projects }) => setProjects(projects))
       .catch(reportLoadError);
@@ -31,19 +31,19 @@ function SocketCore({ children }: { children: React.ReactNode }) {
     const socket = getSocket();
 
     const handleStatus = (data: {
-      agentId: string;
+      terminalId: string;
       status: string;
       error?: string | null;
     }) => {
-      updateAgent(data.agentId, {
+      updateAgent(data.terminalId, {
         status: data.status,
         error: data.error ?? null,
       });
     };
 
-    socket.on("agent:status", handleStatus);
+    socket.on("terminal:status", handleStatus);
     return () => {
-      socket.off("agent:status", handleStatus);
+      socket.off("terminal:status", handleStatus);
     };
   }, [updateAgent]);
 

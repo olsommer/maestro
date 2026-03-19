@@ -34,7 +34,7 @@ function Dashboard() {
       description: "Tracked workspaces",
     },
     {
-      label: "Total Agents",
+      label: "Total Terminals",
       value: agents.length,
       description: "Available workers",
     },
@@ -81,7 +81,7 @@ function Dashboard() {
               {errored} agent{errored === 1 ? "" : "s"} need attention
             </AlertTitle>
             <AlertDescription>
-              Open the Agents view to inspect failures and restart affected sessions.
+              Open the Terminals view to inspect failures and restart affected sessions.
             </AlertDescription>
           </Alert>
         )}
@@ -107,7 +107,7 @@ function Dashboard() {
             </EmptyMedia>
             <EmptyTitle>No agents yet</EmptyTitle>
             <EmptyDescription>
-              Go to the Agents page to create your first coding agent.
+              Go to the Terminals page to create your first coding agent.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

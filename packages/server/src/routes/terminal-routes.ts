@@ -2,45 +2,45 @@ import * as fs from "fs";
 import type { FastifyInstance } from "fastify";
 import { AgentSpawnOptions, AgentStartInput, AgentSendInput } from "@maestro/wire";
 import {
-  createAgent,
-  startAgent,
-  stopAgent,
-  deleteAgent,
-  sendInput,
-  listAgents,
-  getAgent,
-  getAgentOutput,
-} from "../agents/agent-manager.js";
+  createTerminal,
+  deleteTerminal,
+  getTerminal,
+  getTerminalOutput,
+  listTerminals,
+  sendTerminalInput,
+  startTerminal,
+  stopTerminal,
+} from "../agents/terminal-manager.js";
 import { getProjectRecordById } from "../state/projects.js";
-import { updateAgentRecord } from "../state/agents.js";
-import { createAgentWorktree, isGitRepo } from "../agents/worktree.js";
+import { updateTerminalRecord } from "../state/terminals.js";
+import { createTerminalWorktree, isGitRepo } from "../agents/worktree.js";
 
-export async function registerAgentRoutes(app: FastifyInstance) {
-  // List all agents
-  app.get("/api/agents", async () => {
-    const agents = await listAgents();
-    return { agents };
+export async function registerTerminalRoutes(app: FastifyInstance) {
+  // List all terminals
+  app.get("/api/terminals", async () => {
+    const terminals = await listTerminals();
+    return { terminals };
   });
 
-  // Get single agent
-  app.get<{ Params: { id: string } }>("/api/agents/:id", async (req, reply) => {
-    const agent = await getAgent(req.params.id);
-    if (!agent) return reply.status(404).send({ error: "Agent not found" });
-    return { agent };
+  // Get single terminal
+  app.get<{ Params: { id: string } }>("/api/terminals/:id", async (req, reply) => {
+    const terminal = await getTerminal(req.params.id);
+    if (!terminal) return reply.status(404).send({ error: "Terminal not found" });
+    return { terminal };
   });
 
-  // Get agent output buffer
+  // Get terminal output buffer
   app.get<{ Params: { id: string } }>(
-    "/api/agents/:id/output",
+    "/api/terminals/:id/output",
     async (req, reply) => {
-      const agent = await getAgent(req.params.id);
-      if (!agent) return reply.status(404).send({ error: "Agent not found" });
-      return { output: getAgentOutput(req.params.id) };
+      const terminal = await getTerminal(req.params.id);
+      if (!terminal) return reply.status(404).send({ error: "Terminal not found" });
+      return { output: getTerminalOutput(req.params.id) };
     }
   );
 
-  // Create agent
-  app.post("/api/agents", async (req, reply) => {
+  // Create terminal
+  app.post("/api/terminals", async (req, reply) => {
     try {
       const options = AgentSpawnOptions.parse(req.body);
       let projectPath = options.projectPath;
@@ -80,8 +80,9 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         }
       }
 
-      const createdAgent = await createAgent({
+      const createdAgent = await createTerminal({
         name: options.name,
+        kind: "terminal",
         provider: options.provider,
         projectId: options.projectId,
         projectPath,
@@ -99,24 +100,31 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       // Auto-create a new worktree using the real agent ID
       if (wantsAutoWorktree && !worktreePath) {
         try {
-          const autoPath = createAgentWorktree(projectPath, createdAgent.id);
-          updateAgentRecord(createdAgent.id, { worktreePath: autoPath });
+          const autoPath = createTerminalWorktree(projectPath, createdAgent.id);
+          updateTerminalRecord(createdAgent.id, { worktreePath: autoPath });
         } catch (err) {
           // Clean up the agent if worktree creation fails
-          await deleteAgent(createdAgent.id);
+          await deleteTerminal(createdAgent.id);
           return reply.status(500).send({
             error: `Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`,
           });
         }
       }
 
-      // If prompt provided, start immediately
-      if (options.prompt) {
-        await startAgent(createdAgent.id, options.prompt);
+      try {
+        await startTerminal(createdAgent.id, options.prompt ?? "");
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to start terminal session";
+        updateTerminalRecord(createdAgent.id, {
+          status: "error",
+          error: message,
+          lastActivity: new Date().toISOString(),
+        });
       }
 
-      const agent = await getAgent(createdAgent.id);
-      return reply.status(201).send({ agent: agent ?? createdAgent });
+      const terminal = await getTerminal(createdAgent.id);
+      return reply.status(201).send({ terminal: terminal ?? createdAgent });
     } catch (err) {
       return reply
         .status(400)
@@ -124,48 +132,48 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     }
   });
 
-  // Start agent with prompt
+  // Start terminal with prompt
   app.post<{ Params: { id: string } }>(
-    "/api/agents/:id/start",
+    "/api/terminals/:id/start",
     async (req, reply) => {
       try {
         const input = AgentStartInput.parse(req.body);
-        const result = await startAgent(
+        const result = await startTerminal(
           req.params.id,
           input.prompt
         );
         return { ok: true, ...result };
       } catch (err) {
         return reply.status(400).send({
-          error: err instanceof Error ? err.message : "Failed to start agent",
+          error: err instanceof Error ? err.message : "Failed to start terminal",
         });
       }
     }
   );
 
-  // Stop agent
+  // Stop terminal
   app.post<{ Params: { id: string } }>(
-    "/api/agents/:id/stop",
+    "/api/terminals/:id/stop",
     async (req, reply) => {
       try {
-        await stopAgent(req.params.id);
+        await stopTerminal(req.params.id);
         return { ok: true };
       } catch (err) {
         return reply.status(400).send({
-          error: err instanceof Error ? err.message : "Failed to stop agent",
+          error: err instanceof Error ? err.message : "Failed to stop terminal",
         });
       }
     }
   );
 
-  // Send input to agent
+  // Send input to terminal
   app.post<{ Params: { id: string } }>(
-    "/api/agents/:id/input",
+    "/api/terminals/:id/input",
     async (req, reply) => {
       try {
         const input = AgentSendInput.parse(req.body);
-        const ok = sendInput(req.params.id, input.text);
-        if (!ok) return reply.status(400).send({ error: "Agent has no active PTY" });
+        const ok = sendTerminalInput(req.params.id, input.text);
+        if (!ok) return reply.status(400).send({ error: "Terminal has no active PTY" });
         return { ok: true };
       } catch (err) {
         return reply.status(400).send({
@@ -175,16 +183,16 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     }
   );
 
-  // Delete agent
+  // Delete terminal
   app.delete<{ Params: { id: string } }>(
-    "/api/agents/:id",
+    "/api/terminals/:id",
     async (req, reply) => {
       try {
-        await deleteAgent(req.params.id);
+        await deleteTerminal(req.params.id);
         return { ok: true };
       } catch (err) {
         return reply.status(400).send({
-          error: err instanceof Error ? err.message : "Failed to delete agent",
+          error: err instanceof Error ? err.message : "Failed to delete terminal",
         });
       }
     }

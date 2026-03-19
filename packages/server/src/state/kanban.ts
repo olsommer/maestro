@@ -9,7 +9,7 @@ import {
   updateProjectRecord,
 } from "./projects.js";
 import { runGhCommand, runGitHubApi } from "../integrations/github.js";
-import { findAgentRecords, getAgentRecord } from "./agents.js";
+import { findTerminalRecords, getTerminalRecord } from "./terminals.js";
 import type {
   KanbanOverlayRecord,
   KanbanTaskRecord,
@@ -141,7 +141,7 @@ function getColumnForIssue(issue: GitHubIssue): KanbanTaskRecord["column"] {
 
 function withTaskRelations(task: KanbanTaskRecord): KanbanTaskRecord {
   const project = task.projectId ? getProjectRecordById(task.projectId) : null;
-  const agents = findAgentRecords(
+  const agents = findTerminalRecords(
     (agent) => agent.kanbanTaskId === task.id || agent.id === task.assignedAgentId
   ).map((agent) => ({
     id: agent.id,
@@ -652,7 +652,7 @@ export async function finalizeKanbanTaskAfterAgentExit(
     throw new Error("Project not found");
   }
 
-  const agent = getAgentRecord(agentId);
+  const agent = getTerminalRecord(agentId);
   const gitPath = agent?.worktreePath || agent?.projectPath || project.localPath;
 
   const pullRequest = await createOrUpdatePullRequestForTask(

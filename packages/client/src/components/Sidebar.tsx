@@ -31,7 +31,7 @@ import {
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
   { href: "/projects", label: "Projects", icon: FolderGit2Icon },
-  { href: "/agents", label: "Agents", icon: BotIcon },
+  { href: "/terminals", label: "Terminals", icon: BotIcon },
   { href: "/kanban", label: "Kanban", icon: KanbanIcon },
   { href: "/scheduler", label: "Scheduler", icon: ClockIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },

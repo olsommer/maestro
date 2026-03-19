@@ -55,7 +55,7 @@ function buildChildEnv(env?: Record<string, string>): Record<string, string> {
 export interface PtyInstance {
   id: string;
   process: pty.IPty;
-  agentId: string;
+  terminalId: string;
   sandboxed: boolean;
 }
 
@@ -68,7 +68,7 @@ function generateId(): string {
 }
 
 export interface PtySpawnOptions {
-  agentId: string;
+  terminalId: string;
   cwd: string;
   cols?: number;
   rows?: number;
@@ -124,11 +124,11 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       env: { TERM: "xterm-256color" },
     });
 
-    console.log(`Spawned sandboxed PTY for agent ${options.agentId}`);
+    console.log(`Spawned sandboxed PTY for terminal ${options.terminalId}`);
   } else {
     if (options.sandbox && !isNsjailAvailable()) {
       console.warn(
-        `Sandbox requested for agent ${options.agentId} but nsjail is not available ` +
+        `Sandbox requested for terminal ${options.terminalId} but nsjail is not available ` +
         `(platform: ${process.platform}). Running unsandboxed.`
       );
     }
@@ -147,7 +147,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   const instance: PtyInstance = {
     id,
     process: ptyProcess,
-    agentId: options.agentId,
+    terminalId: options.terminalId,
     sandboxed: useSandbox ?? false,
   };
 
@@ -217,9 +217,9 @@ export function killAllPty(): void {
   console.log(`Killed ${killed} PTY process(es) on shutdown`);
 }
 
-export function getPtyByAgent(agentId: string): PtyInstance | undefined {
+export function getPtyByTerminal(terminalId: string): PtyInstance | undefined {
   for (const instance of ptyProcesses.values()) {
-    if (instance.agentId === agentId) return instance;
+    if (instance.terminalId === terminalId) return instance;
   }
   return undefined;
 }

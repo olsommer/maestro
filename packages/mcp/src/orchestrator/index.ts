@@ -3,7 +3,7 @@
 /**
  * Maestro Orchestrator MCP Server
  *
- * Tools for the Super Agent to manage and delegate work across the agent pool.
+ * Tools for the Super Agent to manage and delegate work across the terminal pool.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -88,7 +88,7 @@ server.tool(
     provider: z
       .enum(["claude", "codex", "custom"])
       .optional()
-      .describe("Default provider for agents"),
+      .describe("Default provider for terminals"),
   },
   async (params) => {
     try {
@@ -173,20 +173,20 @@ server.tool(
   }
 );
 
-// ── Agent Management ──────────────────────────────────────────
+// ── Terminal Management ───────────────────────────────────────
 
 server.tool(
   "list_agents",
-  "List all agents and their current status, projects, and tasks.",
+  "List all terminals and their current status, projects, and tasks.",
   {},
   async () => {
     try {
-      const data = (await apiRequest("/api/agents")) as {
-        agents: unknown[];
+      const data = (await apiRequest("/api/terminals")) as {
+        terminals: unknown[];
       };
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(data.agents, null, 2) },
+          { type: "text" as const, text: JSON.stringify(data.terminals, null, 2) },
         ],
       };
     } catch (error) {
@@ -205,16 +205,16 @@ server.tool(
 
 server.tool(
   "get_agent",
-  "Get detailed info about a specific agent including output history.",
+  "Get detailed info about a specific terminal including output history.",
   { id: z.string().describe("Agent ID") },
   async ({ id }) => {
     try {
-      const data = (await apiRequest(`/api/agents/${id}`)) as {
-        agent: unknown;
+      const data = (await apiRequest(`/api/terminals/${id}`)) as {
+        terminal: unknown;
       };
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(data.agent, null, 2) },
+          { type: "text" as const, text: JSON.stringify(data.terminal, null, 2) },
         ],
       };
     } catch (error) {
@@ -233,11 +233,11 @@ server.tool(
 
 server.tool(
   "get_agent_output",
-  "Get the agent's terminal output buffer as raw text.",
+  "Get the terminal's output buffer as raw text.",
   { id: z.string().describe("Agent ID") },
   async ({ id }) => {
     try {
-      const data = (await apiRequest(`/api/agents/${id}/output`)) as {
+      const data = (await apiRequest(`/api/terminals/${id}/output`)) as {
         output: string[];
       };
       return {
@@ -264,14 +264,14 @@ server.tool(
 
 server.tool(
   "create_agent",
-  "Create a new agent for a project. Returns in 'idle' state until started.",
+  "Create a new terminal for a project. Returns in 'idle' state until started.",
   {
     projectId: z.string().optional().describe("Project ID"),
     projectPath: z
       .string()
       .optional()
       .describe("Absolute path to the project directory"),
-    name: z.string().optional().describe("Name for the agent"),
+    name: z.string().optional().describe("Name for the terminal"),
     skills: z.array(z.string()).optional().describe("Skills to enable"),
     skipPermissions: z
       .boolean()
@@ -308,7 +308,7 @@ server.tool(
       if (!projectId && !projectPath) {
         throw new Error("projectId or projectPath is required");
       }
-      const data = (await apiRequest("/api/agents", "POST", {
+      const data = (await apiRequest("/api/terminals", "POST", {
         projectId,
         projectPath,
         name,
@@ -318,12 +318,12 @@ server.tool(
         customDisplayName,
         customCommandTemplate,
         customEnv,
-      })) as { agent: { id: string; name: string } };
+      })) as { terminal: { id: string; name: string } };
       return {
         content: [
           {
             type: "text" as const,
-            text: `Created agent "${data.agent.name || data.agent.id}"`,
+            text: `Created terminal "${data.terminal.name || data.terminal.id}"`,
           },
         ],
       };
@@ -343,56 +343,56 @@ server.tool(
 
 server.tool(
   "start_agent",
-  "Start an idle agent. If a prompt is provided, start with that task. If already running, sends the prompt as input instead.",
+  "Start an idle terminal. If a prompt is provided, start with that task. If already running, sends the prompt as input instead.",
   {
     id: z.string().describe("Agent ID"),
     prompt: z
       .string()
       .optional()
       .default("")
-      .describe("Optional task/instruction for the agent"),
+      .describe("Optional task/instruction for the terminal"),
   },
   async ({ id, prompt }) => {
     try {
-      const agentData = (await apiRequest(`/api/agents/${id}`)) as {
-        agent: { status: string; name?: string };
+      const terminalData = (await apiRequest(`/api/terminals/${id}`)) as {
+        terminal: { status: string; name?: string };
       };
-      const name = agentData.agent.name || id;
+      const name = terminalData.terminal.name || id;
 
       if (
-        agentData.agent.status === "running" ||
-        agentData.agent.status === "waiting"
+        terminalData.terminal.status === "running" ||
+        terminalData.terminal.status === "waiting"
       ) {
         if (!prompt.trim()) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Agent "${name}" is already ${agentData.agent.status}. No input sent.`,
+                text: `Terminal "${name}" is already ${terminalData.terminal.status}. No input sent.`,
               },
             ],
           };
         }
 
-        await apiRequest(`/api/agents/${id}/input`, "POST", { text: prompt });
+        await apiRequest(`/api/terminals/${id}/input`, "POST", { text: prompt });
         return {
           content: [
             {
               type: "text" as const,
-              text: `Agent "${name}" was already ${agentData.agent.status}. Sent as input.`,
+              text: `Terminal "${name}" was already ${terminalData.terminal.status}. Sent as input.`,
             },
           ],
         };
       }
 
-      await apiRequest(`/api/agents/${id}/start`, "POST", { prompt });
+      await apiRequest(`/api/terminals/${id}/start`, "POST", { prompt });
       return {
         content: [
           {
             type: "text" as const,
             text: prompt.trim()
-              ? `Started agent "${name}" with task: ${prompt.slice(0, 100)}`
-              : `Started agent "${name}" with no prompt.`,
+              ? `Started terminal "${name}" with task: ${prompt.slice(0, 100)}`
+              : `Started terminal "${name}" with no prompt.`,
           },
         ],
       };
@@ -412,13 +412,13 @@ server.tool(
 
 server.tool(
   "stop_agent",
-  "Stop a running agent and return it to idle state.",
+  "Stop a running terminal and return it to idle state.",
   { id: z.string().describe("Agent ID") },
   async ({ id }) => {
     try {
-      await apiRequest(`/api/agents/${id}/stop`, "POST");
+      await apiRequest(`/api/terminals/${id}/stop`, "POST");
       return {
-        content: [{ type: "text" as const, text: `Stopped agent ${id}` }],
+        content: [{ type: "text" as const, text: `Stopped terminal ${id}` }],
       };
     } catch (error) {
       return {
@@ -436,13 +436,13 @@ server.tool(
 
 server.tool(
   "remove_agent",
-  "Permanently remove an agent (stops it first if running).",
+  "Permanently remove a terminal (stops it first if running).",
   { id: z.string().describe("Agent ID") },
   async ({ id }) => {
     try {
-      await apiRequest(`/api/agents/${id}`, "DELETE");
+      await apiRequest(`/api/terminals/${id}`, "DELETE");
       return {
-        content: [{ type: "text" as const, text: `Removed agent ${id}` }],
+        content: [{ type: "text" as const, text: `Removed terminal ${id}` }],
       };
     } catch (error) {
       return {
@@ -460,39 +460,39 @@ server.tool(
 
 server.tool(
   "send_message",
-  "Send input to an agent. If idle, starts the agent with this as the prompt.",
+  "Send input to a terminal. If idle, starts the terminal with this as the prompt.",
   {
     id: z.string().describe("Agent ID"),
     message: z.string().describe("Message/input to send"),
   },
   async ({ id, message }) => {
     try {
-      const agentData = (await apiRequest(`/api/agents/${id}`)) as {
-        agent: { status: string; name?: string };
+      const terminalData = (await apiRequest(`/api/terminals/${id}`)) as {
+        terminal: { status: string; name?: string };
       };
-      const name = agentData.agent.name || id;
-      const status = agentData.agent.status;
+      const name = terminalData.terminal.name || id;
+      const status = terminalData.terminal.status;
 
       if (status === "idle" || status === "completed" || status === "error") {
-        await apiRequest(`/api/agents/${id}/start`, "POST", {
+        await apiRequest(`/api/terminals/${id}/start`, "POST", {
           prompt: message,
         });
         return {
           content: [
             {
               type: "text" as const,
-              text: `Agent "${name}" was ${status}. Started with prompt.`,
+              text: `Terminal "${name}" was ${status}. Started with prompt.`,
             },
           ],
         };
       }
 
-      await apiRequest(`/api/agents/${id}/input`, "POST", { text: message });
+      await apiRequest(`/api/terminals/${id}/input`, "POST", { text: message });
       return {
         content: [
           {
             type: "text" as const,
-            text: `Sent message to agent "${name}" (${status})`,
+            text: `Sent message to terminal "${name}" (${status})`,
           },
         ],
       };
@@ -595,7 +595,7 @@ server.tool(
 
 server.tool(
   "move_task",
-  "Move a kanban task to a different column. Moving to 'planned' triggers auto-assignment to idle agents.",
+  "Move a kanban task to a different column. Moving to 'planned' triggers auto-assignment to idle terminals.",
   {
     taskId: z.string().describe("Task ID"),
     column: z
@@ -832,10 +832,10 @@ server.tool(
 
 server.tool(
   "create_scheduled_task",
-  "Create a new scheduled task that spawns an agent on a cron schedule.",
+  "Create a new scheduled task that spawns a terminal on a cron schedule.",
   {
     name: z.string().describe("Task name"),
-    prompt: z.string().describe("Prompt to send to the agent each run"),
+    prompt: z.string().describe("Prompt to send to the terminal each run"),
     schedule: z.string().describe("Cron expression (e.g. '0 */6 * * *' for every 6 hours)"),
     projectId: z.string().optional().describe("Project ID"),
     projectPath: z.string().optional().describe("Project directory"),
@@ -966,19 +966,19 @@ server.tool(
 
 server.tool(
   "run_scheduled_task",
-  "Manually trigger a scheduled task now, spawning a fresh agent.",
+  "Manually trigger a scheduled task now, spawning a fresh terminal.",
   { id: z.string().describe("Scheduled task ID") },
   async ({ id }) => {
     try {
       const data = (await apiRequest(
         `/api/scheduler/tasks/${id}/run`,
         "POST"
-      )) as { ok: boolean; agentId: string };
+      )) as { ok: boolean; terminalId: string };
       return {
         content: [
           {
             type: "text" as const,
-            text: `Triggered scheduled task ${id}. Agent spawned: ${data.agentId}`,
+            text: `Triggered scheduled task ${id}. Terminal spawned: ${data.terminalId}`,
           },
         ],
       };
@@ -1000,12 +1000,12 @@ server.tool(
 
 server.tool(
   "delegate_task",
-  "Create an agent, start it with a task, and wait for the result. The primary tool for delegating work to the agent pool.",
+  "Create a terminal, start it with a task, and wait for the result. The primary tool for delegating work to the terminal pool.",
   {
     projectId: z.string().optional().describe("Project ID"),
     projectPath: z.string().optional().describe("Project directory"),
-    prompt: z.string().describe("Task for the agent"),
-    name: z.string().optional().describe("Agent name"),
+    prompt: z.string().describe("Task for the terminal"),
+    name: z.string().optional().describe("Terminal name"),
     provider: z
       .enum(["claude", "codex", "custom"])
       .optional()
@@ -1041,8 +1041,8 @@ server.tool(
       if (!projectId && !projectPath) {
         throw new Error("projectId or projectPath is required");
       }
-      // Create agent
-      const createData = (await apiRequest("/api/agents", "POST", {
+      // Create terminal
+      const createData = (await apiRequest("/api/terminals", "POST", {
         projectId,
         projectPath,
         name: name || `delegate-${Date.now()}`,
@@ -1051,13 +1051,13 @@ server.tool(
         customCommandTemplate,
         customEnv,
         skipPermissions: true,
-      })) as { agent: { id: string; name: string } };
+      })) as { terminal: { id: string; name: string } };
 
-      const agentId = createData.agent.id;
-      const agentName = createData.agent.name || agentId;
+      const terminalId = createData.terminal.id;
+      const terminalName = createData.terminal.name || terminalId;
 
       // Start with prompt
-      await apiRequest(`/api/agents/${agentId}/start`, "POST", {
+      await apiRequest(`/api/terminals/${terminalId}/start`, "POST", {
         prompt,
       });
 
@@ -1067,10 +1067,10 @@ server.tool(
 
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 5000));
-        const check = (await apiRequest(`/api/agents/${agentId}`)) as {
-          agent: { status: string };
+        const check = (await apiRequest(`/api/terminals/${terminalId}`)) as {
+          terminal: { status: string };
         };
-        finalStatus = check.agent.status;
+        finalStatus = check.terminal.status;
         if (
           finalStatus === "completed" ||
           finalStatus === "error" ||
@@ -1082,7 +1082,7 @@ server.tool(
 
       // Get output
       const outputData = (await apiRequest(
-        `/api/agents/${agentId}/output`
+        `/api/terminals/${terminalId}/output`
       )) as { output: string[] };
       const output = outputData.output.join("").slice(-2000); // Last 2000 chars
 
@@ -1091,7 +1091,7 @@ server.tool(
           content: [
             {
               type: "text" as const,
-              text: `Agent "${agentName}" failed.\n\nOutput:\n${output || "(no output)"}`,
+              text: `Terminal "${terminalName}" failed.\n\nOutput:\n${output || "(no output)"}`,
             },
           ],
           isError: true,
@@ -1103,7 +1103,7 @@ server.tool(
           content: [
             {
               type: "text" as const,
-              text: `Agent "${agentName}" is still running after ${timeoutSeconds}s. Use get_agent_output(${agentId}) to check progress.`,
+              text: `Terminal "${terminalName}" is still running after ${timeoutSeconds}s. Use get_agent_output(${terminalId}) to check progress.`,
             },
           ],
         };
@@ -1113,7 +1113,7 @@ server.tool(
         content: [
           {
             type: "text" as const,
-            text: `Agent "${agentName}" completed.\n\nOutput:\n${output || "(no output)"}`,
+            text: `Terminal "${terminalName}" completed.\n\nOutput:\n${output || "(no output)"}`,
           },
         ],
       };

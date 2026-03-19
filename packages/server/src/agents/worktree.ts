@@ -5,16 +5,16 @@ import { execSync } from "child_process";
 const WORKTREE_BASE = "/tmp/maestro-worktrees";
 
 /**
- * Create a git worktree for an agent.
- * Creates a new branch `agent/<agentId>` from the current HEAD of the project repo.
+ * Create a git worktree for a terminal.
+ * Creates a new branch `agent/<terminalId>` from the current HEAD of the project repo.
  * Returns the absolute path to the new worktree.
  */
-export function createAgentWorktree(
+export function createTerminalWorktree(
   projectPath: string,
-  agentId: string
+  terminalId: string
 ): string {
-  const worktreeDir = path.join(WORKTREE_BASE, agentId);
-  const branchName = `agent/${agentId}`;
+  const worktreeDir = path.join(WORKTREE_BASE, terminalId);
+  const branchName = `agent/${terminalId}`;
 
   // Ensure base directory exists
   fs.mkdirSync(WORKTREE_BASE, { recursive: true });
@@ -49,22 +49,22 @@ export function createAgentWorktree(
   );
 
   console.log(
-    `Created worktree for agent ${agentId}: ${worktreeDir} (branch: ${branchName})`
+    `Created worktree for terminal ${terminalId}: ${worktreeDir} (branch: ${branchName})`
   );
 
   return worktreeDir;
 }
 
 /**
- * Remove a git worktree created for an agent.
+ * Remove a git worktree created for a terminal.
  * Also deletes the associated branch.
  */
-export function removeAgentWorktree(
+export function removeTerminalWorktree(
   projectPath: string,
-  agentId: string
+  terminalId: string
 ): void {
-  const worktreeDir = path.join(WORKTREE_BASE, agentId);
-  const branchName = `agent/${agentId}`;
+  const worktreeDir = path.join(WORKTREE_BASE, terminalId);
+  const branchName = `agent/${terminalId}`;
 
   // Remove the worktree
   if (fs.existsSync(worktreeDir)) {
@@ -96,7 +96,7 @@ export function removeAgentWorktree(
     // Branch may already be gone
   }
 
-  console.log(`Removed worktree for agent ${agentId}`);
+  console.log(`Removed worktree for terminal ${terminalId}`);
 }
 
 /**

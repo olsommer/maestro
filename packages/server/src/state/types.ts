@@ -14,9 +14,10 @@ export interface ProjectRecord {
   updatedAt: string;
 }
 
-export interface AgentRecord {
+export interface TerminalRecord {
   id: string;
   name: string | null;
+  kind?: "terminal" | "kanban" | "automation" | "scheduler";
   provider: string;
   projectId: string | null;
   projectPath: string;
@@ -37,6 +38,8 @@ export interface AgentRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AgentRecord = TerminalRecord;
 
 export interface KanbanOverlayRecord {
   blockedBy?: string[];

@@ -4,12 +4,12 @@ import { KanbanColumn } from "./kanban.js";
 
 // Server -> Client events
 export const ServerEvents = {
-  "agent:output": z.object({
-    agentId: z.string(),
+  "terminal:output": z.object({
+    terminalId: z.string(),
     data: z.string(),
   }),
-  "agent:status": z.object({
-    agentId: z.string(),
+  "terminal:status": z.object({
+    terminalId: z.string(),
     status: AgentStatus,
     error: z.string().nullable().optional(),
   }),
@@ -69,20 +69,20 @@ export const ServerEvents = {
 
 // Client -> Server events
 export const ClientEvents = {
-  "agent:input": z.object({
-    agentId: z.string(),
+  "terminal:input": z.object({
+    terminalId: z.string(),
     data: z.string(),
   }),
-  "agent:resize": z.object({
-    agentId: z.string(),
+  "terminal:resize": z.object({
+    terminalId: z.string(),
     cols: z.number(),
     rows: z.number(),
   }),
-  "agent:subscribe": z.object({
-    agentId: z.string(),
+  "terminal:subscribe": z.object({
+    terminalId: z.string(),
   }),
-  "agent:unsubscribe": z.object({
-    agentId: z.string(),
+  "terminal:unsubscribe": z.object({
+    terminalId: z.string(),
   }),
   "setup:input": z.object({
     data: z.string(),

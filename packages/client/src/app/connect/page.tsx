@@ -73,7 +73,7 @@ export default function ConnectPage() {
     setError("");
 
     try {
-      const res = await fetch(`${normalizedServerUrl}/api/agents`, {
+      const res = await fetch(`${normalizedServerUrl}/api/terminals`, {
         headers: { Authorization: `Bearer ${apiToken.trim()}` },
       });
       if (res.status === 401) {

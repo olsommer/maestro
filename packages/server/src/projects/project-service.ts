@@ -3,10 +3,10 @@ import * as os from "os";
 import * as path from "path";
 import type { ProjectCreateInput } from "@maestro/wire";
 import {
-  deleteAgent,
-} from "../agents/agent-manager.js";
+  deleteTerminal,
+} from "../agents/terminal-manager.js";
 import { unregisterJob } from "../scheduler/scheduler.js";
-import { listAgentRecords } from "../state/agents.js";
+import { listTerminalRecords } from "../state/terminals.js";
 import { deleteKanbanStateForProject, probeGitHubMirror } from "../state/kanban.js";
 import {
   createProjectRecord,
@@ -162,11 +162,11 @@ export async function deleteProject(projectId: string): Promise<void> {
     throw new Error("Project not found");
   }
 
-  const agents = listAgentRecords().filter(
+  const agents = listTerminalRecords().filter(
     (agent) => agent.projectId === projectId || agent.projectPath === project.localPath
   );
   for (const agent of agents) {
-    await deleteAgent(agent.id);
+    await deleteTerminal(agent.id);
   }
 
   for (const task of listScheduledTaskRecords().filter(

@@ -35,11 +35,11 @@ function useMobileKeyboard() {
 }
 
 function MobileTerminalToolbar({
-  agentId,
+  terminalId,
   socketRef,
   onShowText,
 }: {
-  agentId: string;
+  terminalId: string;
   socketRef: React.RefObject<Socket | null>;
   onShowText: () => void;
 }) {
@@ -48,9 +48,9 @@ function MobileTerminalToolbar({
 
   const send = useCallback(
     (data: string) => {
-      socketRef.current?.emit("agent:input", { agentId, data });
+      socketRef.current?.emit("terminal:input", { terminalId, data });
     },
-    [agentId, socketRef]
+    [terminalId, socketRef]
   );
 
   const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
@@ -159,7 +159,7 @@ function extractBufferText(term: GhosttyTerminal): string {
   return lines.join("\n");
 }
 
-export function Terminal({ agentId, isActive }: { agentId: string; isActive?: boolean }) {
+export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<GhosttyTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
@@ -253,7 +253,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
 
       // Load existing output buffer
       try {
-        const { output } = await api.getAgentOutput(agentId);
+        const { output } = await api.getTerminalOutput(terminalId);
         for (const chunk of output) {
           term.write(chunk);
         }
@@ -264,34 +264,34 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       // Subscribe to live output
       const socket = getSocket();
       socketRef.current = socket;
-      socket.emit("agent:subscribe", { agentId });
+      socket.emit("terminal:subscribe", { terminalId });
 
       // Send initial dimensions
-      socket.emit("agent:resize", {
-        agentId,
+      socket.emit("terminal:resize", {
+        terminalId,
         cols: term.cols,
         rows: term.rows,
       });
 
       // Handle terminal resize
       term.onResize((size: { cols: number; rows: number }) => {
-        socket.emit("agent:resize", {
-          agentId,
+        socket.emit("terminal:resize", {
+          terminalId,
           cols: size.cols,
           rows: size.rows,
         });
       });
 
-      const handleOutput = (data: { agentId: string; data: string }) => {
-        if (data.agentId === agentId) {
+      const handleOutput = (data: { terminalId: string; data: string }) => {
+        if (data.terminalId === terminalId) {
           term.write(data.data);
         }
       };
-      socket.on("agent:output", handleOutput);
+      socket.on("terminal:output", handleOutput);
 
       // Send keystrokes to server
       term.onData((data: string) => {
-        socket.emit("agent:input", { agentId, data });
+        socket.emit("terminal:input", { terminalId, data });
       });
 
       return () => {
@@ -300,8 +300,8 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
-        socket.off("agent:output", handleOutput);
-        socket.emit("agent:unsubscribe", { agentId });
+        socket.off("terminal:output", handleOutput);
+        socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
         socketRef.current = null;
       };
@@ -313,7 +313,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
       mounted = false;
       cleanup.then((fn) => fn?.());
     };
-  }, [agentId]);
+  }, [terminalId]);
 
   // Refit when toolbar visibility changes (isActive controls toolbar rendering)
   useEffect(() => {
@@ -350,7 +350,7 @@ export function Terminal({ agentId, isActive }: { agentId: string; isActive?: bo
 
       {isActive && (
         <MobileTerminalToolbar
-          agentId={agentId}
+          terminalId={terminalId}
           socketRef={socketRef}
           onShowText={handleShowText}
         />

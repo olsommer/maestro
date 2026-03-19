@@ -1,9 +1,9 @@
 import cron from "node-cron";
 import {
-  createAgent,
-  createAutoSpawnAgent,
-  startAgent,
-} from "../agents/agent-manager.js";
+  createTerminal,
+  createAutoSpawnTerminal,
+  startTerminal,
+} from "../agents/terminal-manager.js";
 import type { AgentProvider } from "@maestro/wire";
 import {
   listScheduledTaskRecords,
@@ -64,8 +64,9 @@ async function executeScheduledTask(task: ScheduledTaskRecord) {
   try {
     const name = `scheduled-${task.name}-${Date.now()}`;
     const agent = task.provider === "custom"
-      ? await createAgent({
+      ? await createTerminal({
           name,
+          kind: "scheduler",
           provider: task.provider as AgentProvider,
           projectId: task.projectId || undefined,
           projectPath: task.projectPath,
@@ -74,13 +75,14 @@ async function executeScheduledTask(task: ScheduledTaskRecord) {
           customEnv: task.customEnv || undefined,
           skipPermissions: task.skipPermissions,
         })
-      : await createAutoSpawnAgent({
+      : await createAutoSpawnTerminal({
           name,
+          kind: "scheduler",
           projectId: task.projectId || undefined,
           projectPath: task.projectPath,
         });
 
-    await startAgent(agent.id, task.prompt);
+    await startTerminal(agent.id, task.prompt);
     updateScheduledTaskRecord(task.id, {
       lastRunAt: new Date().toISOString(),
     });

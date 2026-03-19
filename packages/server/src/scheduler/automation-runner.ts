@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { createAgent, startAgent } from "../agents/agent-manager.js";
+import { createTerminal, startTerminal } from "../agents/terminal-manager.js";
 import type { AgentProvider } from "@maestro/wire";
 import {
   createAutomationRunRecord,
@@ -68,8 +68,9 @@ async function runAutomation(auto: AutomationRecord) {
       if (processedHashes.includes(hash)) continue;
 
       const prompt = renderTemplate(auto.agentPromptTemplate, item);
-      const agent = await createAgent({
+      const agent = await createTerminal({
         name: `auto-${auto.name}-${Date.now()}`,
+        kind: "automation",
         provider: auto.agentProvider as AgentProvider,
         projectId: auto.agentProjectId || undefined,
         projectPath: auto.agentProjectPath,
@@ -79,7 +80,7 @@ async function runAutomation(auto: AutomationRecord) {
         skipPermissions: auto.agentSkipPermissions,
       });
 
-      await startAgent(agent.id, prompt);
+      await startTerminal(agent.id, prompt);
 
       processedHashes = [...processedHashes, hash];
       updateAutomationRecord(auto.id, {

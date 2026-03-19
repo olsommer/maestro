@@ -170,12 +170,13 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
         const task = getScheduledTaskRecord(req.params.id);
         if (!task) return reply.status(404).send({ error: "Task not found" });
 
-        const { createAgent, createAutoSpawnAgent, startAgent } = await import("../agents/agent-manager.js");
+        const { createTerminal, createAutoSpawnTerminal, startTerminal } = await import("../agents/terminal-manager.js");
 
         const name = `manual-${task.name}-${Date.now()}`;
         const agent = task.provider === "custom"
-          ? await createAgent({
+          ? await createTerminal({
               name,
+              kind: "scheduler",
               provider: task.provider as "custom",
               projectId: task.projectId || undefined,
               projectPath: task.projectPath,
@@ -184,18 +185,19 @@ export async function registerSchedulerRoutes(app: FastifyInstance) {
               customEnv: task.customEnv || undefined,
               skipPermissions: task.skipPermissions,
             })
-          : await createAutoSpawnAgent({
+          : await createAutoSpawnTerminal({
               name,
+              kind: "scheduler",
               projectId: task.projectId || undefined,
               projectPath: task.projectPath,
             });
 
-        await startAgent(agent.id, task.prompt);
+        await startTerminal(agent.id, task.prompt);
         updateScheduledTaskRecord(task.id, {
           lastRunAt: new Date().toISOString(),
         });
 
-        return { ok: true, agentId: agent.id };
+        return { ok: true, terminalId: agent.id };
       } catch (err) {
         return reply.status(500).send({
           error: err instanceof Error ? err.message : "Failed to run task",

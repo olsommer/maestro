@@ -1,50 +1,50 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import { ClientEvents } from "@maestro/wire";
-import { sendInput, resizeAgent } from "../agents/agent-manager.js";
+import { sendTerminalInput, resizeTerminal } from "../agents/terminal-manager.js";
 import { sendSetupInput, resizeSetupPty, getSetupOutputBuffer, isSetupDone, startSetupPty, isSetupRunning, resetSetup } from "../setup/setup-manager.js";
 
 export function registerSocketHandlers(io: SocketServer) {
   io.on("connection", (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
 
-    // Subscribe to agent output stream
-    socket.on("agent:subscribe", (data) => {
+    // Subscribe to terminal output stream
+    socket.on("terminal:subscribe", (data) => {
       try {
-        const { agentId } = ClientEvents["agent:subscribe"].parse(data);
-        socket.join(`agent:${agentId}`);
-        console.log(`Client ${socket.id} subscribed to agent ${agentId}`);
+        const { terminalId } = ClientEvents["terminal:subscribe"].parse(data);
+        socket.join(`terminal:${terminalId}`);
+        console.log(`Client ${socket.id} subscribed to terminal ${terminalId}`);
       } catch {
         socket.emit("error", { message: "Invalid subscribe payload" });
       }
     });
 
-    // Unsubscribe from agent output stream
-    socket.on("agent:unsubscribe", (data) => {
+    // Unsubscribe from terminal output stream
+    socket.on("terminal:unsubscribe", (data) => {
       try {
-        const { agentId } = ClientEvents["agent:unsubscribe"].parse(data);
-        socket.leave(`agent:${agentId}`);
+        const { terminalId } = ClientEvents["terminal:unsubscribe"].parse(data);
+        socket.leave(`terminal:${terminalId}`);
       } catch {
         socket.emit("error", { message: "Invalid unsubscribe payload" });
       }
     });
 
-    // Forward keyboard input to agent PTY
-    socket.on("agent:input", (data) => {
+    // Forward keyboard input to terminal PTY
+    socket.on("terminal:input", (data) => {
       try {
-        const { agentId, data: inputData } =
-          ClientEvents["agent:input"].parse(data);
-        sendInput(agentId, inputData);
+        const { terminalId, data: inputData } =
+          ClientEvents["terminal:input"].parse(data);
+        sendTerminalInput(terminalId, inputData);
       } catch {
         socket.emit("error", { message: "Invalid input payload" });
       }
     });
 
-    // Resize agent terminal
-    socket.on("agent:resize", (data) => {
+    // Resize terminal viewport
+    socket.on("terminal:resize", (data) => {
       try {
-        const { agentId, cols, rows } =
-          ClientEvents["agent:resize"].parse(data);
-        resizeAgent(agentId, cols, rows);
+        const { terminalId, cols, rows } =
+          ClientEvents["terminal:resize"].parse(data);
+        resizeTerminal(terminalId, cols, rows);
       } catch {
         socket.emit("error", { message: "Invalid resize payload" });
       }

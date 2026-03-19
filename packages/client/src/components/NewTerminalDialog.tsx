@@ -39,9 +39,9 @@ interface Props {
   onClose: () => void;
 }
 
-export function NewAgentDialog({ open, onClose }: Props) {
-  const addAgent = useStore((s) => s.addAgent);
-  const selectAgent = useStore((s) => s.selectAgent);
+export function NewTerminalDialog({ open, onClose }: Props) {
+  const addTerminal = useStore((s) => s.addAgent);
+  const selectTerminal = useStore((s) => s.selectAgent);
   const projects = useStore((s) => s.projects);
   const selectedProjectId = useStore((s) => s.selectedProjectId);
 
@@ -114,7 +114,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
         isCustomProvider && customEnvText.trim()
           ? parseCustomEnv(customEnvText)
           : undefined;
-      const { agent } = await api.createAgent({
+      const { terminal } = await api.createTerminal({
         name: name || undefined,
         provider,
         projectId: trimmedProjectId,
@@ -133,8 +133,8 @@ export function NewAgentDialog({ open, onClose }: Props) {
         autoWorktree: worktreeMode === "new",
         prompt: prompt.trim() || undefined,
       });
-      addAgent(agent);
-      selectAgent(agent.id);
+      addTerminal(terminal);
+      selectTerminal(terminal.id);
       onClose();
       setName("");
       setPrompt("");
@@ -144,7 +144,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
       setWorktreeMode("none");
       setWorktreePath("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create agent");
+      setError(err instanceof Error ? err.message : "Failed to create terminal");
     } finally {
       setLoading(false);
     }
@@ -154,17 +154,19 @@ export function NewAgentDialog({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Agent</DialogTitle>
-          <DialogDescription>Configure and launch a new coding agent</DialogDescription>
+          <DialogTitle>New Terminal</DialogTitle>
+          <DialogDescription>
+            Configure a coding terminal. It starts immediately and stays available until deleted.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {error && (
             <Alert variant="destructive">
               <TriangleAlertIcon />
-              <AlertTitle>Could not create agent</AlertTitle>
+              <AlertTitle>Could not create terminal</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
@@ -222,7 +224,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
                 <FieldDescription>{selectedProject.localPath}</FieldDescription>
               )}
               {projectId === "__root__" && (
-                <FieldDescription>Agent will run from the filesystem root.</FieldDescription>
+                <FieldDescription>Terminal will run from the filesystem root.</FieldDescription>
               )}
             </Field>
 
@@ -279,16 +281,16 @@ export function NewAgentDialog({ open, onClose }: Props) {
             )}
 
             <Field>
-              <FieldLabel htmlFor="agent-prompt">Prompt to start immediately</FieldLabel>
+              <FieldLabel htmlFor="agent-prompt">Initial prompt</FieldLabel>
               <Textarea
                 id="agent-prompt"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={3}
-                placeholder="What should this agent work on?"
+                placeholder="What should this terminal work on first?"
               />
               <FieldDescription>
-                If provided, the agent will start immediately with this prompt.
+                Optional first instruction to send right after the terminal launches.
               </FieldDescription>
             </Field>
 
@@ -311,7 +313,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
               </Select>
               {worktreeMode === "none" && (
                 <FieldDescription>
-                  Agent works directly in the project directory. Other agents on the same project may conflict.
+                  Terminal works directly in the project directory. Other terminals on the same project may conflict.
                 </FieldDescription>
               )}
               {worktreeMode === "new" && (
@@ -382,7 +384,7 @@ export function NewAgentDialog({ open, onClose }: Props) {
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create Agent"}
+              {loading ? "Creating..." : "Create Terminal"}
             </Button>
           </DialogFooter>
         </form>

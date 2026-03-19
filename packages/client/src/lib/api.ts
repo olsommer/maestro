@@ -237,14 +237,14 @@ export const api = {
       { method: "POST" }
     ),
 
-  getAgents: () => request<{ agents: Agent[] }>("/api/agents"),
+  getTerminals: () => request<{ terminals: Agent[] }>("/api/terminals"),
 
-  getAgent: (id: string) => request<{ agent: Agent }>(`/api/agents/${id}`),
+  getTerminal: (id: string) => request<{ terminal: Agent }>(`/api/terminals/${id}`),
 
-  getAgentOutput: (id: string) =>
-    request<{ output: string[] }>(`/api/agents/${id}/output`),
+  getTerminalOutput: (id: string) =>
+    request<{ output: string[] }>(`/api/terminals/${id}/output`),
 
-  createAgent: (data: {
+  createTerminal: (data: {
     name?: string;
     provider?: string;
     model?: string;
@@ -261,28 +261,28 @@ export const api = {
     autoWorktree?: boolean;
     prompt?: string;
   }) =>
-    request<{ agent: Agent }>("/api/agents", {
+    request<{ terminal: Agent }>("/api/terminals", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  startAgent: (id: string, prompt = "", model?: string) =>
-    request<{ ok: boolean }>(`/api/agents/${id}/start`, {
+  startTerminal: (id: string, prompt = "", model?: string) =>
+    request<{ ok: boolean }>(`/api/terminals/${id}/start`, {
       method: "POST",
       body: JSON.stringify({ prompt, model }),
     }),
 
-  stopAgent: (id: string) =>
-    request<{ ok: boolean }>(`/api/agents/${id}/stop`, { method: "POST" }),
+  stopTerminal: (id: string) =>
+    request<{ ok: boolean }>(`/api/terminals/${id}/stop`, { method: "POST" }),
 
-  sendInput: (id: string, text: string) =>
-    request<{ ok: boolean }>(`/api/agents/${id}/input`, {
+  sendTerminalInput: (id: string, text: string) =>
+    request<{ ok: boolean }>(`/api/terminals/${id}/input`, {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
 
-  deleteAgent: (id: string) =>
-    request<{ ok: boolean }>(`/api/agents/${id}`, { method: "DELETE" }),
+  deleteTerminal: (id: string) =>
+    request<{ ok: boolean }>(`/api/terminals/${id}`, { method: "DELETE" }),
 
   // Kanban
   getKanbanTasks: (column?: string, projectId?: string) =>

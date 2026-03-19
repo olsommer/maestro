@@ -236,8 +236,8 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
     setConnecting(true);
     setError("");
     try {
-      // Create a temporary Claude agent with /login prompt
-      const { agent } = await api.createAgent({
+      // Create a temporary Claude terminal with /login prompt
+      const { terminal } = await api.createTerminal({
         name: "Claude Login",
         provider: "claude",
         projectPath: "/tmp",
@@ -245,10 +245,10 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
         skipPermissions: true,
         disableSandbox: true,
       });
-      // Select the agent and navigate to agents page for the login flow
-      addAgent(agent);
-      selectAgent(agent.id);
-      router.push("/agents");
+      // Select the terminal and navigate to the terminals page for the login flow
+      addAgent(terminal);
+      selectAgent(terminal.id);
+      router.push("/terminals");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start login");
       setConnecting(false);
