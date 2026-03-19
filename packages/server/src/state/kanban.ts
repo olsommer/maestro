@@ -28,6 +28,24 @@ const STATUS_LABELS = {
 
 const STATUS_LABEL_SET = new Set<string>(Object.values(STATUS_LABELS));
 
+const STATUS_LABEL_META: Record<
+  (typeof STATUS_LABELS)[keyof typeof STATUS_LABELS],
+  { color: string; description: string }
+> = {
+  [STATUS_LABELS.planned]: {
+    color: "c2e0c6",
+    description: "Queued in Maestro for planned work.",
+  },
+  [STATUS_LABELS.ongoing]: {
+    color: "d4c5f9",
+    description: "Currently being worked on by Maestro.",
+  },
+  [STATUS_LABELS.review]: {
+    color: "fbca04",
+    description: "Waiting for review in Maestro.",
+  },
+};
+
 interface GitHubIssue {
   number: number;
   title: string;
@@ -202,6 +220,42 @@ async function patchGitHubIssue(
     method: "PATCH",
     body,
   });
+}
+
+async function ensureGitHubLabels(
+  project: ProjectRecord,
+  labelNames: string[]
+): Promise<void> {
+  const needed = [...new Set(labelNames)].filter(Boolean);
+  if (needed.length === 0) {
+    return;
+  }
+
+  const labels = await githubRequest<Array<{ name: string }>>(
+    project,
+    "/labels?per_page=100"
+  );
+  const existing = new Set(labels.map((label) => label.name));
+
+  for (const name of needed) {
+    if (existing.has(name)) {
+      continue;
+    }
+
+    const meta = STATUS_LABEL_META[name as keyof typeof STATUS_LABEL_META] ?? {
+      color: "ededed",
+      description: "Managed by Maestro.",
+    };
+    await githubRequest(project, "/labels", {
+      method: "POST",
+      body: {
+        name,
+        color: meta.color,
+        description: meta.description,
+      },
+    });
+    existing.add(name);
+  }
 }
 
 function mapGitHubIssueToTask(
@@ -757,9 +811,11 @@ export async function updateKanbanTaskRecord(
       ? [STATUS_LABELS.planned]
     : nextColumn === "ongoing"
         ? [STATUS_LABELS.ongoing]
-      : nextColumn === "review"
+        : nextColumn === "review"
         ? [STATUS_LABELS.review]
         : [];
+
+  await ensureGitHubLabels(project, statusLabels);
 
   const issue = await patchGitHubIssue(project, parsed.issueNumber, {
     ...(patch.title !== undefined ? { title: patch.title } : {}),
