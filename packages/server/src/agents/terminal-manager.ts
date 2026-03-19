@@ -20,7 +20,7 @@ import {
   listTerminalRecords,
   updateTerminalRecord,
 } from "../state/terminals.js";
-import { finalizeKanbanTaskAfterAgentExit } from "../state/kanban.js";
+import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
 import { getSettings } from "../state/settings.js";
@@ -261,7 +261,7 @@ export async function startTerminal(
 
       if (agent.kanbanTaskId) {
         try {
-          const taskResult = await finalizeKanbanTaskAfterAgentExit(
+          const taskResult = await finalizeKanbanTaskAfterTerminalExit(
             terminalId,
             agent.kanbanTaskId,
             exitCode === 0
@@ -283,10 +283,10 @@ export async function startTerminal(
           deps.io.emit("kanban:updated", {
             taskId: taskResult.taskId,
             column: taskResult.column,
-            assignedAgentId: terminalId,
+            assignedTerminalId: terminalId,
           });
         } catch (error) {
-          console.error(`Failed to finalize kanban task for agent ${terminalId}:`, error);
+          console.error(`Failed to finalize kanban task for terminal ${terminalId}:`, error);
           updateTerminalRecord(terminalId, {
             kanbanTaskId: null,
             lastActivity: new Date().toISOString(),
@@ -347,7 +347,9 @@ export async function startTerminal(
     error: null,
   });
 
-  writeCommandToPty(ptyInstance.id, command);
+  if (command.trim()) {
+    writeCommandToPty(ptyInstance.id, command);
+  }
   return { ptyId: ptyInstance.id };
 }
 

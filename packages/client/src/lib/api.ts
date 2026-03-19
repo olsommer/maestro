@@ -361,10 +361,10 @@ export interface KanbanTask {
   orderIndex: number;
   labels: string[];
   completionSummary: string | null;
-  assignedAgentId: string | null;
+  assignedTerminalId: string | null;
   pullRequestNumber?: number | null;
   pullRequestUrl?: string | null;
-  agents?: { id: string; name: string | null; status: string }[];
+  terminals?: { id: string; name: string | null; status: string }[];
   createdAt: string;
   updatedAt: string;
 }

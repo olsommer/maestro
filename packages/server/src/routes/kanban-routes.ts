@@ -56,7 +56,7 @@ export async function registerKanbanRoutes(
         io.emit("kanban:updated", {
           taskId: task.id,
           column: task.column,
-          assignedAgentId: task.assignedAgentId,
+          assignedTerminalId: task.assignedTerminalId,
         });
         return { task };
       } catch (err) {
@@ -76,7 +76,7 @@ export async function registerKanbanRoutes(
         io.emit("kanban:updated", {
           taskId: task.id,
           column: task.column,
-          assignedAgentId: task.assignedAgentId,
+          assignedTerminalId: task.assignedTerminalId,
         });
         return { task };
       } catch (err) {

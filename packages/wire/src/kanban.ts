@@ -19,7 +19,7 @@ export const KanbanTask = z.object({
   order: z.number(),
   labels: z.array(z.string()),
   completionSummary: z.string().nullable(),
-  assignedAgentId: z.string().nullable(),
+  assignedTerminalId: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

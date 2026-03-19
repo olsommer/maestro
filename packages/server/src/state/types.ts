@@ -46,7 +46,7 @@ export interface KanbanOverlayRecord {
   priority?: "low" | "medium" | "high";
   progress?: number;
   completionSummary?: string | null;
-  assignedAgentId?: string | null;
+  assignedTerminalId?: string | null;
   orderIndex?: number;
   branchName?: string | null;
   pullRequestNumber?: number | null;
@@ -66,7 +66,7 @@ export interface LocalKanbanTaskRecord {
   orderIndex: number;
   labels: string[];
   completionSummary: string | null;
-  assignedAgentId: string | null;
+  assignedTerminalId: string | null;
   pullRequestNumber?: number | null;
   pullRequestUrl?: string | null;
   createdAt: string;
@@ -86,7 +86,7 @@ export interface KanbanTaskRecord {
   orderIndex: number;
   labels: string[];
   completionSummary: string | null;
-  assignedAgentId: string | null;
+  assignedTerminalId: string | null;
   pullRequestNumber?: number | null;
   pullRequestUrl?: string | null;
   createdAt: string;
@@ -97,7 +97,7 @@ export interface KanbanTaskRecord {
     id: string;
     name: string;
   } | null;
-  agents?: Array<{ id: string; name: string | null; status: string }>;
+  terminals?: Array<{ id: string; name: string | null; status: string }>;
 }
 
 export interface ScheduledTaskRecord {

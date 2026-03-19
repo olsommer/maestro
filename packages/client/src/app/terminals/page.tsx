@@ -62,6 +62,9 @@ function resolvePreset(terminalCount: number, preset: GridPreset) {
 }
 
 function getProviderLabel(terminal: TerminalRecord) {
+  if (terminal.provider === "none") {
+    return "None";
+  }
   return terminal.provider === "custom"
     ? terminal.customDisplayName || "Custom CLI"
     : terminal.provider;

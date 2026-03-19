@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const AgentProvider = z.enum(["claude", "codex", "custom"]);
+export const AgentProvider = z.enum(["none", "claude", "codex", "custom"]);
 export type AgentProvider = z.infer<typeof AgentProvider>;
 
 export const AgentStatus = z.enum([

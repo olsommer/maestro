@@ -652,25 +652,20 @@ function AgentDefaultsCard({
             />
           </Field>
 
-          <Field>
-            <FieldLabel htmlFor="agent-default-worktree">Worktrees</FieldLabel>
-            <Select
-              value={worktreeMode}
-              onValueChange={(value) => setWorktreeMode((value as "none" | "new") ?? "none")}
-            >
-              <SelectTrigger id="agent-default-worktree" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="new">Create new worktree</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription>
-              Auto-spawned agents can either work in the project directly or create a fresh git worktree.
-            </FieldDescription>
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="agent-default-worktree">Worktrees</FieldLabel>
+              <FieldDescription>
+                {worktreeMode === "new"
+                  ? "Auto-spawned agents create a fresh git worktree."
+                  : "Auto-spawned agents work directly in the project directory."}
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="agent-default-worktree"
+              checked={worktreeMode === "new"}
+              onCheckedChange={(checked) => setWorktreeMode(checked ? "new" : "none")}
+            />
           </Field>
         </FieldGroup>
 

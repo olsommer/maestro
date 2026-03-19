@@ -16,7 +16,7 @@ export const ServerEvents = {
   "kanban:updated": z.object({
     taskId: z.string(),
     column: KanbanColumn.optional(),
-    assignedAgentId: z.string().nullable().optional(),
+    assignedTerminalId: z.string().nullable().optional(),
   }),
   "setup:output": z.object({
     data: z.string(),

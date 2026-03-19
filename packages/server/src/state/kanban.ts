@@ -141,18 +141,19 @@ function getColumnForIssue(issue: GitHubIssue): KanbanTaskRecord["column"] {
 
 function withTaskRelations(task: KanbanTaskRecord): KanbanTaskRecord {
   const project = task.projectId ? getProjectRecordById(task.projectId) : null;
-  const agents = findTerminalRecords(
-    (agent) => agent.kanbanTaskId === task.id || agent.id === task.assignedAgentId
-  ).map((agent) => ({
-    id: agent.id,
-    name: agent.name,
-    status: agent.status,
+  const terminals = findTerminalRecords(
+    (terminal) =>
+      terminal.kanbanTaskId === task.id || terminal.id === task.assignedTerminalId
+  ).map((terminal) => ({
+    id: terminal.id,
+    name: terminal.name,
+    status: terminal.status,
   }));
 
   return {
     ...task,
     project: project ? { id: project.id, name: project.name } : null,
-    agents,
+    terminals,
   };
 }
 
@@ -215,7 +216,7 @@ function mapGitHubIssueToTask(
   const column =
     issue.state === "open" && overlay?.pullRequestUrl
       ? "review"
-      : overlay?.assignedAgentId && issue.state === "open"
+      : overlay?.assignedTerminalId && issue.state === "open"
         ? overlay.progress === 100
           ? "done"
           : issueColumn
@@ -235,7 +236,7 @@ function mapGitHubIssueToTask(
     orderIndex: overlay?.orderIndex ?? issue.number,
     labels: visibleLabels,
     completionSummary: overlay?.completionSummary ?? null,
-    assignedAgentId: overlay?.assignedAgentId ?? null,
+    assignedTerminalId: overlay?.assignedTerminalId ?? null,
     pullRequestNumber: overlay?.pullRequestNumber ?? null,
     pullRequestUrl: overlay?.pullRequestUrl ?? null,
     createdAt: issue.created_at,
@@ -367,7 +368,7 @@ export async function createKanbanTask(input: {
       blockedBy: input.blockedBy ?? [],
       priority: input.priority ?? "medium",
       progress: 0,
-      assignedAgentId: null,
+      assignedTerminalId: null,
       completionSummary: null,
       orderIndex: issue.number,
     };
@@ -390,7 +391,7 @@ export async function createKanbanTask(input: {
     orderIndex: Date.now(),
     labels: input.labels ?? [],
     completionSummary: null,
-    assignedAgentId: null,
+    assignedTerminalId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -614,8 +615,8 @@ async function createOrUpdatePullRequestForTask(
   return pullRequest;
 }
 
-export async function finalizeKanbanTaskAfterAgentExit(
-  agentId: string,
+export async function finalizeKanbanTaskAfterTerminalExit(
+  terminalId: string,
   taskId: string,
   successful: boolean
 ): Promise<{ taskId: string; column: KanbanTaskRecord["column"] }> {
@@ -627,8 +628,8 @@ export async function finalizeKanbanTaskAfterAgentExit(
   if (!successful) {
     const resetTask = await updateKanbanTaskRecord(task.id, {
       column: "planned",
-      assignedAgentId: null,
-      completionSummary: "Agent run failed. Task moved back to planned.",
+      assignedTerminalId: null,
+      completionSummary: "Terminal run failed. Task moved back to planned.",
     });
     return { taskId: resetTask.id, column: resetTask.column };
   }
@@ -637,7 +638,7 @@ export async function finalizeKanbanTaskAfterAgentExit(
     const completedTask = await updateKanbanTaskRecord(task.id, {
       column: "done",
       progress: 100,
-      assignedAgentId: agentId,
+      assignedTerminalId: terminalId,
     });
     return { taskId: completedTask.id, column: completedTask.column };
   }
@@ -652,8 +653,8 @@ export async function finalizeKanbanTaskAfterAgentExit(
     throw new Error("Project not found");
   }
 
-  const agent = getTerminalRecord(agentId);
-  const gitPath = agent?.worktreePath || agent?.projectPath || project.localPath;
+  const terminal = getTerminalRecord(terminalId);
+  const gitPath = terminal?.worktreePath || terminal?.projectPath || project.localPath;
 
   const pullRequest = await createOrUpdatePullRequestForTask(
     task,
@@ -664,7 +665,7 @@ export async function finalizeKanbanTaskAfterAgentExit(
   const nextTask = await updateKanbanTaskRecord(task.id, {
     column: pullRequest ? "review" : "done",
     progress: 100,
-    assignedAgentId: agentId,
+    assignedTerminalId: terminalId,
     completionSummary: pullRequest
       ? `Opened PR #${pullRequest.number}`
       : "Completed without code changes.",
@@ -704,7 +705,7 @@ export async function updateKanbanTaskRecord(
     labels?: string[];
     blockedBy?: string[];
     completionSummary?: string;
-    assignedAgentId?: string | null;
+    assignedTerminalId?: string | null;
   }
 ): Promise<KanbanTaskRecord> {
   if (taskId.startsWith("local:")) {
@@ -719,7 +720,9 @@ export async function updateKanbanTaskRecord(
       ...(patch.completionSummary !== undefined
         ? { completionSummary: patch.completionSummary }
         : {}),
-      ...(patch.assignedAgentId !== undefined ? { assignedAgentId: patch.assignedAgentId } : {}),
+      ...(patch.assignedTerminalId !== undefined
+        ? { assignedTerminalId: patch.assignedTerminalId }
+        : {}),
     });
     return withTaskRelations({
       ...task,
@@ -772,7 +775,9 @@ export async function updateKanbanTaskRecord(
     ...(patch.completionSummary !== undefined
       ? { completionSummary: patch.completionSummary }
       : {}),
-    ...(patch.assignedAgentId !== undefined ? { assignedAgentId: patch.assignedAgentId } : {}),
+    ...(patch.assignedTerminalId !== undefined
+      ? { assignedTerminalId: patch.assignedTerminalId }
+      : {}),
   });
 
   return mapGitHubIssueToTask(project, issue, overlay);
@@ -785,7 +790,7 @@ export async function moveKanbanTaskRecord(
   return updateKanbanTaskRecord(taskId, {
     column,
     ...(column === "done" ? { progress: 100 } : {}),
-    ...(column === "backlog" ? { assignedAgentId: null } : {}),
+    ...(column === "backlog" ? { assignedTerminalId: null } : {}),
   });
 }
 

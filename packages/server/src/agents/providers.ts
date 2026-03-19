@@ -148,6 +148,24 @@ export class CodexProvider implements CLIProvider {
   }
 }
 
+export class ShellProvider implements CLIProvider {
+  readonly id = "none";
+  readonly displayName = "None";
+  readonly binaryName = "shell";
+
+  resolveBinaryPath(): string {
+    return process.env.SHELL || "/bin/bash";
+  }
+
+  buildInteractiveCommand(): string {
+    return "";
+  }
+
+  getPtyEnvVars(): Record<string, string> {
+    return {};
+  }
+}
+
 export class CustomProvider implements CLIProvider {
   readonly id = "custom";
   readonly displayName: string;
@@ -199,6 +217,7 @@ export class CustomProvider implements CLIProvider {
 }
 
 const providers: Record<string, CLIProvider> = {
+  none: new ShellProvider(),
   claude: new ClaudeProvider(),
   codex: new CodexProvider(),
 };

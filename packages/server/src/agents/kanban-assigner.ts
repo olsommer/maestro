@@ -29,13 +29,13 @@ async function tick(io: SocketServer) {
     const plannedTasks = allTasks.filter((t) => t.column === "planned");
     const assignableTasks = plannedTasks.filter(
       (task) =>
-        !task.assignedAgentId &&
+        !task.assignedTerminalId &&
         task.blockedBy.every((id) => doneTaskIds.has(id))
     );
     if (assignableTasks.length === 0) return;
 
     for (const task of assignableTasks) {
-      await assignTaskToAgent(io, task);
+      await assignTaskToTerminal(io, task);
     }
   } catch (err) {
     console.error("Kanban assigner error:", err);
@@ -50,7 +50,7 @@ interface TaskLike {
   projectPath: string;
 }
 
-async function assignTaskToAgent(
+async function assignTaskToTerminal(
   io: SocketServer,
   task: TaskLike
 ) {
@@ -66,7 +66,7 @@ async function assignTaskToAgent(
 
     await updateKanbanTaskRecord(task.id, {
       column: "ongoing",
-      assignedAgentId: terminalId,
+      assignedTerminalId: terminalId,
     });
 
     updateTerminalRecord(terminalId, {
@@ -79,7 +79,7 @@ async function assignTaskToAgent(
     io.emit("kanban:updated", {
       taskId: task.id,
       column: "ongoing",
-      assignedAgentId: terminalId,
+      assignedTerminalId: terminalId,
     });
 
     console.log(`Kanban: assigned task "${task.title}" to terminal ${terminalId}`);
@@ -93,12 +93,12 @@ async function assignTaskToAgent(
     }
     await updateKanbanTaskRecord(task.id, {
       column: "planned",
-      assignedAgentId: null,
+      assignedTerminalId: null,
     });
     io.emit("kanban:updated", {
       taskId: task.id,
       column: "planned",
-      assignedAgentId: null,
+      assignedTerminalId: null,
     });
     console.error(`Failed to assign task ${task.id} to an auto-spawned terminal:`, err);
   }

@@ -214,12 +214,12 @@ export function KanbanBoard({ onNewTask }: Props) {
                       })}
                     </div>
                   )}
-                  {task.agents && task.agents.length > 0 && (
+                  {task.terminals && task.terminals.length > 0 && (
                     <div className="mt-2 flex flex-col gap-2">
                       <Separator />
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Assigned agents</span>
-                      {task.agents.map((a) => (
+                        <span className="text-xs text-muted-foreground">Assigned terminals</span>
+                      {task.terminals.map((a) => (
                           <div key={a.id} className="flex items-center gap-1.5">
                             <Badge variant="secondary">{a.name || a.id.slice(0, 8)}</Badge>
                             <StatusBadge status={a.status} />
@@ -287,7 +287,7 @@ export function KanbanBoard({ onNewTask }: Props) {
                       {col.id === "planned"
                         ? "Drop tasks here to queue work."
                         : col.id === "ongoing"
-                          ? "Active tasks appear here while agents are working."
+                          ? "Active tasks appear here while terminals are working."
                           : col.id === "review"
                             ? "Open pull requests appear here while work is under review."
                           : col.id === "done"
