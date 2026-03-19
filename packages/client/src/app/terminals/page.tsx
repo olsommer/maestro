@@ -197,7 +197,7 @@ function TerminalPanel({
       )}
 
       <div className="min-h-0 flex-1 bg-background">
-        <Terminal terminalId={terminal.id} isActive={isSelected} />
+        <Terminal key={terminal.id} terminalId={terminal.id} isActive={isSelected} />
       </div>
     </section>
   );

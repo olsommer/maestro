@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -165,6 +165,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    setTextOverlay(null);
+    containerRef.current?.replaceChildren();
+  }, [terminalId]);
 
   useEffect(() => {
     let cancelled = false;
