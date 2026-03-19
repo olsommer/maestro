@@ -16,7 +16,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { Socket } from "socket.io-client";
-import type { Terminal as GhosttyTerminal } from "ghostty-web";
+import type { Terminal as XtermTerminal } from "@xterm/xterm";
 
 function useMobileKeyboard() {
   const [open, setOpen] = useState(false);
@@ -146,7 +146,7 @@ function MobileTerminalToolbar({
   );
 }
 
-function extractBufferText(term: GhosttyTerminal): string {
+function extractBufferText(term: XtermTerminal): string {
   const buffer = term.buffer.active;
   const lines: string[] = [];
   for (let i = 0; i < buffer.length; i++) {
@@ -161,7 +161,7 @@ function extractBufferText(term: GhosttyTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<GhosttyTerminal | null>(null);
+  const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
@@ -177,9 +177,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     containerRef.current?.replaceChildren();
 
     void (async () => {
-      const { init, Terminal, FitAddon } = await import("ghostty-web");
-
-      await init();
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import("@xterm/xterm"),
+        import("@xterm/addon-fit"),
+      ]);
 
       if (cancelled || !containerRef.current) return;
 
@@ -193,18 +194,20 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: window.innerWidth < 768 ? 10 : 13,
         cursorBlink: true,
+        scrollback: 5000,
+        convertEol: false,
       });
 
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
       fitAddon.fit();
-      fitAddon.observeResize();
+      term.focus();
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
       setTextOverlay(null);
 
-      // Touch scrolling for mobile (ghostty-web has no built-in touch scroll)
+      // Touch scrolling for mobile
       let touchStartY = 0;
       let touchAccum = 0;
       let didScroll = false;
@@ -235,8 +238,6 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         e.preventDefault();
       };
 
-      // Prevent ghostty's touchend handler from focusing the textarea (opening keyboard)
-      // when the user was scrolling rather than tapping.
       const onTouchEnd = (e: TouchEvent) => {
         if (didScroll) {
           e.preventDefault();
@@ -246,13 +247,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       container.addEventListener("touchstart", onTouchStart, { passive: true });
       container.addEventListener("touchmove", onTouchMove, { passive: false });
-      // Use capture phase to intercept before ghostty's touchend handler
       container.addEventListener("touchend", onTouchEnd, { capture: true, passive: false });
 
-      // Refit terminal when mobile keyboard opens/closes (visualViewport resize)
+      const resizeObserver = new ResizeObserver(() => {
+        fitAddon.fit();
+      });
+      resizeObserver.observe(container);
+
       let resizeTimer: ReturnType<typeof setTimeout>;
       const onViewportResize = () => {
-        // Immediate fit + delayed fit to catch layout reflows
         fitAddon.fit();
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => fitAddon.fit(), 100);
@@ -287,6 +290,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (cleanedUp) return;
         cleanedUp = true;
         clearTimeout(resizeTimer);
+        resizeObserver.disconnect();
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
@@ -324,7 +328,6 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       // Subscribe to live output
       socket.emit("terminal:subscribe", { terminalId });
 
-      // Send initial dimensions
       socket.emit("terminal:resize", {
         terminalId,
         cols: term.cols,

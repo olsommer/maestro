@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { getSocket } from "@/lib/socket";
+import type { Terminal as XtermTerminal } from "@xterm/xterm";
 
 export function SetupDialog({
   open,
@@ -35,18 +36,21 @@ export function SetupDialog({
   useEffect(() => {
     if (!open || !containerEl) return;
 
-    let mounted = true;
+    let cancelled = false;
+    let cleanupTerminal: (() => void) | null = null;
+    containerEl.replaceChildren();
 
-    async function setup() {
-      const { init, Terminal, FitAddon } = await import("ghostty-web");
+    void (async () => {
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import("@xterm/xterm"),
+        import("@xterm/addon-fit"),
+      ]);
 
-      await init();
-
-      if (!mounted || !containerEl) return;
+      if (cancelled || !containerEl) return;
 
       const fitAddon = new FitAddon();
 
-      const term = new Terminal({
+      const term: XtermTerminal = new Terminal({
         theme: {
           background: "#09090b",
           foreground: "#fafafa",
@@ -55,17 +59,23 @@ export function SetupDialog({
         fontFamily: "monospace",
         fontSize: 13,
         cursorBlink: true,
+        scrollback: 5000,
       });
 
       term.loadAddon(fitAddon);
       term.open(containerEl);
+      term.focus();
 
       // Wait for the dialog open animation to finish so the container
       // has its final rendered size before we measure cols/rows.
       await new Promise((r) => setTimeout(r, 300));
-      if (!mounted) return;
+      if (cancelled) return;
       fitAddon.fit();
-      fitAddon.observeResize();
+
+      const resizeObserver = new ResizeObserver(() => {
+        fitAddon.fit();
+      });
+      resizeObserver.observe(containerEl);
 
       const socket = getSocket();
 
@@ -77,19 +87,19 @@ export function SetupDialog({
 
       // Surface detected URLs as a clickable banner
       const handleUrl = (payload: { url: string }) => {
-        if (!mounted) return;
+        if (cancelled) return;
         setLatestUrl(payload.url);
       };
       socket.on("setup:url", handleUrl);
 
       const handleClearUrl = () => {
-        if (!mounted) return;
+        if (cancelled) return;
         setLatestUrl(null);
       };
       socket.on("setup:clear-url", handleClearUrl);
 
       const handleSetupComplete = () => {
-        if (!mounted) return;
+        if (cancelled) return;
         setCompleted(true);
         setTimeout(() => onCompleteRef.current(), 1500);
       };
@@ -115,7 +125,8 @@ export function SetupDialog({
         socket.emit("setup:resize", { cols: size.cols, rows: size.rows });
       });
 
-      return () => {
+      cleanupTerminal = () => {
+        resizeObserver.disconnect();
         socket.off("setup:output", handleOutput);
         socket.off("setup:url", handleUrl);
         socket.off("setup:clear-url", handleClearUrl);
@@ -123,14 +134,13 @@ export function SetupDialog({
         socket.emit("setup:unsubscribe", {});
         sendInputRef.current = null;
         term.dispose();
+        containerEl.replaceChildren();
       };
-    }
-
-    const cleanup = setup();
+    })();
 
     return () => {
-      mounted = false;
-      cleanup.then((fn) => fn?.());
+      cancelled = true;
+      cleanupTerminal?.();
     };
   }, [open, containerEl]);
 
