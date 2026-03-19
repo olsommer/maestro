@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useState } from "react";
 import {
   FolderGit2Icon,
   PlusIcon,
@@ -51,7 +51,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSeparator,
   FieldSet,
   FieldLegend,
 } from "@/components/ui/field";
@@ -80,6 +79,16 @@ function ProjectStatusBadge({ status }: { status: string }) {
   );
 }
 
+function slugifyProjectName(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "project"
+  );
+}
+
 type Props = {
   isCreateMode: boolean;
   setIsCreateMode: Dispatch<SetStateAction<boolean>>;
@@ -98,8 +107,8 @@ function ProjectsView(props: Props) {
   const updateProject = useStore((s) => s.updateProject);
 
   const [name, setName] = useState("");
+  const [useGitHubRepo, setUseGitHubRepo] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
-  const [localPath, setLocalPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [syncIssues, setSyncIssues] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -117,7 +126,9 @@ function ProjectsView(props: Props) {
   const pendingDeleteProject =
     projects.find((project) => project.id === pendingDeleteProjectId) ?? null;
   const repoQuery = repoUrl.trim();
+  const derivedLocalPath = `~/maestro-projects/${slugifyProjectName(name)}`;
   const showRepoSuggestions =
+    useGitHubRepo &&
     Boolean(github?.connected) &&
     repoQuery.length > 0 &&
     selectedRepoSuggestion !== repoQuery;
@@ -214,15 +225,14 @@ function ProjectsView(props: Props) {
     try {
       const { project } = await api.createProject({
         name: name.trim(),
-        repoUrl: repoQuery || undefined,
-        localPath: localPath.trim() || undefined,
-        defaultBranch: defaultBranch.trim() || undefined,
-        syncIssues,
+        repoUrl: useGitHubRepo ? repoQuery || undefined : undefined,
+        defaultBranch: useGitHubRepo ? defaultBranch.trim() || undefined : undefined,
+        syncIssues: useGitHubRepo ? syncIssues : false,
       });
       addProject(project);
       setName("");
+      setUseGitHubRepo(false);
       setRepoUrl("");
-      setLocalPath("");
       setDefaultBranch("main");
       setSyncIssues(true);
       setRepoSuggestions([]);
@@ -281,6 +291,25 @@ function ProjectsView(props: Props) {
     setRepoSuggestions([]);
     setRepoSearchError("");
   }
+
+  const resetCreateForm = useCallback(() => {
+    setError("");
+    setName("");
+    setUseGitHubRepo(false);
+    setRepoUrl("");
+    setDefaultBranch("main");
+    setSyncIssues(true);
+    setRepoSuggestions([]);
+    setRepoSearchError("");
+    setSelectedRepoSuggestion(null);
+  }, [setError]);
+
+  useEffect(() => {
+    if (!isCreateMode) {
+      return;
+    }
+    resetCreateForm();
+  }, [isCreateMode, resetCreateForm]);
 
   function renderRepoField(
     controlId: string,
@@ -462,48 +491,71 @@ function ProjectsView(props: Props) {
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Maestro"
                       />
+                      <FieldDescription>
+                        Local path: {derivedLocalPath}
+                      </FieldDescription>
                     </Field>
 
-                    {renderRepoField("project-repo")}
-
-                    <FieldSeparator />
-
-                    <Field>
-                      <FieldLabel htmlFor="project-local-path">Local Path</FieldLabel>
-                      <Input
-                        id="project-local-path"
-                        value={localPath}
-                        onChange={(e) => setLocalPath(e.target.value)}
-                        placeholder="Defaults to ~/maestro-projects/<repo>"
+                    <Field orientation="responsive">
+                      <FieldContent>
+                        <FieldLabel htmlFor="project-use-github">
+                          Use GitHub Repository
+                        </FieldLabel>
+                        <FieldDescription>
+                          Enable this if the project should be linked to a GitHub repo.
+                        </FieldDescription>
+                      </FieldContent>
+                      <Switch
+                        id="project-use-github"
+                        checked={useGitHubRepo}
+                        onCheckedChange={(checked) => {
+                          setUseGitHubRepo(checked);
+                          if (!checked) {
+                            setRepoUrl("");
+                            setDefaultBranch("main");
+                            setSyncIssues(false);
+                            setRepoSuggestions([]);
+                            setRepoSearchError("");
+                            setSelectedRepoSuggestion(null);
+                          } else {
+                            setSyncIssues(true);
+                          }
+                        }}
                       />
                     </Field>
 
-                    <Field>
-                      <FieldLabel htmlFor="project-default-branch">Default Branch</FieldLabel>
-                      <Input
-                        id="project-default-branch"
-                        value={defaultBranch}
-                        onChange={(e) => setDefaultBranch(e.target.value)}
-                        placeholder="main"
-                      />
-                    </Field>
+                    {useGitHubRepo && (
+                      <>
+                        {renderRepoField("project-repo")}
 
-                    <FieldSet>
-                      <FieldLegend variant="label">Project Options</FieldLegend>
-                      <Field orientation="horizontal">
-                        <Switch
-                          id="project-sync"
-                          checked={syncIssues}
-                          onCheckedChange={setSyncIssues}
-                        />
-                        <FieldContent>
-                          <FieldLabel htmlFor="project-sync">Import GitHub issues</FieldLabel>
-                          <FieldDescription>
-                            Pull issues into Maestro after the repository is linked.
-                          </FieldDescription>
-                        </FieldContent>
-                      </Field>
-                    </FieldSet>
+                        <Field>
+                          <FieldLabel htmlFor="project-default-branch">Default Branch</FieldLabel>
+                          <Input
+                            id="project-default-branch"
+                            value={defaultBranch}
+                            onChange={(e) => setDefaultBranch(e.target.value)}
+                            placeholder="main"
+                          />
+                        </Field>
+
+                        <FieldSet>
+                          <FieldLegend variant="label">GitHub Options</FieldLegend>
+                          <Field orientation="horizontal">
+                            <Switch
+                              id="project-sync"
+                              checked={syncIssues}
+                              onCheckedChange={setSyncIssues}
+                            />
+                            <FieldContent>
+                              <FieldLabel htmlFor="project-sync">Sync GitHub issues</FieldLabel>
+                              <FieldDescription>
+                                Pull issues into Maestro after the repository is linked.
+                              </FieldDescription>
+                            </FieldContent>
+                          </Field>
+                        </FieldSet>
+                      </>
+                    )}
                   </FieldGroup>
 
                   <div className="flex justify-end">
@@ -613,8 +665,7 @@ function ProjectsView(props: Props) {
                 <DialogHeader>
                   <DialogTitle>Create Project</DialogTitle>
                   <DialogDescription>
-                    Create from a repo URL or local checkout. Bootstrap starts a
-                    provisioning agent.
+                    Create a managed project. The local folder name is derived from the project name.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -636,54 +687,75 @@ function ProjectsView(props: Props) {
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Maestro"
                       />
+                      <FieldDescription>
+                        Local path: {derivedLocalPath}
+                      </FieldDescription>
                     </Field>
 
-                    {renderRepoField("project-repo-dialog", {
-                      hideWhenDisconnected: true,
-                    })}
-
-                    <FieldSeparator />
-
-                    <Field>
-                      <FieldLabel htmlFor="project-local-path-dialog">Local Path</FieldLabel>
-                      <Input
-                        id="project-local-path-dialog"
-                        value={localPath}
-                        onChange={(e) => setLocalPath(e.target.value)}
-                        placeholder="Defaults to ~/maestro-projects/<repo>"
+                    <Field orientation="responsive">
+                      <FieldContent>
+                        <FieldLabel htmlFor="project-use-github-dialog">
+                          Use GitHub Repository
+                        </FieldLabel>
+                        <FieldDescription>
+                          Enable this if the project should be linked to a GitHub repo.
+                        </FieldDescription>
+                      </FieldContent>
+                      <Switch
+                        id="project-use-github-dialog"
+                        checked={useGitHubRepo}
+                        onCheckedChange={(checked) => {
+                          setUseGitHubRepo(checked);
+                          if (!checked) {
+                            setRepoUrl("");
+                            setDefaultBranch("main");
+                            setSyncIssues(false);
+                            setRepoSuggestions([]);
+                            setRepoSearchError("");
+                            setSelectedRepoSuggestion(null);
+                          } else {
+                            setSyncIssues(true);
+                          }
+                        }}
                       />
                     </Field>
 
-                    <Field>
-                      <FieldLabel htmlFor="project-default-branch-dialog">
-                        Default Branch
-                      </FieldLabel>
-                      <Input
-                        id="project-default-branch-dialog"
-                        value={defaultBranch}
-                        onChange={(e) => setDefaultBranch(e.target.value)}
-                        placeholder="main"
-                      />
-                    </Field>
+                    {useGitHubRepo && (
+                      <>
+                        {renderRepoField("project-repo-dialog")}
 
-                    <FieldSet>
-                      <FieldLegend variant="label">Project Options</FieldLegend>
-                      <Field orientation="horizontal">
-                        <Switch
-                          id="project-sync-dialog"
-                          checked={syncIssues}
-                          onCheckedChange={setSyncIssues}
-                        />
-                        <FieldContent>
-                          <FieldLabel htmlFor="project-sync-dialog">
-                            Import GitHub issues
+                        <Field>
+                          <FieldLabel htmlFor="project-default-branch-dialog">
+                            Default Branch
                           </FieldLabel>
-                          <FieldDescription>
-                            Pull issues into Maestro after the repository is linked.
-                          </FieldDescription>
-                        </FieldContent>
-                      </Field>
-                    </FieldSet>
+                          <Input
+                            id="project-default-branch-dialog"
+                            value={defaultBranch}
+                            onChange={(e) => setDefaultBranch(e.target.value)}
+                            placeholder="main"
+                          />
+                        </Field>
+
+                        <FieldSet>
+                          <FieldLegend variant="label">GitHub Options</FieldLegend>
+                          <Field orientation="horizontal">
+                            <Switch
+                              id="project-sync-dialog"
+                              checked={syncIssues}
+                              onCheckedChange={setSyncIssues}
+                            />
+                            <FieldContent>
+                              <FieldLabel htmlFor="project-sync-dialog">
+                                Sync GitHub issues
+                              </FieldLabel>
+                              <FieldDescription>
+                                Pull issues into Maestro after the repository is linked.
+                              </FieldDescription>
+                            </FieldContent>
+                          </Field>
+                        </FieldSet>
+                      </>
+                    )}
                   </FieldGroup>
 
                   <div className="flex justify-end">

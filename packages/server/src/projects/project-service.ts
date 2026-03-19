@@ -101,14 +101,13 @@ function getUniqueSlug(name: string): string {
 
 function deriveLocalPath(
   localPath: string | undefined,
-  name: string,
-  githubRepo: string | null
+  name: string
 ): string {
   if (localPath?.trim()) {
     return path.resolve(localPath.trim());
   }
 
-  return path.join(MANAGED_PROJECTS_DIR, slugify(githubRepo || name));
+  return path.join(MANAGED_PROJECTS_DIR, slugify(name));
 }
 
 export async function listProjects(): Promise<ProjectRecord[]> {
@@ -193,7 +192,7 @@ export async function createProject(
 ): Promise<ProjectRecord> {
   const repo = parseGitHubRepo(input.repoUrl, input.githubOwner, input.githubRepo);
   const slug = getUniqueSlug(input.name);
-  const localPath = deriveLocalPath(input.localPath, input.name, repo.githubRepo);
+  const localPath = deriveLocalPath(input.localPath, input.name);
 
   fs.mkdirSync(localPath, { recursive: true });
 
