@@ -37,9 +37,14 @@ Each user:
 3. Opens the shared frontend, or a self-hosted frontend, and enters their backend URL + API token
 4. Gets their own isolated agent environment
 
+Public shared frontend:
+`https://maestro-beige.vercel.app`
+
 ## Quick Start (Local Development)
 
 This section is for developing Maestro itself. For normal use, users only need to run their own backend and connect to it from the shared frontend.
+
+The deployed shared frontend is available at `https://maestro-beige.vercel.app`.
 
 ```bash
 # Install dependencies
@@ -60,6 +65,9 @@ Open `http://localhost:3000`, enter `http://localhost:4800` as the server URL, p
 ### Frontend (Optional)
 
 Most users do not need to deploy the frontend. They can use an existing shared frontend and point it at their own backend.
+
+Shared frontend URL:
+`https://maestro-beige.vercel.app`
 
 Deploy your own frontend only if you want a custom host, custom branding, or a fully self-hosted setup.
 
