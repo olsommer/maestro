@@ -73,6 +73,10 @@ interface ClaudeCredentialsFile {
   };
 }
 
+function logClaudeAuth(message: string): void {
+  console.log(`[cli-auth][claude] ${message}`);
+}
+
 function parseClaudeCliStatus(raw: string): ClaudeAuthStatus | null {
   try {
     const data = JSON.parse(raw) as ClaudeCliStatusPayload;
@@ -98,19 +102,33 @@ function getClaudeAuthStatusFromCredentials(): ClaudeAuthStatus | null {
 
   for (const home of getClaudeCredentialHomes()) {
     const credentialsPath = path.join(home, ".claude", ".credentials.json");
-    if (!fs.existsSync(credentialsPath)) continue;
+    if (!fs.existsSync(credentialsPath)) {
+      logClaudeAuth(`credentials file not found at ${credentialsPath}`);
+      continue;
+    }
+
+    logClaudeAuth(`found credentials file at ${credentialsPath}`);
 
     try {
       const raw = fs.readFileSync(credentialsPath, "utf8");
       const data = JSON.parse(raw) as ClaudeCredentialsFile;
       const oauth = data.claudeAiOauth;
-      if (!oauth?.accessToken) continue;
+      if (!oauth?.accessToken) {
+        logClaudeAuth(`credentials file at ${credentialsPath} has no access token; skipping`);
+        continue;
+      }
 
       const expiresAt =
         typeof oauth.expiresAt === "number" && Number.isFinite(oauth.expiresAt)
           ? oauth.expiresAt
           : null;
       const loggedIn = expiresAt === null || expiresAt > Date.now();
+
+      logClaudeAuth(
+        `credentials file at ${credentialsPath} evaluated to loggedIn=${loggedIn} (expiresAt=${
+          expiresAt === null ? "none" : new Date(expiresAt).toISOString()
+        })`
+      );
 
       if (loggedIn && (expiresAt ?? Number.MAX_SAFE_INTEGER) > bestExpiresAt) {
         bestExpiresAt = expiresAt ?? Number.MAX_SAFE_INTEGER;
@@ -121,10 +139,21 @@ function getClaudeAuthStatusFromCredentials(): ClaudeAuthStatus | null {
           orgName: null,
           authMethod: "oauth-credentials",
         };
+        logClaudeAuth(`credentials file at ${credentialsPath} is the current best auth candidate`);
       }
-    } catch {
-      // Ignore malformed credentials and continue checking other homes.
+    } catch (error) {
+      logClaudeAuth(
+        `failed to read or parse credentials file at ${credentialsPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
+  }
+
+  if (bestStatus?.loggedIn) {
+    logClaudeAuth("credential-based auth check succeeded");
+  } else {
+    logClaudeAuth("no valid logged-in credential file found");
   }
 
   return bestStatus;
@@ -138,27 +167,63 @@ function getClaudeAuthStatusFromCli(): ClaudeAuthStatus | null {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
-    return parseClaudeCliStatus(raw);
+    const parsed = parseClaudeCliStatus(raw);
+    logClaudeAuth(
+      parsed
+        ? `cli auth status parsed successfully (loggedIn=${parsed.loggedIn}, authMethod=${
+            parsed.authMethod ?? "unknown"
+          })`
+        : "cli auth status returned output that could not be parsed"
+    );
+    return parsed;
   } catch (err) {
     const stdout =
       err instanceof Error && "stdout" in err && typeof err.stdout === "string"
         ? err.stdout.trim()
         : "";
-    return stdout ? parseClaudeCliStatus(stdout) : null;
+    if (stdout) {
+      const parsed = parseClaudeCliStatus(stdout);
+      logClaudeAuth(
+        parsed
+          ? `cli auth status errored but stdout parsed successfully (loggedIn=${parsed.loggedIn}, authMethod=${
+              parsed.authMethod ?? "unknown"
+            })`
+          : "cli auth status errored and stdout could not be parsed"
+      );
+      return parsed;
+    }
+
+    logClaudeAuth(
+      `cli auth status command failed without parseable stdout: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    return null;
   }
 }
 
 export function getClaudeAuthStatus(): ClaudeAuthStatus {
   if (!commandExists("claude")) {
+    logClaudeAuth("claude binary not found; reporting installed=false");
     return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
   }
 
+  logClaudeAuth("claude binary found; checking credentials first");
   const credentialStatus = getClaudeAuthStatusFromCredentials();
   if (credentialStatus?.loggedIn) {
+    logClaudeAuth("returning logged-in status from credentials file");
     return credentialStatus;
   }
 
-  return getClaudeAuthStatusFromCli() ?? {
+  logClaudeAuth("credentials did not establish login; falling back to `claude auth status`");
+  const cliStatus = getClaudeAuthStatusFromCli();
+  if (cliStatus) {
+    logClaudeAuth(`returning status from cli auth check (loggedIn=${cliStatus.loggedIn})`);
+    return cliStatus;
+  }
+
+  logClaudeAuth("cli auth check returned no status; falling back to loggedOut default");
+  return {
     installed: true,
     loggedIn: false,
     email: null,
