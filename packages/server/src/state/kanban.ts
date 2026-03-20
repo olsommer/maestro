@@ -558,6 +558,87 @@ export function handleGitHubPullRequestWebhookEvent(
   };
 }
 
+export async function handleGitHubPullRequestReviewWebhookEvent(
+  projectId: string,
+  action: string,
+  review: {
+    state?: string | null;
+  },
+  pullRequest: {
+    body?: string | null;
+  }
+): Promise<{ taskId: string | null }> {
+  updateProjectRecord(projectId, {
+    lastSyncedAt: nowIso(),
+    lastSyncError: null,
+  });
+
+  if (
+    action !== "submitted" ||
+    (review.state !== "changes_requested" && review.state !== "commented")
+  ) {
+    return { taskId: null };
+  }
+
+  const issueNumber = extractLinkedIssueNumber(pullRequest.body);
+  if (!issueNumber) {
+    return { taskId: null };
+  }
+
+  const taskId = buildGitHubTaskId(projectId, issueNumber);
+  const task = await getKanbanTask(taskId);
+  if (!task || task.column !== "review") {
+    return { taskId: null };
+  }
+
+  await updateKanbanTaskRecord(taskId, {
+    column: "planned",
+    assignedTerminalId: null,
+    completionSummary:
+      review.state === "changes_requested"
+        ? "GitHub review requested changes. Task moved back to planned."
+        : "GitHub review feedback received. Task moved back to planned.",
+  });
+
+  return { taskId };
+}
+
+export async function handleGitHubPullRequestReviewCommentWebhookEvent(
+  projectId: string,
+  action: string,
+  pullRequest: {
+    body?: string | null;
+  }
+): Promise<{ taskId: string | null }> {
+  updateProjectRecord(projectId, {
+    lastSyncedAt: nowIso(),
+    lastSyncError: null,
+  });
+
+  if (action !== "created") {
+    return { taskId: null };
+  }
+
+  const issueNumber = extractLinkedIssueNumber(pullRequest.body);
+  if (!issueNumber) {
+    return { taskId: null };
+  }
+
+  const taskId = buildGitHubTaskId(projectId, issueNumber);
+  const task = await getKanbanTask(taskId);
+  if (!task || task.column !== "review") {
+    return { taskId: null };
+  }
+
+  await updateKanbanTaskRecord(taskId, {
+    column: "planned",
+    assignedTerminalId: null,
+    completionSummary: "GitHub review comment received. Task moved back to planned.",
+  });
+
+  return { taskId };
+}
+
 async function createOrUpdatePullRequestForTask(
   task: KanbanTaskRecord,
   project: ProjectRecord,

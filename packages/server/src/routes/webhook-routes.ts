@@ -4,6 +4,8 @@ import type { Server as SocketServer } from "socket.io";
 import {
   handleGitHubIssueWebhookEvent,
   handleGitHubPullRequestWebhookEvent,
+  handleGitHubPullRequestReviewCommentWebhookEvent,
+  handleGitHubPullRequestReviewWebhookEvent,
 } from "../state/kanban.js";
 import { findProjectRecordByGitHubRepo } from "../state/projects.js";
 
@@ -24,6 +26,10 @@ interface GitHubWebhookBody {
     html_url: string;
     body?: string | null;
     merged?: boolean;
+  };
+  review?: {
+    state?: string | null;
+    body?: string | null;
   };
 }
 
@@ -94,6 +100,51 @@ export async function registerWebhookRoutes(app: FastifyInstance, io: SocketServ
         body: body.pull_request.body,
         merged: body.pull_request.merged,
       });
+
+      if (result.taskId) {
+        io.emit("kanban:updated", { taskId: result.taskId });
+      }
+
+      return {
+        ok: true,
+        handled: Boolean(result.taskId),
+        projectId: project.id,
+        taskId: result.taskId,
+      };
+    }
+
+    if (event === "pull_request_review" && body.pull_request) {
+      const result = await handleGitHubPullRequestReviewWebhookEvent(
+        project.id,
+        body.action ?? "",
+        {
+          state: body.review?.state,
+        },
+        {
+          body: body.pull_request.body,
+        }
+      );
+
+      if (result.taskId) {
+        io.emit("kanban:updated", { taskId: result.taskId });
+      }
+
+      return {
+        ok: true,
+        handled: Boolean(result.taskId),
+        projectId: project.id,
+        taskId: result.taskId,
+      };
+    }
+
+    if (event === "pull_request_review_comment" && body.pull_request) {
+      const result = await handleGitHubPullRequestReviewCommentWebhookEvent(
+        project.id,
+        body.action ?? "",
+        {
+          body: body.pull_request.body,
+        }
+      );
 
       if (result.taskId) {
         io.emit("kanban:updated", { taskId: result.taskId });
