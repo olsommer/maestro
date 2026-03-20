@@ -53,6 +53,20 @@ export function initTerminalManager(d: TerminalManagerDeps) {
   deps = d;
 }
 
+function normalizeTerminalName(name?: string): string | null {
+  const trimmed = name?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const legacyGeneratedName = /^terminal ([0-9a-f]{6})$/i.exec(trimmed);
+  if (legacyGeneratedName) {
+    return legacyGeneratedName[1].toLowerCase();
+  }
+
+  return trimmed;
+}
+
 function getRuntime(terminalId: string): TerminalRuntime {
   let rt = agentRuntimes.get(terminalId);
   if (!rt) {
@@ -101,7 +115,7 @@ export async function createTerminal(options: {
   disableSandbox?: boolean;
 }) {
   const agent = createTerminalRecord({
-    name: options.name ?? null,
+    name: normalizeTerminalName(options.name),
     kind: options.kind ?? "terminal",
     provider: options.provider ?? "claude",
     projectId: options.projectId ?? null,

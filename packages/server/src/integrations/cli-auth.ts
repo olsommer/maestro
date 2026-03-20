@@ -252,6 +252,15 @@ interface CodexAuthFile {
   last_refresh?: string;
 }
 
+function parseCodexLoggedInStatus(detail: string | null): boolean {
+  const normalized = detail?.trim().toLowerCase();
+  if (!normalized) return false;
+  if (/\bnot logged in\b/.test(normalized) || /\blogged out\b/.test(normalized)) {
+    return false;
+  }
+  return /\blogged in\b/.test(normalized);
+}
+
 function getTokenExpiryMs(token?: string): number | null {
   if (!token) return null;
   const payload = decodeJwtPayload(token);
@@ -313,7 +322,7 @@ function getCodexAuthStatusFromCli(): CodexAuthStatus | null {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
-    const loggedIn = /logged in/i.test(raw);
+    const loggedIn = parseCodexLoggedInStatus(raw);
     return { installed: true, loggedIn, detail: raw || null };
   } catch (err) {
     const stdout =
@@ -325,7 +334,7 @@ function getCodexAuthStatusFromCli(): CodexAuthStatus | null {
         ? err.stderr.trim()
         : "";
     const detail = stdout || stderr || null;
-    const loggedIn = /logged in/i.test(detail ?? "");
+    const loggedIn = parseCodexLoggedInStatus(detail);
     return { installed: true, loggedIn, detail };
   }
 }
