@@ -10,6 +10,34 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
 
+function getCredentialHomes(): string[] {
+  const candidates = [
+    process.env.HOME,
+    os.homedir(),
+    "/root",
+    "/home/sandbox",
+  ];
+
+  return Array.from(new Set(candidates.filter((value): value is string => Boolean(value))));
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const [, payload] = token.split(".");
+  if (!payload) return null;
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function commandExists(binary: string): boolean {
   try {
     execFileSync("which", [binary], { stdio: "pipe", encoding: "utf8" });
@@ -61,14 +89,7 @@ function parseClaudeCliStatus(raw: string): ClaudeAuthStatus | null {
 }
 
 function getClaudeCredentialHomes(): string[] {
-  const candidates = [
-    process.env.HOME,
-    os.homedir(),
-    "/root",
-    "/home/sandbox",
-  ];
-
-  return Array.from(new Set(candidates.filter((value): value is string => Boolean(value))));
+  return getCredentialHomes();
 }
 
 function getClaudeAuthStatusFromCredentials(): ClaudeAuthStatus | null {
@@ -109,11 +130,7 @@ function getClaudeAuthStatusFromCredentials(): ClaudeAuthStatus | null {
   return bestStatus;
 }
 
-export function getClaudeAuthStatus(): ClaudeAuthStatus {
-  if (!commandExists("claude")) {
-    return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
-  }
-
+function getClaudeAuthStatusFromCli(): ClaudeAuthStatus | null {
   try {
     const raw = execFileSync("claude", ["auth", "status"], {
       encoding: "utf8",
@@ -121,37 +138,33 @@ export function getClaudeAuthStatus(): ClaudeAuthStatus {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
-    const status = parseClaudeCliStatus(raw);
-    if (status?.loggedIn) {
-      return status;
-    }
-
-    return getClaudeAuthStatusFromCredentials() ?? status ?? {
-      installed: true,
-      loggedIn: false,
-      email: null,
-      orgName: null,
-      authMethod: null,
-    };
+    return parseClaudeCliStatus(raw);
   } catch (err) {
     const stdout =
       err instanceof Error && "stdout" in err && typeof err.stdout === "string"
         ? err.stdout.trim()
         : "";
-    const status = stdout ? parseClaudeCliStatus(stdout) : null;
-
-    if (status?.loggedIn) {
-      return status;
-    }
-
-    return getClaudeAuthStatusFromCredentials() ?? status ?? {
-      installed: true,
-      loggedIn: false,
-      email: null,
-      orgName: null,
-      authMethod: null,
-    };
+    return stdout ? parseClaudeCliStatus(stdout) : null;
   }
+}
+
+export function getClaudeAuthStatus(): ClaudeAuthStatus {
+  if (!commandExists("claude")) {
+    return { installed: false, loggedIn: false, email: null, orgName: null, authMethod: null };
+  }
+
+  const credentialStatus = getClaudeAuthStatusFromCredentials();
+  if (credentialStatus?.loggedIn) {
+    return credentialStatus;
+  }
+
+  return getClaudeAuthStatusFromCli() ?? {
+    installed: true,
+    loggedIn: false,
+    email: null,
+    orgName: null,
+    authMethod: null,
+  };
 }
 
 // ─── Codex ──────────────────────────────────────────────────────────────────
@@ -162,11 +175,72 @@ export interface CodexAuthStatus {
   detail: string | null;
 }
 
-export function getCodexAuthStatus(): CodexAuthStatus {
-  if (!commandExists("codex")) {
-    return { installed: false, loggedIn: false, detail: null };
+interface CodexAuthFile {
+  auth_mode?: string;
+  OPENAI_API_KEY?: string | null;
+  tokens?: {
+    id_token?: string;
+    access_token?: string;
+    refresh_token?: string;
+    account_id?: string;
+  };
+  last_refresh?: string;
+}
+
+function getTokenExpiryMs(token?: string): number | null {
+  if (!token) return null;
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  return typeof exp === "number" && Number.isFinite(exp) ? exp * 1000 : null;
+}
+
+function getCodexAuthStatusFromFile(): CodexAuthStatus | null {
+  let bestStatus: CodexAuthStatus | null = null;
+  let bestScore = -Infinity;
+
+  for (const home of getCredentialHomes()) {
+    const authPath = path.join(home, ".codex", "auth.json");
+    if (!fs.existsSync(authPath)) continue;
+
+    try {
+      const raw = fs.readFileSync(authPath, "utf8");
+      const data = JSON.parse(raw) as CodexAuthFile;
+      const apiKey = data.OPENAI_API_KEY?.trim();
+      const tokens = data.tokens;
+      const accessExp = getTokenExpiryMs(tokens?.access_token);
+      const idExp = getTokenExpiryMs(tokens?.id_token);
+      const bestExp = Math.max(accessExp ?? -Infinity, idExp ?? -Infinity);
+      const hasRefreshToken = Boolean(tokens?.refresh_token);
+      const hasCurrentJwt = bestExp > Date.now();
+      const loggedIn = Boolean(apiKey) || hasRefreshToken || hasCurrentJwt;
+
+      if (!loggedIn) continue;
+
+      const idPayload = tokens?.id_token ? decodeJwtPayload(tokens.id_token) : null;
+      const email = typeof idPayload?.email === "string" ? idPayload.email : null;
+      const mode = data.auth_mode?.trim() || (apiKey ? "api_key" : "chatgpt");
+      const detail = email
+        ? `Logged in via ${mode} (${email})`
+        : `Logged in via ${mode}`;
+      const score = Math.max(bestExp, hasRefreshToken ? Number.MAX_SAFE_INTEGER : -Infinity);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestStatus = {
+          installed: true,
+          loggedIn: true,
+          detail,
+        };
+      }
+    } catch {
+      // Ignore malformed auth files and continue checking other homes.
+    }
   }
 
+  return bestStatus;
+}
+
+function getCodexAuthStatusFromCli(): CodexAuthStatus | null {
   try {
     const raw = execFileSync("codex", ["login", "status"], {
       encoding: "utf8",
@@ -175,14 +249,33 @@ export function getCodexAuthStatus(): CodexAuthStatus {
     }).trim();
 
     const loggedIn = /logged in/i.test(raw);
-    return { installed: true, loggedIn, detail: raw };
+    return { installed: true, loggedIn, detail: raw || null };
   } catch (err) {
+    const stdout =
+      err instanceof Error && "stdout" in err && typeof err.stdout === "string"
+        ? err.stdout.trim()
+        : "";
     const stderr =
       err instanceof Error && "stderr" in err && typeof err.stderr === "string"
         ? err.stderr.trim()
         : "";
-    return { installed: true, loggedIn: false, detail: stderr || null };
+    const detail = stdout || stderr || null;
+    const loggedIn = /logged in/i.test(detail ?? "");
+    return { installed: true, loggedIn, detail };
   }
+}
+
+export function getCodexAuthStatus(): CodexAuthStatus {
+  if (!commandExists("codex")) {
+    return { installed: false, loggedIn: false, detail: null };
+  }
+
+  const fileStatus = getCodexAuthStatusFromFile();
+  if (fileStatus?.loggedIn) {
+    return fileStatus;
+  }
+
+  return getCodexAuthStatusFromCli() ?? { installed: true, loggedIn: false, detail: null };
 }
 
 export interface DeviceAuthResult {
