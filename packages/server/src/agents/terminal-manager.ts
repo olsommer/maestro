@@ -184,6 +184,7 @@ export async function startTerminal(
     prompt,
     projectPath: cwd,
     skipPermissions: agent.skipPermissions,
+    sandbox: sandboxEnabled,
     mcpConfigPath: options?.mcpConfigPath,
     secondaryProjectPaths: agent.secondaryProjectPaths,
     skills: agent.skills,

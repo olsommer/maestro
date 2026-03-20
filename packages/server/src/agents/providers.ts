@@ -8,6 +8,7 @@ export interface InteractiveCommandParams {
   prompt: string;
   projectPath: string;
   skipPermissions?: boolean;
+  sandbox?: boolean;
   secondaryProjectPaths?: string[];
   mcpConfigPath?: string;
   skills?: string[];
@@ -82,7 +83,7 @@ export class ClaudeProvider implements CLIProvider {
       cmd += ` --mcp-config ${quoteShell(params.mcpConfigPath)}`;
     }
 
-    if (params.skipPermissions) {
+    if (params.skipPermissions && params.sandbox) {
       cmd += " --dangerously-skip-permissions";
     }
 
@@ -130,10 +131,10 @@ export class CodexProvider implements CLIProvider {
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let cmd = quoteShell(params.binaryPath);
+    let cmd = `${quoteShell(params.binaryPath)} exec`;
 
     if (params.skipPermissions) {
-      cmd += " --full-auto";
+      cmd += " --yolo";
     }
 
     if (params.prompt) {
