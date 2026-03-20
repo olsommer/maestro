@@ -97,6 +97,8 @@ docker compose up -d
 Data persists in Docker volumes:
 - `maestro_data` — API token, JWT secret, SQLite state (`~/.maestro/`)
 - `maestro_projects` — cloned project directories
+- `maestro_claude` — Claude Code auth state (`~/.claude/`)
+- `maestro_codex` — Codex auth state (`~/.codex/`)
 - `ollama_data` — Ollama models and runtime state
 
 Retrieve your API token:
@@ -215,6 +217,8 @@ services:
     volumes:
       - maestro_data:/root/.maestro
       - maestro_projects:/root/maestro-projects
+      - maestro_claude:/root/.claude
+      - maestro_codex:/root/.codex
 
   ollama:
     image: ollama/ollama:latest
@@ -235,6 +239,8 @@ services:
 volumes:
   maestro_data:
   maestro_projects:
+  maestro_claude:
+  maestro_codex:
   ollama_data:
 ```
 

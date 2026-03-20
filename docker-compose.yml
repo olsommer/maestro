@@ -22,6 +22,8 @@ services:
       - maestro_data:/root/.maestro
       - maestro_projects:/root/maestro-projects
       - maestro_gh:/root/.config/gh
+      - maestro_claude:/root/.claude
+      - maestro_codex:/root/.codex
       # cgroup v2 mount needed for nsjail memory/CPU limits
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
 
@@ -36,4 +38,6 @@ volumes:
   maestro_data:
   maestro_projects:
   maestro_gh:
+  maestro_claude:
+  maestro_codex:
   ollama_data:
