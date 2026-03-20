@@ -39,7 +39,7 @@ interface Props {
 
 function generateDefaultTerminalName(): string {
   const token = crypto.randomUUID().slice(0, 6);
-  return `terminal ${token}`;
+  return token;
 }
 
 export function NewTerminalDialog({ open, onClose }: Props) {
@@ -132,7 +132,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 id="agent-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="terminal a1b2c3"
+                placeholder="a1b2c3"
               />
             </Field>
 

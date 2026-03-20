@@ -89,6 +89,18 @@ function slugifyProjectName(input: string): string {
   );
 }
 
+function parseGitHubRepoName(input: string): string {
+  const normalized = input
+    .trim()
+    .replace(/^git@github\.com:/, "")
+    .replace(/^https?:\/\/github\.com\//, "")
+    .replace(/^github\.com\//, "")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length === 2 ? parts[1] : "";
+}
+
 type Props = {
   isCreateMode: boolean;
   setIsCreateMode: Dispatch<SetStateAction<boolean>>;
@@ -126,13 +138,30 @@ function ProjectsView(props: Props) {
   const pendingDeleteProject =
     projects.find((project) => project.id === pendingDeleteProjectId) ?? null;
   const repoQuery = repoUrl.trim();
-  const derivedLocalPath = `~/maestro-projects/${slugifyProjectName(name)}`;
+  const githubProjectName = parseGitHubRepoName(repoQuery);
+  const effectiveProjectName = useGitHubRepo ? githubProjectName : name.trim();
+  const displayedProjectName = useGitHubRepo ? githubProjectName : name;
+  const derivedLocalPath = `~/maestro-projects/${slugifyProjectName(effectiveProjectName)}`;
   const showRepoSuggestions =
     useGitHubRepo &&
     Boolean(github?.connected) &&
     repoQuery.length > 0 &&
     selectedRepoSuggestion !== repoQuery;
   const showCreateCard = projects.length === 0;
+
+  function handleUseGitHubRepoChange(checked: boolean) {
+    setUseGitHubRepo(checked);
+    if (!checked) {
+      setRepoUrl("");
+      setDefaultBranch("main");
+      setSyncIssues(false);
+      setRepoSuggestions([]);
+      setRepoSearchError("");
+      setSelectedRepoSuggestion(null);
+    } else {
+      setSyncIssues(true);
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -214,8 +243,15 @@ function ProjectsView(props: Props) {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) {
-      setError("Project name is required");
+    if (useGitHubRepo && !repoQuery) {
+      setError("GitHub repository is required");
+      return;
+    }
+
+    if (!effectiveProjectName) {
+      setError(
+        useGitHubRepo ? "Enter a valid GitHub repository" : "Project name is required"
+      );
       return;
     }
 
@@ -224,7 +260,7 @@ function ProjectsView(props: Props) {
 
     try {
       const { project } = await api.createProject({
-        name: name.trim(),
+        name: effectiveProjectName,
         repoUrl: useGitHubRepo ? repoQuery || undefined : undefined,
         defaultBranch: useGitHubRepo ? defaultBranch.trim() || undefined : undefined,
         syncIssues: useGitHubRepo ? syncIssues : false,
@@ -282,9 +318,6 @@ function ProjectsView(props: Props) {
   function handleSelectRepo(repo: GitHubRepoSuggestion) {
     setRepoUrl(repo.fullName);
     setSelectedRepoSuggestion(repo.fullName);
-    if (!name.trim()) {
-      setName(repo.name);
-    }
     if (!defaultBranch.trim() || defaultBranch === "main") {
       setDefaultBranch(repo.defaultBranch);
     }
@@ -487,12 +520,15 @@ function ProjectsView(props: Props) {
                       <FieldLabel htmlFor="project-name">Name</FieldLabel>
                       <Input
                         id="project-name"
-                        value={name}
+                        value={displayedProjectName}
                         onChange={(e) => setName(e.target.value)}
+                        disabled={useGitHubRepo}
                         placeholder="Maestro"
                       />
                       <FieldDescription>
-                        Local path: {derivedLocalPath}
+                        {useGitHubRepo
+                          ? `Derived from the selected GitHub repository. Local path: ${derivedLocalPath}`
+                          : `Local path: ${derivedLocalPath}`}
                       </FieldDescription>
                     </Field>
 
@@ -508,19 +544,7 @@ function ProjectsView(props: Props) {
                       <Switch
                         id="project-use-github"
                         checked={useGitHubRepo}
-                        onCheckedChange={(checked) => {
-                          setUseGitHubRepo(checked);
-                          if (!checked) {
-                            setRepoUrl("");
-                            setDefaultBranch("main");
-                            setSyncIssues(false);
-                            setRepoSuggestions([]);
-                            setRepoSearchError("");
-                            setSelectedRepoSuggestion(null);
-                          } else {
-                            setSyncIssues(true);
-                          }
-                        }}
+                        onCheckedChange={handleUseGitHubRepoChange}
                       />
                     </Field>
 
@@ -683,12 +707,15 @@ function ProjectsView(props: Props) {
                       <FieldLabel htmlFor="project-name-dialog">Name</FieldLabel>
                       <Input
                         id="project-name-dialog"
-                        value={name}
+                        value={displayedProjectName}
                         onChange={(e) => setName(e.target.value)}
+                        disabled={useGitHubRepo}
                         placeholder="Maestro"
                       />
                       <FieldDescription>
-                        Local path: {derivedLocalPath}
+                        {useGitHubRepo
+                          ? `Derived from the selected GitHub repository. Local path: ${derivedLocalPath}`
+                          : `Local path: ${derivedLocalPath}`}
                       </FieldDescription>
                     </Field>
 
@@ -704,19 +731,7 @@ function ProjectsView(props: Props) {
                       <Switch
                         id="project-use-github-dialog"
                         checked={useGitHubRepo}
-                        onCheckedChange={(checked) => {
-                          setUseGitHubRepo(checked);
-                          if (!checked) {
-                            setRepoUrl("");
-                            setDefaultBranch("main");
-                            setSyncIssues(false);
-                            setRepoSuggestions([]);
-                            setRepoSearchError("");
-                            setSelectedRepoSuggestion(null);
-                          } else {
-                            setSyncIssues(true);
-                          }
-                        }}
+                        onCheckedChange={handleUseGitHubRepoChange}
                       />
                     </Field>
 
