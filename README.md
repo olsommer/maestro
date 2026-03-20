@@ -4,13 +4,13 @@ Server-based agent orchestration platform. Spawn, manage, and coordinate AI codi
 
 ## Architecture
 
-Maestro separates the **frontend** (shared, hosted publicly) from the **server** (runs on each user's own machine). The frontend contains no secrets — it's a static app that asks each user where their server lives.
+Maestro separates the **frontend** from the **server**. In the common setup, users share one public frontend and each run their own backend on their own machine. Self-hosting the frontend is optional.
 
 ```
                     ┌──────────────────────────────────────────┐
                     │  Shared Frontend (Next.js)               │
-                    │  Hosted once — Vercel, Cloudflare Pages, │
-                    │  or any static host                      │
+                    │  Hosted once on a frontend host          │
+                    │  Self-hosting is optional                │
                     │  No secrets, no server logic             │
                     └─────────┬───────────────┬────────────────┘
                               │               │
@@ -33,11 +33,13 @@ Maestro separates the **frontend** (shared, hosted publicly) from the **server**
 
 Each user:
 1. Runs the Maestro server on their own machine
-2. Exposes it via a tunnel (Cloudflare Tunnel, Tailscale, etc.)
-3. Opens the shared frontend and enters their tunnel URL + API token
+2. Exposes it via a secure HTTPS URL (Tailscale, Cloudflare Tunnel, Caddy, etc.)
+3. Opens the shared frontend, or a self-hosted frontend, and enters their backend URL + API token
 4. Gets their own isolated agent environment
 
 ## Quick Start (Local Development)
+
+This section is for developing Maestro itself. For normal use, users only need to run their own backend and connect to it from the shared frontend.
 
 ```bash
 # Install dependencies
@@ -55,9 +57,11 @@ Open `http://localhost:3000`, enter `http://localhost:4800` as the server URL, p
 
 ## Deployment
 
-### Frontend (Hosted — Shared for All Users)
+### Frontend (Optional)
 
-The Next.js client is a static app with no server-side secrets. Host it once, everyone uses it.
+Most users do not need to deploy the frontend. They can use an existing shared frontend and point it at their own backend.
+
+Deploy your own frontend only if you want a custom host, custom branding, or a fully self-hosted setup.
 
 **Vercel (Recommended)**
 
@@ -66,23 +70,7 @@ cd packages/client
 vercel deploy --prod
 ```
 
-No environment variables required — the connect page lets each user enter their own server URL at runtime.
-
-**Cloudflare Pages**
-
-```bash
-cd packages/client
-pnpm build
-# Upload .next/out or use Cloudflare Pages Git integration
-```
-
-**Self-hosted (nginx/Caddy)**
-
-```bash
-cd packages/client
-pnpm build
-# Serve .next/standalone or use `pnpm start` behind a reverse proxy
-```
+No frontend secrets are required. The connect page lets each user enter their own backend URL at runtime.
 
 ### Server (Per-User — Runs on Each User's Machine)
 
@@ -138,6 +126,8 @@ The API token is printed on first run and stored at `~/.maestro/api-token`.
 ## Remote Access (Exposing Your Server)
 
 The server listens on plain HTTP. For remote access, put a TLS-terminating layer in front of it. **Never expose port 4800 directly to the internet.**
+
+If you already use Tailscale, that is enough. You do not need to self-host the frontend or set up a separate public tunnel provider just to use Maestro remotely.
 
 ### Cloudflare Tunnel (Recommended)
 
@@ -312,15 +302,16 @@ Maestro uses a **"bring your own backend"** model. There is no central auth serv
 **How it works:**
 1. Server generates a static API token on first start → `~/.maestro/api-token` (permissions `0600`)
 2. User opens the shared frontend → connect page asks for server URL + API token
-3. Frontend stores both in `localStorage` and includes `Authorization: Bearer <token>` on all requests
-4. Socket.io connections pass the token in `socket.handshake.auth.token`
-5. On `401`, the client redirects back to the connect page
+3. Frontend stores both in `localStorage`
+4. HTTP requests include `Authorization: Bearer <token>`
+5. Socket.io connections pass the token in `socket.handshake.auth.token`
+6. On `401`, the client redirects back to the connect page
 
 **Security model:**
 - The frontend has no secrets — it's safe to host publicly
 - Each server only accepts its own API token — users can't access each other's servers
 - All traffic goes through the user's tunnel (HTTPS) — the server never handles TLS directly
-- Token exchange endpoint (`POST /api/auth/token`) converts the API token into a 24h JWT for session use
+- The current client uses the API token directly; the server also exposes `POST /api/auth/token` for exchanging it into a 24h JWT if needed by other clients
 
 ## Environment Variables
 
