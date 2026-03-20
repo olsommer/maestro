@@ -73,28 +73,18 @@ export function KanbanBoard({ onNewTask }: Props) {
   }, [selectedProject]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function initialLoad() {
-      try {
-        const { tasks } = await api.getKanbanTasks();
-        if (cancelled) return;
-        setTasks(
-          selectedProject
-            ? tasks.filter((t) => t.projectId === selectedProject.id || t.projectPath === selectedProject.localPath)
-            : tasks
-        );
-      } catch (err) {
-        console.error("Failed to load tasks:", err);
-      }
-    }
-
-    void initialLoad();
+    const timeout = window.setTimeout(() => {
+      void loadTasks();
+    }, 0);
+    const interval = window.setInterval(() => {
+      void loadTasks();
+    }, 10_000);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
-  }, [selectedProject]);
+  }, [loadTasks]);
 
   useEffect(() => {
     const socket = getSocket();
