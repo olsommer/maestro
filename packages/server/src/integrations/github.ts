@@ -131,6 +131,9 @@ function runGhApiWithHeaders<T>(
   if (options?.method && options.method !== "GET") {
     args.push("-X", options.method);
   }
+  if (options?.input != null) {
+    args.push("--input", "-");
+  }
   args.push(endpoint.replace(/^\//, ""));
   const raw = runGhCommand(args, {
     token: options?.token,
@@ -301,4 +304,3 @@ export async function searchGitHubRepositories(
       htmlUrl: repo.html_url,
     }));
 }
-
