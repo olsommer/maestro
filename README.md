@@ -114,6 +114,31 @@ docker compose exec ollama ollama list
 Models persist in `ollama_data`, so you usually only need to pull them once per
 machine or Docker volume.
 
+#### Optional: Frontend-triggered release redeploys
+
+Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy, but the redeploy work must run through a small updater service on the Docker host.
+
+The updater service:
+
+1. Checks GitHub releases for the configured repo
+2. Downloads the release tarball into a versioned releases directory
+3. Runs `docker compose build` and `docker compose up -d` from that release
+
+Files:
+
+- [updater/server.js](updater/server.js)
+- [updater/README.md](updater/README.md)
+- [updater/maestro-updater.service.example](updater/maestro-updater.service.example)
+- [updater/updater.env.example](updater/updater.env.example)
+
+To enable the UI:
+
+1. Run the updater on the host.
+2. Set `UPDATER_TOKEN` for the updater and the Maestro server.
+3. Set `UPDATER_URL` on the Maestro server.
+
+If the Maestro server itself runs in Docker, the bundled `docker-compose.yml` already passes `UPDATER_URL` and `UPDATER_TOKEN` through and adds `host.docker.internal` so the container can reach a host-side updater on port `4810`.
+
 **Option 2: Bare Metal**
 
 ```bash

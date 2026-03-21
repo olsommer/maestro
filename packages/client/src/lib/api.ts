@@ -141,6 +141,32 @@ export interface UpdateStatus {
   lastError: string | null;
 }
 
+export interface DeploymentReleaseInfo {
+  tag: string;
+  name: string | null;
+  url: string | null;
+  publishedAt: string | null;
+  notes: string | null;
+}
+
+export interface DeploymentUpdateStatus {
+  configured: boolean;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  updating: boolean;
+  lastCheckedAt: string | null;
+  lastUpdatedAt: string | null;
+  lastError: string | null;
+  latestRelease: DeploymentReleaseInfo | null;
+}
+
+export interface DeploymentRedeployResponse {
+  accepted: boolean;
+  targetVersion: string | null;
+  message: string;
+}
+
 export interface GitHubRepoSuggestion {
   id: number;
   name: string;
@@ -209,6 +235,15 @@ export const api = {
       "/api/settings/update-now",
       { method: "POST" }
     ),
+  getDeploymentUpdateStatus: () =>
+    request<DeploymentUpdateStatus>("/api/deployment/update-status"),
+  checkDeploymentUpdateStatus: () =>
+    request<DeploymentUpdateStatus>("/api/deployment/check", { method: "POST" }),
+  redeployDeployment: (tag?: string) =>
+    request<DeploymentRedeployResponse>("/api/deployment/redeploy", {
+      method: "POST",
+      body: JSON.stringify(tag ? { tag } : {}),
+    }),
 
   getProject: (id: string) => request<{ project: Project }>(`/api/projects/${id}`),
 

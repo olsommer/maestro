@@ -18,6 +18,7 @@ import { registerCliAuthRoutes } from "./routes/cli-auth-routes.js";
 import { registerGitHubIntegrationRoutes } from "./routes/github-integration-routes.js";
 import { registerWebhookRoutes } from "./routes/webhook-routes.js";
 import { registerSettingsRoutes } from "./routes/settings-routes.js";
+import { registerDeploymentRoutes } from "./routes/deployment-routes.js";
 import { getRuntimeStatus } from "./runtime/runtime-status.js";
 import { startAutoUpdater, stopAutoUpdater } from "./services/auto-updater.js";
 import { startAuthStatusChecker, stopAuthStatusChecker } from "./services/auth-status-checker.js";
@@ -90,6 +91,7 @@ async function main() {
   await registerGitHubIntegrationRoutes(app);
   await registerWebhookRoutes(app, io);
   await registerSettingsRoutes(app);
+  await registerDeploymentRoutes(app);
   await registerSetupRoutes(app);
   await registerWhatsAppRoutes(app, io);
   await registerTelegramRoutes(app, io, () => getSettingsState().telegramBotToken);

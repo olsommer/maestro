@@ -70,3 +70,32 @@ export const UpdateStatus = z.object({
 });
 
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
+
+export const DeploymentReleaseInfo = z.object({
+  tag: z.string(),
+  name: z.string().nullable(),
+  url: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+  notes: z.string().nullable(),
+});
+export type DeploymentReleaseInfo = z.infer<typeof DeploymentReleaseInfo>;
+
+export const DeploymentUpdateStatus = z.object({
+  configured: z.boolean(),
+  currentVersion: z.string().nullable(),
+  latestVersion: z.string().nullable(),
+  updateAvailable: z.boolean(),
+  updating: z.boolean(),
+  lastCheckedAt: z.string().nullable(),
+  lastUpdatedAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  latestRelease: DeploymentReleaseInfo.nullable(),
+});
+export type DeploymentUpdateStatus = z.infer<typeof DeploymentUpdateStatus>;
+
+export const DeploymentRedeployResponse = z.object({
+  accepted: z.boolean(),
+  targetVersion: z.string().nullable(),
+  message: z.string(),
+});
+export type DeploymentRedeployResponse = z.infer<typeof DeploymentRedeployResponse>;
