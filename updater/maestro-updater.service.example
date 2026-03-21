@@ -1,0 +1,16 @@
+[Unit]
+Description=Maestro release updater
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/maestro/current
+EnvironmentFile=/opt/maestro/updater.env
+ExecStart=/usr/bin/node /opt/maestro/current/updater/server.js
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

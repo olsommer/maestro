@@ -11,6 +11,8 @@ services:
       HOST: 0.0.0.0
       PORT: 4800
       OLLAMA_HOST: http://ollama:11434
+      UPDATER_URL: ${UPDATER_URL:-}
+      UPDATER_TOKEN: ${UPDATER_TOKEN:-}
     # nsjail needs these capabilities to create Linux namespaces
     cap_add:
       - SYS_PTRACE     # for process tracing
@@ -26,6 +28,8 @@ services:
       - maestro_codex:/root/.codex
       # cgroup v2 mount needed for nsjail memory/CPU limits
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   ollama:
     image: ollama/ollama:latest

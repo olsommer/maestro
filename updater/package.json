@@ -1,0 +1,5 @@
+{
+  "name": "@maestro/updater",
+  "private": true,
+  "type": "module"
+}

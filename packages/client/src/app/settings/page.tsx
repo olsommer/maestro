@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon, MicIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { api, type Settings, type UpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
+import { api, type Settings, type UpdateStatus, type DeploymentUpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1186,6 +1186,10 @@ function SettingsView() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [updatingClis, setUpdatingClis] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentUpdateStatus | null>(null);
+  const [checkingDeployment, setCheckingDeployment] = useState(false);
+  const [redeployingDeployment, setRedeployingDeployment] = useState(false);
+  const [deploymentMessage, setDeploymentMessage] = useState("");
   // Auth status refresh key — incremented to re-fetch all auth cards
   const [authRefreshKey, setAuthRefreshKey] = useState(0);
 
@@ -1209,6 +1213,15 @@ function SettingsView() {
     }
   }, []);
 
+  const loadDeploymentStatus = useCallback(async () => {
+    try {
+      const status = await api.getDeploymentUpdateStatus();
+      setDeploymentStatus(status);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -1220,7 +1233,20 @@ function SettingsView() {
     };
     void loadSettings();
     void loadUpdateStatus();
-  }, [loadUpdateStatus]);
+    void loadDeploymentStatus();
+  }, [loadDeploymentStatus, loadUpdateStatus]);
+
+  useEffect(() => {
+    if (!deploymentStatus?.configured || !deploymentStatus.updating) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadDeploymentStatus();
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
+  }, [deploymentStatus?.configured, deploymentStatus?.updating, loadDeploymentStatus]);
 
   async function handleToggleAutoUpdate(enabled: boolean) {
     try {
@@ -1262,6 +1288,43 @@ function SettingsView() {
       /* ignore */
     } finally {
       setUpdatingClis(false);
+    }
+  }
+
+  async function handleCheckDeployment() {
+    setCheckingDeployment(true);
+    try {
+      const status = await api.checkDeploymentUpdateStatus();
+      setDeploymentStatus(status);
+    } catch {
+      /* ignore */
+    } finally {
+      setCheckingDeployment(false);
+    }
+  }
+
+  async function handleRedeployLatest() {
+    setRedeployingDeployment(true);
+    setDeploymentMessage("");
+    try {
+      const result = await api.redeployDeployment();
+      setDeploymentMessage(result.message);
+      setDeploymentStatus((current) =>
+        current
+          ? {
+              ...current,
+              updating: true,
+              lastError: null,
+            }
+          : current
+      );
+      window.setTimeout(() => {
+        void loadDeploymentStatus();
+      }, 2_000);
+    } catch (err) {
+      setDeploymentMessage(err instanceof Error ? err.message : "Failed to start redeploy");
+    } finally {
+      setRedeployingDeployment(false);
     }
   }
 
@@ -1457,6 +1520,172 @@ function SettingsView() {
                   Update Now
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-sm">Deployment Updates</CardTitle>
+                <CardDescription>
+                  Detect GitHub releases and rebuild the Docker deployment from a release tarball via the external updater service.
+                </CardDescription>
+              </div>
+              {deploymentStatus?.updating && (
+                <Badge variant="secondary">
+                  <LoaderIcon className="mr-1 size-3 animate-spin" />
+                  Redeploying
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {!deploymentStatus?.configured ? (
+                <Alert>
+                  <TriangleAlertIcon />
+                  <AlertTitle>Updater not configured</AlertTitle>
+                  <AlertDescription>
+                    {deploymentStatus?.lastError ??
+                      "Run the host-side updater service and set `UPDATER_URL` plus `UPDATER_TOKEN` on the Maestro server."}
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  <FieldGroup>
+                    <Field orientation="horizontal">
+                      <FieldLabel>Current version</FieldLabel>
+                      <FieldContent className="items-end">
+                        <span className="font-mono text-xs">
+                          {deploymentStatus.currentVersion ?? "Unknown"}
+                        </span>
+                      </FieldContent>
+                    </Field>
+                    <FieldSeparator />
+                    <Field orientation="horizontal">
+                      <FieldLabel>Latest release</FieldLabel>
+                      <FieldContent className="items-end">
+                        <span className="font-mono text-xs">
+                          {deploymentStatus.latestVersion ?? "Unavailable"}
+                        </span>
+                        {deploymentStatus.updateAvailable && (
+                          <Badge variant="secondary" className="text-xs">
+                            Update available
+                          </Badge>
+                        )}
+                      </FieldContent>
+                    </Field>
+                    {deploymentStatus.latestRelease?.publishedAt && (
+                      <>
+                        <FieldSeparator />
+                        <Field orientation="horizontal">
+                          <FieldLabel>Published</FieldLabel>
+                          <FieldContent className="items-end">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(
+                                deploymentStatus.latestRelease.publishedAt
+                              ).toLocaleString()}
+                            </span>
+                          </FieldContent>
+                        </Field>
+                      </>
+                    )}
+                    {deploymentStatus.lastCheckedAt && (
+                      <>
+                        <FieldSeparator />
+                        <Field orientation="horizontal">
+                          <FieldLabel>Last checked</FieldLabel>
+                          <FieldContent className="items-end">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(deploymentStatus.lastCheckedAt).toLocaleString()}
+                            </span>
+                          </FieldContent>
+                        </Field>
+                      </>
+                    )}
+                    {deploymentStatus.lastUpdatedAt && (
+                      <>
+                        <FieldSeparator />
+                        <Field orientation="horizontal">
+                          <FieldLabel>Last deployed</FieldLabel>
+                          <FieldContent className="items-end">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(deploymentStatus.lastUpdatedAt).toLocaleString()}
+                            </span>
+                          </FieldContent>
+                        </Field>
+                      </>
+                    )}
+                  </FieldGroup>
+
+                  {deploymentStatus.latestRelease?.url && (
+                    <a
+                      href={deploymentStatus.latestRelease.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs underline"
+                    >
+                      View release
+                      <ExternalLinkIcon className="size-3" />
+                    </a>
+                  )}
+
+                  {deploymentStatus.latestRelease?.notes && (
+                    <p className="line-clamp-6 whitespace-pre-wrap text-xs text-muted-foreground">
+                      {deploymentStatus.latestRelease.notes}
+                    </p>
+                  )}
+
+                  {deploymentStatus.lastError && (
+                    <Alert variant="destructive">
+                      <TriangleAlertIcon />
+                      <AlertTitle>Deployment error</AlertTitle>
+                      <AlertDescription>{deploymentStatus.lastError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  {deploymentMessage && (
+                    <Alert>
+                      <TriangleAlertIcon />
+                      <AlertTitle>Deployment status</AlertTitle>
+                      <AlertDescription>{deploymentMessage}</AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  disabled={checkingDeployment || !deploymentStatus?.configured}
+                  onClick={() => void handleCheckDeployment()}
+                >
+                  {checkingDeployment ? (
+                    <LoaderIcon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <RefreshCwIcon className="mr-2 size-4" />
+                  )}
+                  Check Releases
+                </Button>
+                <Button
+                  disabled={
+                    redeployingDeployment ||
+                    !deploymentStatus?.configured ||
+                    deploymentStatus.updating ||
+                    !deploymentStatus.latestVersion
+                  }
+                  onClick={() => void handleRedeployLatest()}
+                >
+                  {redeployingDeployment ? (
+                    <LoaderIcon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <DownloadIcon className="mr-2 size-4" />
+                  )}
+                  Redeploy Latest
+                </Button>
+              </div>
+
+              <FieldDescription>
+                Redeploys are started asynchronously. Expect the Maestro server connection to drop briefly while Docker rebuilds and restarts the service.
+              </FieldDescription>
             </CardContent>
           </Card>
 
