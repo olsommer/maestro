@@ -126,7 +126,9 @@ async function fetchLatestRelease() {
     url: data.html_url ?? null,
     publishedAt: data.published_at ?? null,
     notes: data.body ?? null,
-    tarballUrl: data.tarball_url,
+    tarballUrl: `https://github.com/${GITHUB_REPO}/archive/refs/tags/${encodeURIComponent(
+      data.tag_name
+    )}.tar.gz`,
   };
 }
 
@@ -147,7 +149,9 @@ async function fetchReleaseByTag(tag) {
     url: data.html_url ?? null,
     publishedAt: data.published_at ?? null,
     notes: data.body ?? null,
-    tarballUrl: data.tarball_url,
+    tarballUrl: `https://github.com/${GITHUB_REPO}/archive/refs/tags/${encodeURIComponent(
+      data.tag_name
+    )}.tar.gz`,
   };
 }
 
@@ -171,7 +175,6 @@ async function ensureDir(dirPath) {
 
 async function downloadReleaseTarball(release, destinationPath) {
   const headers = {
-    Accept: "application/octet-stream",
     "User-Agent": "maestro-updater",
     ...(GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {}),
   };
