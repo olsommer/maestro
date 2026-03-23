@@ -6,18 +6,17 @@ import type {
 function getUpdaterConfig():
   | {
       url: string;
-      token: string;
+      token: string | null;
     }
   | null {
   const url = process.env.UPDATER_URL?.trim();
-  const token = process.env.UPDATER_TOKEN?.trim();
-  if (!url || !token) {
+  if (!url) {
     return null;
   }
 
   return {
     url: url.replace(/\/+$/g, ""),
-    token,
+    token: process.env.UPDATER_TOKEN?.trim() || null,
   };
 }
 
@@ -47,7 +46,7 @@ async function requestUpdater<T>(
   const res = await fetch(`${config.url}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${config.token}`,
+      ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
       ...(init?.body != null ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
@@ -68,7 +67,7 @@ export async function getDeploymentUpdateStatus(): Promise<DeploymentUpdateStatu
   const config = getUpdaterConfig();
   if (!config) {
     return getDisabledStatus(
-      "Set UPDATER_URL and UPDATER_TOKEN on the Maestro server to enable release redeploys."
+      "Set UPDATER_URL on the Maestro server to enable release redeploys."
     );
   }
 
@@ -94,7 +93,7 @@ export async function checkDeploymentUpdateStatus(): Promise<DeploymentUpdateSta
   const config = getUpdaterConfig();
   if (!config) {
     return getDisabledStatus(
-      "Set UPDATER_URL and UPDATER_TOKEN on the Maestro server to enable release redeploys."
+      "Set UPDATER_URL on the Maestro server to enable release redeploys."
     );
   }
 

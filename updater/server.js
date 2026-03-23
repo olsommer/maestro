@@ -39,7 +39,7 @@ function sendJson(res, status, body) {
 
 function isAuthorized(req) {
   if (!TOKEN) {
-    return false;
+    return true;
   }
   return req.headers.authorization === `Bearer ${TOKEN}`;
 }
@@ -66,7 +66,7 @@ function getStatusPayload() {
   const latestVersion = state.latestRelease?.tag ?? null;
   const currentVersion = getCurrentVersion();
   return {
-    configured: Boolean(TOKEN && GITHUB_REPO),
+    configured: Boolean(GITHUB_REPO),
     currentVersion,
     latestVersion,
     updateAvailable:
@@ -318,9 +318,6 @@ async function performRedeploy(targetTag) {
 }
 
 function validateConfig() {
-  if (!TOKEN) {
-    throw new Error("UPDATER_TOKEN is required");
-  }
   if (!GITHUB_REPO) {
     throw new Error("GITHUB_REPO is required");
   }

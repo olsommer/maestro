@@ -116,7 +116,7 @@ machine or Docker volume.
 
 #### Optional: Frontend-triggered release redeploys
 
-Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy, but the redeploy work must run through a small updater service on the Docker host.
+Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy through a dedicated `updater` service in the Docker Compose stack.
 
 The updater service:
 
@@ -127,17 +127,17 @@ The updater service:
 Files:
 
 - [updater/server.js](updater/server.js)
+- [updater/Dockerfile](updater/Dockerfile)
 - [updater/README.md](updater/README.md)
-- [updater/maestro-updater.service.example](updater/maestro-updater.service.example)
 - [updater/updater.env.example](updater/updater.env.example)
 
 To enable the UI:
 
-1. Run the updater on the host.
-2. Set `UPDATER_TOKEN` for the updater and the Maestro server.
-3. Set `UPDATER_URL` on the Maestro server.
+1. Copy `updater/updater.env.example` into `.env`.
+2. Set `STACK_DIR` to the absolute path of your Maestro checkout on the host.
+3. Run `docker compose up -d --build`.
 
-If the Maestro server itself runs in Docker, the bundled `docker-compose.yml` already passes `UPDATER_URL` and `UPDATER_TOKEN` through and adds `host.docker.internal` so the container can reach a host-side updater on port `4810`.
+The bundled `docker-compose.yml` now starts an internal `updater` service and points the backend at `http://updater:4810`. `UPDATER_TOKEN` is optional when everything stays on the internal Docker network.
 
 **Option 2: Bare Metal**
 
