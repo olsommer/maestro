@@ -5,13 +5,14 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - ollama
+      - updater
     ports:
       - "4800:4800"
     environment:
       HOST: 0.0.0.0
       PORT: 4800
       OLLAMA_HOST: http://ollama:11434
-      UPDATER_URL: ${UPDATER_URL:-}
+      UPDATER_URL: ${UPDATER_URL:-http://updater:4810}
       UPDATER_TOKEN: ${UPDATER_TOKEN:-}
     # nsjail needs these capabilities to create Linux namespaces
     cap_add:
@@ -28,8 +29,6 @@ services:
       - maestro_codex:/root/.codex
       # cgroup v2 mount needed for nsjail memory/CPU limits
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   ollama:
     image: ollama/ollama:latest
@@ -38,6 +37,26 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  updater:
+    build:
+      context: .
+      dockerfile: updater/Dockerfile
+    environment:
+      UPDATER_HOST: 0.0.0.0
+      UPDATER_PORT: 4810
+      UPDATER_TOKEN: ${UPDATER_TOKEN:-}
+      GITHUB_REPO: ${GITHUB_REPO:-olsommer/maestro}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-maestro}
+      RELEASES_DIR: /state/releases
+      CURRENT_LINK: /state/current
+      COMPOSE_FILE: docker-compose.yml
+      UPDATE_SERVICES: ${UPDATE_SERVICES:-server}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - updater_state:/state
+    restart: unless-stopped
+
 volumes:
   maestro_data:
   maestro_projects:
@@ -45,3 +64,4 @@ volumes:
   maestro_claude:
   maestro_codex:
   ollama_data:
+  updater_state:
