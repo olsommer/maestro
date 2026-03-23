@@ -11,6 +11,7 @@ import {
 import { getProvider } from "./providers.js";
 import { isNsjailAvailable } from "./sandbox.js";
 import { removeTerminalWorktree } from "./worktree.js";
+import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
   appendTerminalHistory,
   readTerminalHistory,
@@ -152,10 +153,11 @@ export async function createAutoSpawnTerminal(options: {
   projectPath: string;
 }) {
   const settings = getSettings();
+  const provider = assertAutoSpawnProviderReady();
   return createTerminal({
     name: options.name,
     kind: options.kind ?? "kanban",
-    provider: settings.agentDefaultProvider,
+    provider,
     projectId: options.projectId,
     projectPath: options.projectPath,
     skipPermissions: settings.agentDefaultSkipPermissions,
@@ -390,6 +392,13 @@ export async function stopTerminal(terminalId: string) {
 
 export async function deleteTerminal(terminalId: string) {
   const agent = getTerminalRecord(terminalId);
+  if (agent?.kanbanTaskId) {
+    updateTerminalRecord(terminalId, {
+      kanbanTaskId: null,
+      currentTask: null,
+      lastActivity: new Date().toISOString(),
+    });
+  }
   const rt = agentRuntimes.get(terminalId);
   if (rt?.restartTimer) {
     clearTimeout(rt.restartTimer);

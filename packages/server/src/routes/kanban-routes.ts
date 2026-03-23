@@ -9,6 +9,8 @@ import {
   moveKanbanTaskRecord,
   updateKanbanTaskRecord,
 } from "../state/kanban.js";
+import { deleteTerminal } from "../agents/terminal-manager.js";
+import { assertAutoSpawnProviderReady } from "../agents/auto-spawn-provider.js";
 
 export async function registerKanbanRoutes(
   app: FastifyInstance,
@@ -72,6 +74,30 @@ export async function registerKanbanRoutes(
     async (req, reply) => {
       try {
         const column = KanbanColumn.parse((req.body as { column: string }).column);
+        const currentTask = await getKanbanTask(req.params.id);
+        if (!currentTask) {
+          return reply.status(404).send({ error: "Task not found" });
+        }
+
+        if (currentTask.column === "backlog" && column === "planned") {
+          assertAutoSpawnProviderReady();
+        }
+
+        if (currentTask.column === "ongoing" && column === "planned") {
+          const terminalIds = Array.from(
+            new Set(
+              [
+                currentTask.assignedTerminalId,
+                ...(currentTask.terminals?.map((terminal) => terminal.id) ?? []),
+              ].filter((terminalId): terminalId is string => Boolean(terminalId))
+            )
+          );
+
+          for (const terminalId of terminalIds) {
+            await deleteTerminal(terminalId);
+          }
+        }
+
         const task = await moveKanbanTaskRecord(req.params.id, column);
         io.emit("kanban:updated", {
           taskId: task.id,

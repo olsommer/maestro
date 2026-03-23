@@ -927,7 +927,9 @@ export async function moveKanbanTaskRecord(
   return updateKanbanTaskRecord(taskId, {
     column,
     ...(column === "done" ? { progress: 100 } : {}),
-    ...(column === "backlog" ? { assignedTerminalId: null } : {}),
+    ...(column === "backlog" || column === "planned"
+      ? { assignedTerminalId: null }
+      : {}),
   });
 }
 

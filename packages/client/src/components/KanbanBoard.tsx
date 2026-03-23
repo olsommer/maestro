@@ -108,8 +108,12 @@ export function KanbanBoard({ onNewTask }: Props) {
     if (!task || task.column === targetColumn) { setDraggedId(null); return; }
     setTasks((prev) => prev.map((t) => (t.id === draggedId ? { ...t, column: targetColumn } : t)));
     setDraggedId(null);
-    try { await api.moveKanbanTask(draggedId, targetColumn); }
-    catch { loadTasks(); }
+    try {
+      await api.moveKanbanTask(draggedId, targetColumn);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to move task");
+      loadTasks();
+    }
   };
   const handleDelete = async () => {
     if (!pendingDeleteTaskId) return;
@@ -207,14 +211,23 @@ export function KanbanBoard({ onNewTask }: Props) {
                   {task.terminals && task.terminals.length > 0 && (
                     <div className="mt-2 flex flex-col gap-2">
                       <Separator />
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Assigned terminals</span>
-                      {task.terminals.map((a) => (
-                          <div key={a.id} className="flex items-center gap-1.5">
-                            <Badge variant="secondary">{a.name || a.id.slice(0, 8)}</Badge>
-                            <StatusBadge status={a.status} />
-                          </div>
-                        ))}
+                      <span className="text-xs text-muted-foreground">Assigned terminals</span>
+                      <div className="flex flex-wrap items-start gap-2 min-w-0">
+                        {task.terminals.map((a) => {
+                          const terminalLabel = a.name || a.id.slice(0, 8);
+                          return (
+                            <div key={a.id} className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+                              <Badge
+                                variant="secondary"
+                                className="min-w-0 max-w-full shrink truncate"
+                                title={terminalLabel}
+                              >
+                                {terminalLabel}
+                              </Badge>
+                              <StatusBadge status={a.status} />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
