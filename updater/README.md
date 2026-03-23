@@ -1,6 +1,6 @@
 # Maestro Updater
 
-This service runs on the Docker host, not inside the main Maestro container.
+This updater runs as a Docker Compose service by default.
 
 It does three things:
 
@@ -10,79 +10,68 @@ It does three things:
 
 ## Why it is separate
 
-The main Maestro app should not have direct Docker control over the host. Instead, the app proxies deployment actions to this updater over HTTP using `UPDATER_URL` and `UPDATER_TOKEN`.
+The main Maestro app still should not talk to Docker directly. Instead, it proxies deployment actions to the dedicated `updater` service over the internal Compose network.
 
 ## Required environment
 
 Start from [updater.env.example](updater.env.example).
 
 ```env
-UPDATER_TOKEN=replace-me
+UPDATER_TOKEN=
 GITHUB_REPO=olsommer/maestro
 GITHUB_TOKEN=
-STACK_DIR=/opt/maestro
-RELEASES_DIR=/opt/maestro/releases
-CURRENT_LINK=/opt/maestro/current
-COMPOSE_FILE=docker-compose.yml
+COMPOSE_PROJECT_NAME=maestro
 UPDATE_SERVICES=server
-UPDATER_HOST=127.0.0.1
-UPDATER_PORT=4810
 ```
 
 Notes:
 
-- `STACK_DIR` is the stable project directory on the host.
-- `CURRENT_LINK` should point at the active release directory.
+- `COMPOSE_PROJECT_NAME` should stay fixed across redeploys so the stack keeps the same container and volume names.
+- Release downloads and the `current` symlink live in the updater's internal `/state` volume.
 - `UPDATE_SERVICES` defaults to `server`; keep the updater itself outside this list.
 - `GITHUB_TOKEN` is optional for public repos, but recommended to avoid rate limits.
+- `UPDATER_TOKEN` is optional on the internal Docker network. Set it if you want explicit request authentication.
 
-## Host layout
+## Compose Topology
 
-Example:
+The stack looks like this:
 
-```text
-/opt/maestro
-  .env
-  current -> /opt/maestro/releases/v0.1.0
-  releases/
-    v0.1.0/
-    v0.1.1/
-```
+- `server` calls `http://updater:4810`
+- `updater` has `/var/run/docker.sock`
+- `updater` stores downloaded releases in the `updater_state` named volume
+- redeploys rebuild `server` from the extracted release under `/state/releases/<tag>`
+- `docker compose` commands use a fixed `COMPOSE_PROJECT_NAME` so they keep targeting the same stack
 
-`docker compose` is run with `--project-directory /opt/maestro` and the compose file inside the selected release.
-
-## Running manually
+## Compose Usage
 
 ```bash
-cd /opt/maestro/current
-set -a
-. /opt/maestro/updater.env
-set +a
-node updater/server.js
-```
+cp updater/updater.env.example .env
+# optionally set GITHUB_TOKEN and a custom COMPOSE_PROJECT_NAME
 
-Node 22+ is expected.
+docker compose up -d --build
+```
 
 Host requirements:
 
-- `node` 22+
 - `docker` with `docker compose`
-- `tar`
-
-## Suggested systemd unit
-
-Use [maestro-updater.service.example](maestro-updater.service.example) as a starting point.
 
 ## Maestro server integration
 
-If Maestro itself runs in Docker, set these on the `server` service:
+The bundled `docker-compose.yml` wires this automatically:
 
 ```yaml
-environment:
-  UPDATER_URL: http://host.docker.internal:4810
-  UPDATER_TOKEN: ${UPDATER_TOKEN}
-extra_hosts:
-  - "host.docker.internal:host-gateway"
+server:
+  environment:
+    UPDATER_URL: http://updater:4810
+    UPDATER_TOKEN: ${UPDATER_TOKEN:-}
+
+updater:
+  environment:
+    COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-maestro}
+    UPDATER_TOKEN: ${UPDATER_TOKEN:-}
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - updater_state:/state
 ```
 
-If Maestro runs on bare metal, `UPDATER_URL=http://127.0.0.1:4810` is enough.
+If you expose the updater outside the Docker network, keep `UPDATER_TOKEN` set. If it stays internal to Compose, the token can be left blank.

@@ -124,28 +124,30 @@ machine or Docker volume.
 
 #### Optional: Frontend-triggered release redeploys
 
-Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy, but the redeploy work must run through a small updater service on the Docker host.
+Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy through the bundled `updater` Compose service.
 
 The updater service:
 
 1. Checks GitHub releases for the configured repo
-2. Downloads the release tarball into a versioned releases directory
-3. Runs `docker compose build` and `docker compose up -d` from that release
+2. Downloads each release tarball into the internal updater state volume
+3. Runs `docker compose --project-name <name> build` and `docker compose --project-name <name> up -d` from the extracted release
+
+This avoids a required `STACK_DIR` host path because the updater keeps its own release checkout inside the Compose stack and talks to Docker through the mounted socket.
 
 Files:
 
 - [updater/server.js](updater/server.js)
 - [updater/README.md](updater/README.md)
-- [updater/maestro-updater.service.example](updater/maestro-updater.service.example)
+- [updater/Dockerfile](updater/Dockerfile)
 - [updater/updater.env.example](updater/updater.env.example)
 
-To enable the UI:
+To enable the UI with the bundled compose setup:
 
-1. Run the updater on the host.
-2. Set `UPDATER_TOKEN` for the updater and the Maestro server.
-3. Set `UPDATER_URL` on the Maestro server.
+1. Set `GITHUB_REPO` in `.env`.
+2. Optionally set `GITHUB_TOKEN`, `UPDATER_TOKEN`, and `COMPOSE_PROJECT_NAME`.
+3. Start the stack with `docker compose up -d --build`.
 
-If the Maestro server itself runs in Docker, the bundled `docker-compose.yml` already passes `UPDATER_URL` and `UPDATER_TOKEN` through and adds `host.docker.internal` so the container can reach a host-side updater on port `4810`.
+The bundled `docker-compose.yml` already starts the internal `updater` service and defaults the Maestro server to `UPDATER_URL=http://updater:4810`.
 
 **Option 2: Bare Metal**
 

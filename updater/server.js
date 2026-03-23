@@ -11,14 +11,14 @@ const PORT = Number(process.env.UPDATER_PORT || "4810");
 const TOKEN = process.env.UPDATER_TOKEN || "";
 const GITHUB_REPO = process.env.GITHUB_REPO || "";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
-const STACK_DIR = path.resolve(process.env.STACK_DIR || process.cwd());
 const RELEASES_DIR = path.resolve(
-  process.env.RELEASES_DIR || path.join(STACK_DIR, "releases")
+  process.env.RELEASES_DIR || "/state/releases"
 );
 const CURRENT_LINK = path.resolve(
-  process.env.CURRENT_LINK || path.join(STACK_DIR, "current")
+  process.env.CURRENT_LINK || "/state/current"
 );
 const COMPOSE_FILE = process.env.COMPOSE_FILE || "docker-compose.yml";
+const COMPOSE_PROJECT_NAME = process.env.COMPOSE_PROJECT_NAME || "maestro";
 const UPDATE_SERVICES = (process.env.UPDATE_SERVICES || "server")
   .split(",")
   .map((value) => value.trim())
@@ -39,7 +39,7 @@ function sendJson(res, status, body) {
 
 function isAuthorized(req) {
   if (!TOKEN) {
-    return false;
+    return true;
   }
   return req.headers.authorization === `Bearer ${TOKEN}`;
 }
@@ -66,7 +66,7 @@ function getStatusPayload() {
   const latestVersion = state.latestRelease?.tag ?? null;
   const currentVersion = getCurrentVersion();
   return {
-    configured: Boolean(TOKEN && GITHUB_REPO),
+    configured: Boolean(GITHUB_REPO),
     currentVersion,
     latestVersion,
     updateAvailable:
@@ -109,6 +109,10 @@ async function githubRequest(endpoint) {
   return res.json();
 }
 
+function archiveUrl(tag) {
+  return `https://github.com/${GITHUB_REPO}/archive/refs/tags/${encodeURIComponent(tag)}.tar.gz`;
+}
+
 async function fetchLatestRelease() {
   let data;
   try {
@@ -126,9 +130,7 @@ async function fetchLatestRelease() {
     url: data.html_url ?? null,
     publishedAt: data.published_at ?? null,
     notes: data.body ?? null,
-    tarballUrl: `https://github.com/${GITHUB_REPO}/archive/refs/tags/${encodeURIComponent(
-      data.tag_name
-    )}.tar.gz`,
+    tarballUrl: archiveUrl(data.tag_name),
   };
 }
 
@@ -149,9 +151,7 @@ async function fetchReleaseByTag(tag) {
     url: data.html_url ?? null,
     publishedAt: data.published_at ?? null,
     notes: data.body ?? null,
-    tarballUrl: `https://github.com/${GITHUB_REPO}/archive/refs/tags/${encodeURIComponent(
-      data.tag_name
-    )}.tar.gz`,
+    tarballUrl: archiveUrl(data.tag_name),
   };
 }
 
@@ -251,18 +251,24 @@ async function ensureReleaseDownloaded(release) {
   }
 }
 
-async function buildRelease(releaseDir) {
-  const composePath = path.join(releaseDir, COMPOSE_FILE);
-  const args = [
+function composeArgs(composePath, commandArgs) {
+  return [
     "compose",
-    "--project-directory",
-    STACK_DIR,
+    "--project-name",
+    COMPOSE_PROJECT_NAME,
     "-f",
     composePath,
-    "build",
-    ...UPDATE_SERVICES,
+    ...commandArgs,
   ];
-  await runCommand("docker", args, STACK_DIR);
+}
+
+async function buildRelease(releaseDir) {
+  const composePath = path.join(releaseDir, COMPOSE_FILE);
+  await runCommand(
+    "docker",
+    composeArgs(composePath, ["build", ...UPDATE_SERVICES]),
+    releaseDir
+  );
 }
 
 async function switchCurrentRelease(releaseDir) {
@@ -274,17 +280,11 @@ async function switchCurrentRelease(releaseDir) {
 
 async function bringUpServices() {
   const composePath = path.join(CURRENT_LINK, COMPOSE_FILE);
-  const args = [
-    "compose",
-    "--project-directory",
-    STACK_DIR,
-    "-f",
-    composePath,
-    "up",
-    "-d",
-    ...UPDATE_SERVICES,
-  ];
-  await runCommand("docker", args, STACK_DIR);
+  await runCommand(
+    "docker",
+    composeArgs(composePath, ["up", "-d", ...UPDATE_SERVICES]),
+    path.dirname(composePath)
+  );
 }
 
 async function performRedeploy(targetTag) {
@@ -318,9 +318,6 @@ async function performRedeploy(targetTag) {
 }
 
 function validateConfig() {
-  if (!TOKEN) {
-    throw new Error("UPDATER_TOKEN is required");
-  }
   if (!GITHUB_REPO) {
     throw new Error("GITHUB_REPO is required");
   }
@@ -393,7 +390,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, async () => {
   await ensureDir(RELEASES_DIR);
   console.log(`[updater] Listening on http://${HOST}:${PORT}`);
-  console.log(`[updater] Stack dir: ${STACK_DIR}`);
+  console.log(`[updater] Compose project: ${COMPOSE_PROJECT_NAME}`);
   console.log(`[updater] Releases dir: ${RELEASES_DIR}`);
   console.log(`[updater] Current link: ${CURRENT_LINK}`);
   console.log(`[updater] Update services: ${UPDATE_SERVICES.join(", ") || "(all services)"}`);
