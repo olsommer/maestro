@@ -1528,7 +1528,7 @@ function SettingsView() {
               <div>
                 <CardTitle className="text-sm">Deployment Updates</CardTitle>
                 <CardDescription>
-                  Detect GitHub releases and rebuild the Docker deployment from a release tarball via the external updater service.
+                  Detect GitHub releases and rebuild the Docker deployment from a release tarball via the internal updater service.
                 </CardDescription>
               </div>
               {deploymentStatus?.updating && (
@@ -1545,7 +1545,7 @@ function SettingsView() {
                   <AlertTitle>Updater not configured</AlertTitle>
                   <AlertDescription>
                     {deploymentStatus?.lastError ??
-                      "Run the host-side updater service and set `UPDATER_URL` plus `UPDATER_TOKEN` on the Maestro server."}
+                      "Start the `updater` Compose service and set `UPDATER_URL` on the Maestro server. `UPDATER_TOKEN` is optional on the internal network."}
                   </AlertDescription>
                 </Alert>
               ) : (
