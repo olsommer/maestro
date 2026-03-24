@@ -2,12 +2,31 @@ import { z } from "zod";
 import { AgentStatus } from "./agent.js";
 import { KanbanColumn } from "./kanban.js";
 
+export const TerminalOutputChunk = z.object({
+  seq: z.number().int().nonnegative(),
+  data: z.string(),
+});
+
+export const TerminalAttachResponse = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("snapshot"),
+    terminalId: z.string(),
+    output: z.array(z.string()),
+    cursor: z.number().int().nonnegative(),
+  }),
+  z.object({
+    mode: z.literal("replay"),
+    terminalId: z.string(),
+    chunks: z.array(TerminalOutputChunk),
+    cursor: z.number().int().nonnegative(),
+  }),
+]);
+
 // Server -> Client events
 export const ServerEvents = {
   "terminal:output": z.object({
     terminalId: z.string(),
-    data: z.string(),
-    seq: z.number().int().nonnegative(),
+    ...TerminalOutputChunk.shape,
   }),
   "terminal:status": z.object({
     terminalId: z.string(),
@@ -79,6 +98,10 @@ export const ClientEvents = {
     cols: z.number(),
     rows: z.number(),
   }),
+  "terminal:attach": z.object({
+    terminalId: z.string(),
+    cursor: z.number().int().nonnegative().optional(),
+  }),
   "terminal:subscribe": z.object({
     terminalId: z.string(),
     sinceSeq: z.number().int().nonnegative().optional(),
@@ -115,3 +138,5 @@ export type ServerEventMap = {
 export type ClientEventMap = {
   [K in keyof typeof ClientEvents]: z.infer<(typeof ClientEvents)[K]>;
 };
+
+export type TerminalAttachResponse = z.infer<typeof TerminalAttachResponse>;

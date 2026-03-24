@@ -9,6 +9,10 @@ import {
   resizePty,
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
+import {
+  buildTerminalAttachResponse,
+  type TerminalAttachResponse,
+} from "./terminal-attach.js";
 import { removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
@@ -512,6 +516,26 @@ export function getBufferedTerminalOutputSince(
 ): Array<{ seq: number; data: string }> {
   const rt = getRuntime(terminalId);
   return rt.outputBuffer.filter((chunk) => chunk.seq >= sinceSeq);
+}
+
+export function getTerminalAttachment(
+  terminalId: string,
+  cursor?: number
+): TerminalAttachResponse {
+  if (!getTerminalRecord(terminalId)) {
+    throw new Error("Terminal not found");
+  }
+
+  const rt = getRuntime(terminalId);
+  const snapshot = getTerminalOutputSnapshot(terminalId);
+
+  return buildTerminalAttachResponse({
+    terminalId,
+    requestedCursor: cursor,
+    outputBuffer: rt.outputBuffer,
+    snapshotOutput: snapshot.output,
+    snapshotCursor: snapshot.cursor,
+  });
 }
 
 export async function listTerminals() {
