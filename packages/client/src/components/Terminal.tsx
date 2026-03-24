@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
-import { api } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,10 @@ import {
 } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
+import {
+  TerminalAttachResponse as TerminalAttachResponseSchema,
+  type TerminalAttachResponse,
+} from "@maestro/wire";
 
 function useMobileKeyboard() {
   const [open, setOpen] = useState(false);
@@ -165,12 +168,16 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const attachedRef = useRef(false);
   const lastSeqRef = useRef(0);
+  const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     setTextOverlay(null);
+    attachedRef.current = false;
     lastSeqRef.current = 0;
+    pendingChunksRef.current.clear();
     containerRef.current?.replaceChildren();
   }, [terminalId]);
 
@@ -271,13 +278,36 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       const socket = getSocket();
       socketRef.current = socket;
 
+      const flushPendingChunks = () => {
+        for (const seq of Array.from(pendingChunksRef.current.keys())) {
+          if (seq <= lastSeqRef.current) {
+            pendingChunksRef.current.delete(seq);
+          }
+        }
+
+        while (true) {
+          const nextSeq = lastSeqRef.current + 1;
+          const nextChunk = pendingChunksRef.current.get(nextSeq);
+          if (nextChunk === undefined) {
+            break;
+          }
+
+          pendingChunksRef.current.delete(nextSeq);
+          lastSeqRef.current = nextSeq;
+          term.write(nextChunk);
+        }
+      };
+
       const handleOutput = (data: { terminalId: string; data: string; seq: number }) => {
         if (data.terminalId === terminalId) {
           if (data.seq <= lastSeqRef.current) {
             return;
           }
-          lastSeqRef.current = data.seq;
-          term.write(data.data);
+
+          pendingChunksRef.current.set(data.seq, data.data);
+          if (attachedRef.current) {
+            flushPendingChunks();
+          }
         }
       };
 
@@ -308,6 +338,8 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
         container.replaceChildren();
+        attachedRef.current = false;
+        pendingChunksRef.current.clear();
         termRef.current = null;
         fitAddonRef.current = null;
         socketRef.current = null;
@@ -315,17 +347,41 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       disposeTerminal = cleanup;
 
-      // Load existing output buffer
+      socket.on("terminal:output", handleOutput);
+
       try {
-        const { output, cursor } = await api.getTerminalOutput(terminalId);
+        const attachment = await new Promise<TerminalAttachResponse>((resolve, reject) => {
+          socket.emit(
+            "terminal:attach",
+            { terminalId, cursor: lastSeqRef.current },
+            (payload: unknown) => {
+              try {
+                resolve(TerminalAttachResponseSchema.parse(payload));
+              } catch (error) {
+                reject(error);
+              }
+            }
+          );
+        });
+
         if (cancelled) {
           cleanup();
           return;
         }
-        for (const chunk of output) {
-          term.write(chunk);
+
+        if (attachment.mode === "snapshot") {
+          for (const chunk of attachment.output) {
+            term.write(chunk);
+          }
+          lastSeqRef.current = attachment.cursor;
+        } else {
+          for (const chunk of attachment.chunks) {
+            pendingChunksRef.current.set(chunk.seq, chunk.data);
+          }
         }
-        lastSeqRef.current = cursor;
+
+        attachedRef.current = true;
+        flushPendingChunks();
       } catch {
         // Ignore
       }
@@ -335,12 +391,6 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         return;
       }
 
-      // Subscribe to live output
-      socket.on("terminal:output", handleOutput);
-      socket.emit("terminal:subscribe", {
-        terminalId,
-        sinceSeq: lastSeqRef.current + 1,
-      });
       socket.emit("terminal:resize", {
         terminalId,
         cols: term.cols,

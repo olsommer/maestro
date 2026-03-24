@@ -1,6 +1,7 @@
 import type { Server as SocketServer, Socket } from "socket.io";
-import { ClientEvents } from "@maestro/wire";
+import { ClientEvents, TerminalAttachResponse } from "@maestro/wire";
 import {
+  getTerminalAttachment,
   getBufferedTerminalOutputSince,
   sendTerminalInput,
   resizeTerminal,
@@ -10,6 +11,17 @@ import { sendSetupInput, resizeSetupPty, getSetupOutputBuffer, isSetupDone, star
 export function registerSocketHandlers(io: SocketServer) {
   io.on("connection", (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
+
+    socket.on("terminal:attach", (data, respond?: (payload: TerminalAttachResponse) => void) => {
+      try {
+        const { terminalId, cursor } = ClientEvents["terminal:attach"].parse(data);
+        socket.join(`terminal:${terminalId}`);
+        respond?.(TerminalAttachResponse.parse(getTerminalAttachment(terminalId, cursor)));
+        console.log(`Client ${socket.id} attached to terminal ${terminalId}`);
+      } catch {
+        socket.emit("error", { message: "Invalid attach payload" });
+      }
+    });
 
     // Subscribe to terminal output stream
     socket.on("terminal:subscribe", (data) => {
