@@ -2,12 +2,6 @@ import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
 import type { AgentStatus, AgentProvider } from "@maestro/wire";
 import {
-  captureTmuxPane,
-  ensureTmuxSession,
-  getTmuxAttachCommand,
-  isTmuxAvailable,
-  killTmuxSession,
-  tmuxSessionExists,
   spawnPty,
   writeToPty,
   writeCommandToPty,
@@ -36,7 +30,6 @@ export interface TerminalRuntime {
   ptyId: string | null;
   outputBuffer: Array<{ seq: number; data: string }>;
   nextOutputSeq: number;
-  usesTmux: boolean;
   lastStartedAt: number | null;
   intentionalStop: boolean;
   restartTimer: ReturnType<typeof setTimeout> | null;
@@ -82,7 +75,6 @@ function getRuntime(terminalId: string): TerminalRuntime {
       ptyId: null,
       outputBuffer: [],
       nextOutputSeq: 1,
-      usesTmux: false,
       lastStartedAt: null,
       intentionalStop: false,
       restartTimer: null,
@@ -207,8 +199,6 @@ export async function startTerminal(
 
   const settings = getSettings();
   const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
-  const useTmux = !sandboxEnabled && isTmuxAvailable();
-  const hadTmuxSession = useTmux && tmuxSessionExists(terminalId);
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -228,22 +218,12 @@ export async function startTerminal(
   rt.intentionalStop = false;
   rt.lastStartedAt = Date.now();
   rt.outputBuffer = [];
-  rt.usesTmux = useTmux;
-
-  if (useTmux && !hadTmuxSession) {
-    ensureTmuxSession({
-      terminalId,
-      cwd,
-      env: childEnv,
-    });
-  }
 
   const ptyInstance = spawnPty({
     terminalId,
     cwd,
     env: childEnv,
-    sandbox: useTmux ? false : sandboxEnabled,
-    command: useTmux ? getTmuxAttachCommand(terminalId) : undefined,
+    sandbox: sandboxEnabled,
     readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
       if (!getTerminalRecord(terminalId)) {
@@ -256,9 +236,7 @@ export async function startTerminal(
         rt.outputBuffer = rt.outputBuffer.slice(-MAX_OUTPUT_LINES);
       }
 
-      if (!rt.usesTmux) {
-        appendTerminalHistory(terminalId, data);
-      }
+      appendTerminalHistory(terminalId, data);
 
       deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
         terminalId,
@@ -390,7 +368,7 @@ export async function startTerminal(
     error: null,
   });
 
-  if (command.trim() && (!useTmux || !hadTmuxSession)) {
+  if (command.trim()) {
     writeCommandToPty(ptyInstance.id, command);
   }
   return { ptyId: ptyInstance.id };
@@ -398,16 +376,8 @@ export async function startTerminal(
 
 export async function stopTerminal(terminalId: string) {
   const rt = agentRuntimes.get(terminalId);
-  if (rt) {
-    rt.intentionalStop = true;
-  }
-  if (rt?.usesTmux || tmuxSessionExists(terminalId)) {
-    killTmuxSession(terminalId);
-    if (rt) {
-      rt.usesTmux = false;
-    }
-  }
   if (rt?.ptyId) {
+    rt.intentionalStop = true;
     killPty(rt.ptyId);
     rt.ptyId = null;
   }
@@ -440,9 +410,6 @@ export async function deleteTerminal(terminalId: string) {
   }
   if (rt) {
     rt.intentionalStop = true;
-  }
-  if (rt?.usesTmux || tmuxSessionExists(terminalId)) {
-    killTmuxSession(terminalId);
   }
   if (rt?.ptyId) {
     killPty(rt.ptyId);
@@ -488,8 +455,7 @@ export async function restorePersistentTerminals() {
     (agent) =>
       agent.kind !== "kanban" &&
       agent.kind !== "automation" &&
-      agent.kind !== "scheduler" &&
-      (agent.status === "running" || tmuxSessionExists(agent.id))
+      agent.kind !== "scheduler"
   );
 
   for (const terminal of terminals) {
@@ -523,12 +489,8 @@ export function getTerminalOutputSnapshot(
   const rt = getRuntime(terminalId);
   const cursor = rt.nextOutputSeq - 1;
 
-  const tmuxSnapshot = captureTmuxPane(terminalId);
-  if (tmuxSnapshot) {
-    return { output: [tmuxSnapshot], cursor };
-  }
-
-  // Non-tmux terminals fall back to the persisted transcript.
+  // The transcript is the canonical reconnect source because it survives
+  // process restarts and terminal restarts.
   const history = readTerminalHistory(terminalId);
   if (history) {
     return { output: [history], cursor };

@@ -2,7 +2,6 @@ import * as pty from "node-pty";
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync } from "child_process";
 import { createRequire } from "module";
 import {
   isNsjailAvailable,
@@ -11,13 +10,9 @@ import {
   ensureSandboxWritable,
   type SandboxConfig,
 } from "./sandbox.js";
-import { ensureDataDir } from "../state/files.js";
 
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
-let cachedTmuxAvailable: boolean | null = null;
-const TMUX_SOCKET_PATH = path.join(ensureDataDir(), "tmux.sock");
-const DEFAULT_TMUX_HISTORY_LIMIT = 50_000;
 
 function getShellPath(env?: Record<string, string>): string {
   return env?.SHELL || process.env.SHELL || "/bin/bash";
@@ -102,130 +97,6 @@ function generateId(): string {
   return `pty_${Date.now()}_${++idCounter}`;
 }
 
-function buildTmuxArgs(args: string[]): string[] {
-  return ["-S", TMUX_SOCKET_PATH, ...args];
-}
-
-function execTmux(args: string[], options?: { env?: Record<string, string> }): string {
-  return execFileSync("tmux", buildTmuxArgs(args), {
-    env: options?.env ? buildChildEnv(options.env) : undefined,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-}
-
-function tryExecTmux(args: string[], options?: { env?: Record<string, string> }): boolean {
-  try {
-    execTmux(args, options);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function tmuxSessionName(terminalId: string): string {
-  return `maestro-${terminalId.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-}
-
-function configureTmuxSession(sessionName: string): void {
-  const options: string[][] = [
-    ["set-option", "-t", sessionName, "status", "off"],
-    ["set-option", "-t", sessionName, "prefix", "None"],
-    ["set-option", "-t", sessionName, "mouse", "off"],
-    ["set-option", "-t", sessionName, "history-limit", String(DEFAULT_TMUX_HISTORY_LIMIT)],
-    ["set-option", "-t", sessionName, "detach-on-destroy", "off"],
-  ];
-
-  for (const args of options) {
-    tryExecTmux(args);
-  }
-}
-
-export function isTmuxAvailable(): boolean {
-  if (cachedTmuxAvailable !== null) {
-    return cachedTmuxAvailable;
-  }
-
-  cachedTmuxAvailable = tryExecTmux(["-V"]);
-  return cachedTmuxAvailable;
-}
-
-export function tmuxSessionExists(terminalId: string): boolean {
-  if (!isTmuxAvailable()) return false;
-  return tryExecTmux(["has-session", "-t", tmuxSessionName(terminalId)]);
-}
-
-export function ensureTmuxSession(options: {
-  terminalId: string;
-  cwd: string;
-  cols?: number;
-  rows?: number;
-  env?: Record<string, string>;
-}): string {
-  if (!isTmuxAvailable()) {
-    throw new Error("tmux is not available");
-  }
-
-  const sessionName = tmuxSessionName(options.terminalId);
-  if (!tmuxSessionExists(options.terminalId)) {
-    const shell = getShellPath(options.env);
-    execTmux(
-      [
-        "new-session",
-        "-d",
-        "-s",
-        sessionName,
-        "-c",
-        options.cwd,
-        "-x",
-        String(options.cols ?? 120),
-        "-y",
-        String(options.rows ?? 30),
-        shell,
-        "-l",
-      ],
-      { env: options.env }
-    );
-    configureTmuxSession(sessionName);
-  }
-
-  return sessionName;
-}
-
-export function killTmuxSession(terminalId: string): boolean {
-  if (!isTmuxAvailable()) return false;
-  return tryExecTmux(["kill-session", "-t", tmuxSessionName(terminalId)]);
-}
-
-export function captureTmuxPane(terminalId: string, maxLines = 5_000): string {
-  if (!tmuxSessionExists(terminalId)) {
-    return "";
-  }
-
-  try {
-    return execTmux([
-      "capture-pane",
-      "-e",
-      "-p",
-      "-t",
-      `${tmuxSessionName(terminalId)}:0.0`,
-      "-S",
-      `-${maxLines}`,
-    ]);
-  } catch {
-    return "";
-  }
-}
-
-export function getTmuxAttachCommand(
-  terminalId: string
-): { file: string; args: string[] } {
-  return {
-    file: "tmux",
-    args: buildTmuxArgs(["attach-session", "-t", tmuxSessionName(terminalId)]),
-  };
-}
-
 export interface PtySpawnOptions {
   terminalId: string;
   cwd: string;
@@ -242,12 +113,6 @@ export interface PtySpawnOptions {
   writableMounts?: string[];
   /** Memory limit in bytes for sandbox (default: 512MB) */
   memoryLimit?: number;
-  /** Spawn a specific command instead of the default login shell */
-  command?: {
-    file: string;
-    args?: string[];
-    env?: Record<string, string>;
-  };
 }
 
 export function spawnPty(options: PtySpawnOptions): PtyInstance {
@@ -256,12 +121,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   const shell = getShellPath(options.env);
   const cwd = options.cwd || os.homedir();
   const useSandbox = options.sandbox && isNsjailAvailable();
-  const fullEnv = buildChildEnv({
-    ...options.env,
-    ...options.command?.env,
-  });
-  const targetFile = options.command?.file || shell;
-  const targetArgs = options.command?.args || ["-l"];
+  const fullEnv = buildChildEnv(options.env);
 
   let ptyProcess: pty.IPty;
 
@@ -280,7 +140,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
     const nsjailArgs = [
       ...buildNsjailArgs(sandboxConfig),
-      "--", targetFile, ...targetArgs,
+      "--", shell, "-l",
     ];
 
     ptyProcess = pty.spawn(getNsjailPath(), nsjailArgs, {
@@ -303,7 +163,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     }
 
     // Unsandboxed spawn (original behavior)
-    ptyProcess = pty.spawn(targetFile, targetArgs, {
+    ptyProcess = pty.spawn(shell, ["-l"], {
       name: "xterm-256color",
       cols: options.cols ?? 120,
       rows: options.rows ?? 30,
