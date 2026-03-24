@@ -86,6 +86,17 @@ export function appendTerminalHistory(terminalId: string, data: string): void {
   fs.appendFileSync(historyPath, data);
 }
 
+function trimPartialTerminalTail(content: string): string {
+  if (!content) return content;
+
+  const firstNewline = content.indexOf("\n");
+  if (firstNewline === -1 || firstNewline === content.length - 1) {
+    return content;
+  }
+
+  return content.slice(firstNewline + 1);
+}
+
 /**
  * Read the transcript log for a terminal.
  * Returns the raw content (up to `maxBytes` from the tail) or an empty string.
@@ -109,5 +120,5 @@ export function readTerminalHistory(
   const buffer = Buffer.alloc(maxBytes);
   fs.readSync(fd, buffer, 0, maxBytes, stat.size - maxBytes);
   fs.closeSync(fd);
-  return buffer.toString("utf-8");
+  return trimPartialTerminalTail(buffer.toString("utf-8"));
 }
