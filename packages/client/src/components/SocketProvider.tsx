@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { getSocket } from "@/lib/socket";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -18,13 +18,17 @@ function SocketCore({ children }: { children: React.ReactNode }) {
     console.error(err);
   }
 
-  // Load base state on mount
-  useEffect(() => {
+  const refreshBaseState = useCallback(() => {
     api.getTerminals().then(({ terminals }) => setAgents(terminals)).catch(reportLoadError);
     api.getProjects()
       .then(({ projects }) => setProjects(projects))
       .catch(reportLoadError);
   }, [setAgents, setProjects]);
+
+  // Load base state on mount
+  useEffect(() => {
+    refreshBaseState();
+  }, [refreshBaseState]);
 
   // Listen for real-time status updates
   useEffect(() => {
@@ -46,6 +50,31 @@ function SocketCore({ children }: { children: React.ReactNode }) {
       socket.off("terminal:status", handleStatus);
     };
   }, [updateAgent]);
+
+  // Restore live updates when the tab returns to the foreground.
+  useEffect(() => {
+    const socket = getSocket();
+
+    const refreshOnResume = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      if (!socket.connected) {
+        socket.connect();
+      }
+      refreshBaseState();
+    };
+
+    socket.on("connect", refreshOnResume);
+    document.addEventListener("visibilitychange", refreshOnResume);
+    window.addEventListener("focus", refreshOnResume);
+
+    return () => {
+      socket.off("connect", refreshOnResume);
+      document.removeEventListener("visibilitychange", refreshOnResume);
+      window.removeEventListener("focus", refreshOnResume);
+    };
+  }, [refreshBaseState]);
 
   return <>{children}</>;
 }

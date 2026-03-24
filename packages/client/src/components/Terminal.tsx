@@ -3,17 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useDeepgram } from "@/hooks/use-deepgram";
 import { Button } from "@/components/ui/button";
-import {
-  ArrowRightToLineIcon,
-  ClipboardPasteIcon,
-  CornerDownLeftIcon,
-  MicIcon,
-  MicOffIcon,
-  TextIcon,
-  XIcon,
-} from "lucide-react";
+import { TextIcon, XIcon } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import {
@@ -77,7 +68,7 @@ function useMobileKeyboard() {
   return open;
 }
 
-function MobileTerminalToolbar({
+function MobileTerminalComposer({
   terminalId,
   socketRef,
   onShowText,
@@ -88,6 +79,9 @@ function MobileTerminalToolbar({
 }) {
   const isMobile = useIsMobile();
   const keyboardOpen = useMobileKeyboard();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const send = useCallback(
     (data: string) => {
@@ -96,96 +90,79 @@ function MobileTerminalToolbar({
     [terminalId, socketRef]
   );
 
-  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
-    onTranscript: send,
-  });
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setTimeout(() => textareaRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
 
-  if (!isMobile || keyboardOpen) return null;
+  const closeComposer = useCallback(() => {
+    setOpen(false);
+    setDraft("");
+    textareaRef.current?.blur();
+  }, []);
 
-  const handleEsc = () => send("\x1b");
+  const submit = useCallback(() => {
+    send(draft);
+    send("\r");
+    closeComposer();
+  }, [closeComposer, draft, send]);
 
-  const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) send(text);
-    } catch {
-      // Clipboard access denied
-    }
-  };
-
-  const isListening = voiceStatus === "listening";
-  const isVoiceConnecting = voiceStatus === "connecting";
-  const toolbarButtonClassName =
-    "h-9 w-full min-w-0 rounded-md px-0 text-[0.8rem] [&_svg:not([class*='size-'])]:size-[18px]";
+  if (!isMobile) return null;
 
   return (
-    <div
-      className="grid shrink-0 grid-cols-5 gap-2 border-t bg-card px-3 py-2.5"
-      onTouchMove={(e) => e.stopPropagation()}
-    >
-      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={handleEsc}>
-        Esc
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        className={toolbarButtonClassName}
-        aria-label="Send tab"
-        onClick={() => send("\t")}
-      >
-        <ArrowRightToLineIcon className="size-4" />
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        className={toolbarButtonClassName}
-        aria-label="Send enter"
-        onClick={() => send("\r")}
-      >
-        <CornerDownLeftIcon className="size-4" />
-      </Button>
-      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("1")}>
-        1
-      </Button>
-      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("2")}>
-        2
-      </Button>
-      <Button size="sm" variant="secondary" className={toolbarButtonClassName} onClick={() => send("3")}>
-        3
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        className={toolbarButtonClassName}
-        aria-label="Paste from clipboard"
-        onClick={handlePaste}
-      >
-        <ClipboardPasteIcon className="size-4" />
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        className={toolbarButtonClassName}
-        aria-label="Show terminal text"
-        onClick={onShowText}
-      >
-        <TextIcon className="size-4" />
-      </Button>
-      <Button
-        size="sm"
-        variant={isListening ? "destructive" : "secondary"}
-        className={toolbarButtonClassName}
-        aria-label={isListening ? "Stop voice input" : "Start voice input"}
-        onClick={toggleVoice}
-        disabled={isVoiceConnecting}
-      >
-        {isListening ? (
-          <MicOffIcon className="size-4" />
-        ) : (
-          <MicIcon className="size-4" />
-        )}
-      </Button>
-    </div>
+    <>
+      {!open && !keyboardOpen && (
+        <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 border-t bg-card/95 px-3 py-2 backdrop-blur-sm">
+          <Button size="sm" className="flex-1 font-mono" onClick={() => setOpen(true)}>
+            Type Into Terminal
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onShowText}>
+            <TextIcon className="size-4" />
+            Text
+          </Button>
+        </div>
+      )}
+
+      {open && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-20 border-t bg-[#09090b] px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 text-zinc-100"
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                Terminal Input
+              </p>
+              <p className="text-[11px] text-zinc-500">Press Enter to send and close.</p>
+            </div>
+            <Button size="icon-xs" variant="ghost" className="text-zinc-300" onClick={closeComposer}>
+              <XIcon className="size-4" />
+              <span className="sr-only">Close terminal input</span>
+            </Button>
+          </div>
+
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+                return;
+              }
+              event.preventDefault();
+              submit();
+            }}
+            placeholder="$ type a command"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            rows={5}
+            className="min-h-36 w-full resize-none rounded-none border border-zinc-800 bg-[#09090b] px-3 py-3 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:border-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-700/40"
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -339,6 +316,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       resizeObserver.observe(container);
 
       let resizeTimer: ReturnType<typeof setTimeout>;
+      let attachRequestId = 0;
       const onViewportResize = () => {
         fitAddon.fit();
         clearTimeout(resizeTimer);
@@ -420,15 +398,97 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       });
 
       const onPointerDown = () => {
+        if (isMobileRef.current) {
+          return;
+        }
         term.focus();
         requestAnimationFrame(() => fitAddon.fit());
       };
       container.addEventListener("pointerdown", onPointerDown);
 
+      const attachTerminal = async () => {
+        const requestedCursor = lastSeqRef.current;
+        const requestId = ++attachRequestId;
+
+        try {
+          const attachment = await new Promise<TerminalAttachResponse>((resolve, reject) => {
+            socket.emit(
+              "terminal:attach",
+              { terminalId, cursor: requestedCursor },
+              (payload: unknown) => {
+                try {
+                  resolve(TerminalAttachResponseSchema.parse(payload));
+                } catch (error) {
+                  reject(error);
+                }
+              }
+            );
+          });
+
+          if (cancelled || cleanedUp || requestId !== attachRequestId) {
+            return;
+          }
+
+          if (attachment.mode === "snapshot") {
+            if (requestedCursor === 0 || attachment.cursor > requestedCursor) {
+              term.reset();
+              fitAddon.fit();
+              for (const chunk of attachment.output) {
+                term.write(chunk);
+              }
+              lastSeqRef.current = attachment.cursor;
+            }
+          } else {
+            for (const chunk of attachment.chunks) {
+              pendingChunksRef.current.set(chunk.seq, chunk.data);
+            }
+          }
+
+          attachedRef.current = true;
+          flushPendingChunks();
+          requestAnimationFrame(() => fitAddon.fit());
+
+          socket.emit("terminal:resize", {
+            terminalId,
+            cols: term.cols,
+            rows: term.rows,
+          });
+        } catch {
+          // Ignore
+        }
+      };
+
       const onPageHide = () => {
         persistSnapshot();
       };
       window.addEventListener("pagehide", onPageHide);
+
+      const resumeTerminal = () => {
+        if (cancelled || cleanedUp) return;
+        if (document.visibilityState === "hidden") return;
+        requestAnimationFrame(() => fitAddon.fit());
+        if (socket.connected) {
+          void attachTerminal();
+          return;
+        }
+        socket.connect();
+      };
+
+      const onSocketConnect = () => {
+        void attachTerminal();
+      };
+
+      const onVisibilityChange = () => {
+        resumeTerminal();
+      };
+
+      const onWindowFocus = () => {
+        resumeTerminal();
+      };
+
+      socket.on("connect", onSocketConnect);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("focus", onWindowFocus);
 
       const cleanup = () => {
         if (cleanedUp) return;
@@ -442,10 +502,13 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         resizeObserver.disconnect();
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         window.removeEventListener("pagehide", onPageHide);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("focus", onWindowFocus);
         container.removeEventListener("pointerdown", onPointerDown);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
+        socket.off("connect", onSocketConnect);
         socket.off("terminal:output", handleOutput);
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
@@ -466,58 +529,12 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       socket.on("terminal:output", handleOutput);
 
-      try {
-        const attachment = await new Promise<TerminalAttachResponse>((resolve, reject) => {
-          socket.emit(
-            "terminal:attach",
-            { terminalId, cursor: lastSeqRef.current },
-            (payload: unknown) => {
-              try {
-                resolve(TerminalAttachResponseSchema.parse(payload));
-              } catch (error) {
-                reject(error);
-              }
-            }
-          );
-        });
-
-        if (cancelled) {
-          cleanup();
-          return;
-        }
-
-        if (attachment.mode === "snapshot") {
-          if (storedSnapshot == null || attachment.cursor > lastSeqRef.current) {
-            term.reset();
-            fitAddon.fit();
-            for (const chunk of attachment.output) {
-              term.write(chunk);
-            }
-            lastSeqRef.current = attachment.cursor;
-          }
-        } else {
-          for (const chunk of attachment.chunks) {
-            pendingChunksRef.current.set(chunk.seq, chunk.data);
-          }
-        }
-
-        attachedRef.current = true;
-        flushPendingChunks();
-        requestAnimationFrame(() => fitAddon.fit());
-      } catch {
-        // Ignore
-      }
+      await attachTerminal();
 
       if (cancelled) {
         cleanup();
         return;
       }
-
-      socket.emit("terminal:resize", {
-        terminalId,
-        cols: term.cols,
-        rows: term.rows,
-      });
     })();
 
     return () => {
@@ -526,9 +543,8 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     };
   }, [terminalId]);
 
-  // Refit when toolbar visibility changes (isActive controls toolbar rendering)
+  // Refit when the active terminal changes and the mobile controls mount/unmount.
   useEffect(() => {
-    // Small delay to let the DOM update after toolbar mount/unmount
     const id = setTimeout(() => fitAddonRef.current?.fit(), 50);
     return () => clearTimeout(id);
   }, [isActive]);
@@ -560,7 +576,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       )}
 
       {isActive && (
-        <MobileTerminalToolbar
+        <MobileTerminalComposer
           terminalId={terminalId}
           socketRef={socketRef}
           onShowText={handleShowText}
