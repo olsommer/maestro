@@ -27,6 +27,14 @@ interface StoredTerminalSnapshot {
   savedAt: number;
 }
 
+function isEditableElement(element: Element | null): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.isContentEditable) return true;
+
+  const tagName = element.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
 function getSnapshotStorageKey(terminalId: string): string {
   return `maestro:terminal-snapshot:${terminalId}`;
 }
@@ -239,6 +247,7 @@ function extractBufferText(term: XtermTerminal): string {
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
+  const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
@@ -247,6 +256,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const lastSeqRef = useRef(0);
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldRestoreFocusRef = useRef(false);
   const composerOpenRef = useRef(false);
   const composerDraftRef = useRef("");
   const composerDraftMirroredRef = useRef(false);
@@ -271,9 +281,19 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   }, [terminalId]);
 
   useEffect(() => {
+    isActiveRef.current = Boolean(isActive);
+    if (!isActive) {
+      shouldRestoreFocusRef.current = false;
+    }
+  }, [isActive]);
+
+  useEffect(() => {
     isMobileRef.current = isMobile;
     if (termRef.current) {
       termRef.current.options.disableStdin = isMobile;
+    }
+    if (isMobile) {
+      shouldRestoreFocusRef.current = false;
     }
   }, [isMobile]);
 
@@ -460,6 +480,32 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         }, 200);
       };
 
+      const rememberTerminalFocus = () => {
+        if (isMobileRef.current || !isActiveRef.current) {
+          shouldRestoreFocusRef.current = false;
+          return;
+        }
+        shouldRestoreFocusRef.current = container.contains(document.activeElement);
+      };
+
+      const restoreTerminalFocus = () => {
+        if (isMobileRef.current || !isActiveRef.current || !shouldRestoreFocusRef.current) {
+          return;
+        }
+
+        const activeElement = document.activeElement;
+        if (isEditableElement(activeElement) && !container.contains(activeElement)) {
+          return;
+        }
+
+        requestAnimationFrame(() => {
+          if (cancelled || cleanedUp || isMobileRef.current || !isActiveRef.current) {
+            return;
+          }
+          term.focus();
+        });
+      };
+
       const flushPendingChunks = () => {
         for (const seq of Array.from(pendingChunksRef.current.keys())) {
           if (seq <= lastSeqRef.current) {
@@ -517,10 +563,31 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (isMobileRef.current) {
           return;
         }
+        shouldRestoreFocusRef.current = isActiveRef.current;
         term.focus();
         requestAnimationFrame(() => fitAddon.fit());
       };
       container.addEventListener("pointerdown", onPointerDown);
+
+      const helperTextarea =
+        term.textarea ??
+        container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+
+      const onTerminalFocus = () => {
+        shouldRestoreFocusRef.current = isActiveRef.current;
+      };
+
+      const onTerminalBlur = () => {
+        if (document.visibilityState === "hidden") {
+          return;
+        }
+        if (!container.contains(document.activeElement)) {
+          shouldRestoreFocusRef.current = false;
+        }
+      };
+
+      helperTextarea?.addEventListener("focus", onTerminalFocus);
+      helperTextarea?.addEventListener("blur", onTerminalBlur);
 
       const attachTerminal = async () => {
         const requestedCursor = lastSeqRef.current;
@@ -563,6 +630,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           attachedRef.current = true;
           flushPendingChunks();
           requestAnimationFrame(() => fitAddon.fit());
+          restoreTerminalFocus();
 
           socket.emit("terminal:resize", {
             terminalId,
@@ -575,6 +643,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onPageHide = () => {
+        rememberTerminalFocus();
         persistSnapshot();
       };
       window.addEventListener("pagehide", onPageHide);
@@ -584,6 +653,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (document.visibilityState === "hidden") return;
         requestAnimationFrame(() => fitAddon.fit());
         if (socket.connected) {
+          restoreTerminalFocus();
           void attachTerminal();
           return;
         }
@@ -595,7 +665,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onVisibilityChange = () => {
+        if (document.visibilityState === "hidden") {
+          rememberTerminalFocus();
+          return;
+        }
         resumeTerminal();
+      };
+
+      const onWindowBlur = () => {
+        rememberTerminalFocus();
       };
 
       const onWindowFocus = () => {
@@ -604,6 +682,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       socket.on("connect", onSocketConnect);
       document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("blur", onWindowBlur);
       window.addEventListener("focus", onWindowFocus);
 
       const cleanup = () => {
@@ -619,8 +698,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("blur", onWindowBlur);
         window.removeEventListener("focus", onWindowFocus);
         container.removeEventListener("pointerdown", onPointerDown);
+        helperTextarea?.removeEventListener("focus", onTerminalFocus);
+        helperTextarea?.removeEventListener("blur", onTerminalBlur);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
