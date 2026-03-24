@@ -21,6 +21,46 @@ import {
   type TerminalAttachResponse,
 } from "@maestro/wire";
 
+interface StoredTerminalSnapshot {
+  cursor: number;
+  data: string;
+  savedAt: number;
+}
+
+function getSnapshotStorageKey(terminalId: string): string {
+  return `maestro:terminal-snapshot:${terminalId}`;
+}
+
+function loadStoredSnapshot(terminalId: string): StoredTerminalSnapshot | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getSnapshotStorageKey(terminalId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredTerminalSnapshot>;
+    if (
+      typeof parsed.cursor !== "number" ||
+      typeof parsed.data !== "string" ||
+      typeof parsed.savedAt !== "number"
+    ) {
+      return null;
+    }
+    return parsed as StoredTerminalSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(getSnapshotStorageKey(terminalId), JSON.stringify(snapshot));
+  } catch {
+    // Ignore quota/storage errors
+  }
+}
+
 function useMobileKeyboard() {
   const [open, setOpen] = useState(false);
 
@@ -171,6 +211,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const attachedRef = useRef(false);
   const lastSeqRef = useRef(0);
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -178,6 +219,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     attachedRef.current = false;
     lastSeqRef.current = 0;
     pendingChunksRef.current.clear();
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
     containerRef.current?.replaceChildren();
   }, [terminalId]);
 
@@ -187,14 +232,16 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     containerRef.current?.replaceChildren();
 
     void (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { SerializeAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
+        import("@xterm/addon-serialize"),
       ]);
 
       if (cancelled || !containerRef.current) return;
 
       const fitAddon = new FitAddon();
+      const serializeAddon = new SerializeAddon();
       const term = new Terminal({
         theme: {
           background: "#09090b",
@@ -209,6 +256,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       });
 
       term.loadAddon(fitAddon);
+      term.loadAddon(serializeAddon);
       term.open(containerRef.current);
       fitAddon.fit();
       if (!isMobile) {
@@ -277,6 +325,25 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       const socket = getSocket();
       socketRef.current = socket;
+      const storedSnapshot = loadStoredSnapshot(terminalId);
+
+      const persistSnapshot = () => {
+        storeSnapshot(terminalId, {
+          cursor: lastSeqRef.current,
+          data: serializeAddon.serialize(),
+          savedAt: Date.now(),
+        });
+      };
+
+      const schedulePersistSnapshot = () => {
+        if (persistTimerRef.current) {
+          clearTimeout(persistTimerRef.current);
+        }
+        persistTimerRef.current = setTimeout(() => {
+          persistTimerRef.current = null;
+          persistSnapshot();
+        }, 200);
+      };
 
       const flushPendingChunks = () => {
         for (const seq of Array.from(pendingChunksRef.current.keys())) {
@@ -296,6 +363,8 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           lastSeqRef.current = nextSeq;
           term.write(nextChunk);
         }
+
+        schedulePersistSnapshot();
       };
 
       const handleOutput = (data: { terminalId: string; data: string; seq: number }) => {
@@ -323,14 +392,33 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           cols: size.cols,
           rows: size.rows,
         });
+        schedulePersistSnapshot();
       });
+
+      const onPointerDown = () => {
+        term.focus();
+        requestAnimationFrame(() => fitAddon.fit());
+      };
+      container.addEventListener("pointerdown", onPointerDown);
+
+      const onPageHide = () => {
+        persistSnapshot();
+      };
+      window.addEventListener("pagehide", onPageHide);
 
       const cleanup = () => {
         if (cleanedUp) return;
         cleanedUp = true;
+        if (persistTimerRef.current) {
+          clearTimeout(persistTimerRef.current);
+          persistTimerRef.current = null;
+        }
+        persistSnapshot();
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
         window.visualViewport?.removeEventListener("resize", onViewportResize);
+        window.removeEventListener("pagehide", onPageHide);
+        container.removeEventListener("pointerdown", onPointerDown);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
@@ -346,6 +434,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       disposeTerminal = cleanup;
+
+      if (storedSnapshot?.data) {
+        term.write(storedSnapshot.data);
+        lastSeqRef.current = storedSnapshot.cursor;
+      }
 
       socket.on("terminal:output", handleOutput);
 
@@ -370,10 +463,14 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         }
 
         if (attachment.mode === "snapshot") {
-          for (const chunk of attachment.output) {
-            term.write(chunk);
+          if (storedSnapshot == null || attachment.cursor > lastSeqRef.current) {
+            term.reset();
+            fitAddon.fit();
+            for (const chunk of attachment.output) {
+              term.write(chunk);
+            }
+            lastSeqRef.current = attachment.cursor;
           }
-          lastSeqRef.current = attachment.cursor;
         } else {
           for (const chunk of attachment.chunks) {
             pendingChunksRef.current.set(chunk.seq, chunk.data);
@@ -382,6 +479,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
         attachedRef.current = true;
         flushPendingChunks();
+        requestAnimationFrame(() => fitAddon.fit());
       } catch {
         // Ignore
       }

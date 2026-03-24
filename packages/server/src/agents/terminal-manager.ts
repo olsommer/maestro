@@ -493,18 +493,18 @@ export function getTerminalOutputSnapshot(
   const rt = getRuntime(terminalId);
   const cursor = rt.nextOutputSeq - 1;
 
-  // The transcript is the canonical reconnect source because it survives
-  // process restarts and terminal restarts.
-  const history = readTerminalHistory(terminalId);
-  if (history) {
-    return { output: [history], cursor };
-  }
-
   if (rt.outputBuffer.length > 0) {
     return {
       output: rt.outputBuffer.map((chunk) => chunk.data),
       cursor,
     };
+  }
+
+  // Fall back to the persisted transcript after server restart or when no
+  // in-memory replay buffer is available.
+  const history = readTerminalHistory(terminalId);
+  if (history) {
+    return { output: [history], cursor };
   }
 
   return { output: [], cursor };
