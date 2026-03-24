@@ -277,7 +277,7 @@ export const api = {
   getTerminal: (id: string) => request<{ terminal: Agent }>(`/api/terminals/${id}`),
 
   getTerminalOutput: (id: string) =>
-    request<{ output: string[] }>(`/api/terminals/${id}/output`),
+    request<{ output: string[]; cursor: number }>(`/api/terminals/${id}/output`),
 
   createTerminal: (data: {
     name?: string;

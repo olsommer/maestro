@@ -5,7 +5,7 @@ import {
   createTerminal,
   deleteTerminal,
   getTerminal,
-  getTerminalOutput,
+  getTerminalOutputSnapshot,
   listTerminals,
   sendTerminalInput,
   startTerminal,
@@ -35,7 +35,7 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const terminal = await getTerminal(req.params.id);
       if (!terminal) return reply.status(404).send({ error: "Terminal not found" });
-      return { output: getTerminalOutput(req.params.id) };
+      return getTerminalOutputSnapshot(req.params.id);
     }
   );
 

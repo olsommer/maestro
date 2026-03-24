@@ -7,6 +7,7 @@ export const ServerEvents = {
   "terminal:output": z.object({
     terminalId: z.string(),
     data: z.string(),
+    seq: z.number().int().nonnegative(),
   }),
   "terminal:status": z.object({
     terminalId: z.string(),
@@ -80,6 +81,7 @@ export const ClientEvents = {
   }),
   "terminal:subscribe": z.object({
     terminalId: z.string(),
+    sinceSeq: z.number().int().nonnegative().optional(),
   }),
   "terminal:unsubscribe": z.object({
     terminalId: z.string(),
