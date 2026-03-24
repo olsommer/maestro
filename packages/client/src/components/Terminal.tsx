@@ -2,9 +2,18 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
+import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { TextIcon, XIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  MicIcon,
+  MicOffIcon,
+  XIcon,
+} from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import {
@@ -52,114 +61,196 @@ function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): vo
   }
 }
 
-function useMobileKeyboard() {
-  const [open, setOpen] = useState(false);
+function useMobileViewportState() {
+  const [state, setState] = useState({ keyboardInset: 0, keyboardOpen: false });
 
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
+
     const threshold = 100;
-    const check = () => setOpen(window.innerHeight - vv.height > threshold);
+    const check = () => {
+      const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setState({
+        keyboardInset,
+        keyboardOpen: window.innerHeight - vv.height > threshold,
+      });
+    };
+
     check();
     vv.addEventListener("resize", check);
-    return () => vv.removeEventListener("resize", check);
+    vv.addEventListener("scroll", check);
+    return () => {
+      vv.removeEventListener("resize", check);
+      vv.removeEventListener("scroll", check);
+    };
   }, []);
 
-  return open;
+  return state;
 }
 
-function MobileTerminalComposer({
-  terminalId,
-  socketRef,
-  onShowText,
+function appendDraft(base: string, next: string): string {
+  const trimmedNext = next.trim();
+  if (!trimmedNext) return base;
+  if (!base) return trimmedNext;
+  return /\s$/.test(base) ? `${base}${trimmedNext}` : `${base} ${trimmedNext}`;
+}
+
+function MobileTerminalControls({
+  composerOpen,
+  draft,
+  onChangeDraft,
+  onCloseComposer,
+  onOpenComposer,
+  onSubmitComposer,
+  onToggleTextOverlay,
+  onTranscript,
+  send,
+  textOverlayOpen,
 }: {
-  terminalId: string;
-  socketRef: React.RefObject<Socket | null>;
-  onShowText: () => void;
+  composerOpen: boolean;
+  draft: string;
+  onChangeDraft: (value: string) => void;
+  onCloseComposer: () => void;
+  onOpenComposer: () => void;
+  onSubmitComposer: () => void;
+  onToggleTextOverlay: () => void;
+  onTranscript: (text: string) => void;
+  send: (data: string) => void;
+  textOverlayOpen: boolean;
 }) {
   const isMobile = useIsMobile();
-  const keyboardOpen = useMobileKeyboard();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
+  const { keyboardInset } = useMobileViewportState();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const send = useCallback(
-    (data: string) => {
-      socketRef.current?.emit("terminal:input", { terminalId, data });
-    },
-    [terminalId, socketRef]
-  );
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
+    onTranscript,
+  });
 
   useEffect(() => {
-    if (!open) return;
+    if (!composerOpen) return;
     const id = window.setTimeout(() => textareaRef.current?.focus(), 0);
     return () => window.clearTimeout(id);
-  }, [open]);
-
-  const closeComposer = useCallback(() => {
-    setOpen(false);
-    setDraft("");
-    textareaRef.current?.blur();
-  }, []);
-
-  const submit = useCallback(() => {
-    send(draft);
-    send("\r");
-    closeComposer();
-  }, [closeComposer, draft, send]);
+  }, [composerOpen]);
 
   if (!isMobile) return null;
 
+  const isListening = voiceStatus === "listening";
+  const toolbarStyle = {
+    bottom: `${keyboardInset}px`,
+  };
+  const toolbarButtonClassName = "min-w-0 font-mono";
+
   return (
     <>
-      {!open && !keyboardOpen && (
-        <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 border-t bg-card/95 px-3 py-2 backdrop-blur-sm">
-          <Button size="sm" className="flex-1 font-mono" onClick={() => setOpen(true)}>
-            Type Into Terminal
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onShowText}>
-            <TextIcon className="size-4" />
-            Text
-          </Button>
-        </div>
-      )}
-
-      {open && (
+      {composerOpen && (
         <div
-          className="absolute inset-x-0 bottom-0 z-20 border-t bg-[#09090b] px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 text-zinc-100"
-          onTouchMove={(e) => e.stopPropagation()}
+          className="absolute inset-x-0 top-0 z-[120] flex flex-col border bg-[#09090b] text-zinc-100 shadow-2xl"
+          style={toolbarStyle}
+          onTouchMove={(event) => event.stopPropagation()}
         >
-          <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
                 Terminal Input
               </p>
               <p className="text-[11px] text-zinc-500">Press Enter to send and close.</p>
             </div>
-            <Button size="icon-xs" variant="ghost" className="text-zinc-300" onClick={closeComposer}>
+            <Button size="icon-xs" variant="ghost" className="text-zinc-300" onClick={onCloseComposer}>
               <XIcon className="size-4" />
               <span className="sr-only">Close terminal input</span>
             </Button>
           </div>
 
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-                return;
-              }
-              event.preventDefault();
-              submit();
-            }}
-            placeholder="$ type a command"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            rows={5}
-            className="min-h-36 w-full resize-none rounded-none border border-zinc-800 bg-[#09090b] px-3 py-3 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:border-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-700/40"
-          />
+          <div className="flex min-h-0 flex-1 px-3 py-3">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => onChangeDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+                  return;
+                }
+                event.preventDefault();
+                onSubmitComposer();
+              }}
+              placeholder="$ type a command"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="min-h-0 w-full flex-1 resize-none rounded-none border border-zinc-800 bg-[#09090b] px-3 py-3 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:border-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-700/40"
+            />
+          </div>
+        </div>
+      )}
+
+      {!composerOpen && (
+        <div
+          className="absolute inset-x-0 z-40 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
+          style={toolbarStyle}
+          onTouchMove={(event) => event.stopPropagation()}
+        >
+          {moreOpen && (
+            <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
+              <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
+                <ChevronUpIcon className="size-3.5" />
+              </Button>
+              <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
+                <ChevronLeftIcon className="size-3.5" />
+              </Button>
+              <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
+                <ChevronDownIcon className="size-3.5" />
+              </Button>
+              <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
+                <ChevronRightIcon className="size-3.5" />
+              </Button>
+              <Button
+                size="xs"
+                variant={textOverlayOpen ? "default" : "secondary"}
+                className={toolbarButtonClassName}
+                onClick={onToggleTextOverlay}
+              >
+                Text
+              </Button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b")}>
+              Esc
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\t")}>
+              Tab
+            </Button>
+            <Button
+              size="xs"
+              variant="secondary"
+              className={toolbarButtonClassName}
+              onClick={() => {
+                setMoreOpen(false);
+                onOpenComposer();
+              }}
+            >
+              Input
+            </Button>
+            <Button
+              size="xs"
+              variant={isListening ? "destructive" : "secondary"}
+              className={toolbarButtonClassName}
+              onClick={toggleVoice}
+            >
+              {isListening ? <MicOffIcon className="size-3.5" /> : <MicIcon className="size-3.5" />}
+              Voice
+            </Button>
+            <Button
+              size="xs"
+              variant={moreOpen ? "default" : "secondary"}
+              className={toolbarButtonClassName}
+              onClick={() => setMoreOpen((current) => !current)}
+            >
+              More
+            </Button>
+          </div>
         </div>
       )}
     </>
@@ -179,20 +270,6 @@ function extractBufferText(term: XtermTerminal): string {
   return lines.join("\n");
 }
 
-function applyMobileTextareaWorkaround(container: HTMLDivElement): void {
-  const helper = container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
-  if (!helper) return;
-
-  helper.style.position = "fixed";
-  helper.style.top = "0";
-  helper.style.left = "0";
-  helper.style.width = "1px";
-  helper.style.height = "1px";
-  helper.style.opacity = "0";
-  helper.style.pointerEvents = "none";
-  helper.style.clipPath = "inset(50%)";
-}
-
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -204,9 +281,18 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const lastSeqRef = useRef(0);
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const composerOpenRef = useRef(false);
+  const composerDraftRef = useRef("");
+  const composerDraftMirroredRef = useRef(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerDraft, setComposerDraft] = useState("");
+  const [composerDraftMirrored, setComposerDraftMirrored] = useState(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useLayoutEffect(() => {
+    setComposerOpen(false);
+    setComposerDraft("");
+    setComposerDraftMirrored(false);
     setTextOverlay(null);
     attachedRef.current = false;
     lastSeqRef.current = 0;
@@ -220,12 +306,72 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
   useEffect(() => {
     isMobileRef.current = isMobile;
+    if (termRef.current) {
+      termRef.current.options.disableStdin = isMobile;
+    }
   }, [isMobile]);
 
   useEffect(() => {
-    if (!isMobile || !containerRef.current) return;
-    applyMobileTextareaWorkaround(containerRef.current);
-  }, [isMobile]);
+    composerOpenRef.current = composerOpen;
+  }, [composerOpen]);
+
+  useEffect(() => {
+    composerDraftRef.current = composerDraft;
+  }, [composerDraft]);
+
+  useEffect(() => {
+    composerDraftMirroredRef.current = composerDraftMirrored;
+  }, [composerDraftMirrored]);
+
+  const sendToTerminal = useCallback(
+    (data: string) => {
+      socketRef.current?.emit("terminal:input", { terminalId, data });
+    },
+    [terminalId]
+  );
+
+  const openComposer = useCallback(() => {
+    setTextOverlay(null);
+    setComposerOpen(true);
+  }, []);
+
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false);
+  }, []);
+
+  const handleDraftChange = useCallback((value: string) => {
+    setComposerDraft(value);
+    setComposerDraftMirrored(false);
+  }, []);
+
+  const handleVoiceTranscript = useCallback(
+    (text: string) => {
+      const shouldBufferOnly =
+        composerOpenRef.current ||
+        (!composerDraftMirroredRef.current && composerDraftRef.current.trim().length > 0);
+
+      if (shouldBufferOnly) {
+        setComposerDraft((current) => appendDraft(current, text));
+        setComposerDraftMirrored(false);
+        return;
+      }
+
+      sendToTerminal(text);
+      setComposerDraft((current) => appendDraft(current, text));
+      setComposerDraftMirrored(true);
+    },
+    [sendToTerminal]
+  );
+
+  const handleSubmitComposer = useCallback(() => {
+    if (composerDraftRef.current && !composerDraftMirroredRef.current) {
+      sendToTerminal(composerDraftRef.current);
+    }
+    sendToTerminal("\r");
+    setComposerOpen(false);
+    setComposerDraft("");
+    setComposerDraftMirrored(false);
+  }, [sendToTerminal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +400,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         cursorBlink: true,
         scrollback: 5000,
         convertEol: false,
+        disableStdin: isMobileRef.current,
       });
 
       term.loadAddon(fitAddon);
@@ -384,6 +531,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       // Send keystrokes to server
       term.onData((data: string) => {
+        if (isMobileRef.current) {
+          return;
+        }
         socket.emit("terminal:input", { terminalId, data });
       });
 
@@ -549,18 +699,34 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     return () => clearTimeout(id);
   }, [isActive]);
 
-  const handleShowText = () => {
+  const handleShowText = useCallback(() => {
     if (termRef.current) {
       setTextOverlay(extractBufferText(termRef.current));
     }
-  };
+  }, []);
+
+  const handleToggleTextOverlay = useCallback(() => {
+    if (textOverlay !== null) {
+      setTextOverlay(null);
+      return;
+    }
+    closeComposer();
+    handleShowText();
+  }, [closeComposer, handleShowText, textOverlay]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
+      <div
+        ref={containerRef}
+        className="w-full min-h-0 flex-1 touch-none pt-1"
+        onClick={() => {
+          if (!isMobileRef.current) return;
+          openComposer();
+        }}
+      />
 
       {textOverlay !== null && (
-        <div className="absolute inset-0 z-10 flex flex-col bg-background">
+        <div className="absolute inset-0 z-[110] flex flex-col bg-background">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">
               Select text to copy
@@ -576,10 +742,17 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       )}
 
       {isActive && (
-        <MobileTerminalComposer
-          terminalId={terminalId}
-          socketRef={socketRef}
-          onShowText={handleShowText}
+        <MobileTerminalControls
+          composerOpen={composerOpen}
+          draft={composerDraft}
+          onChangeDraft={handleDraftChange}
+          onCloseComposer={closeComposer}
+          onOpenComposer={openComposer}
+          onSubmitComposer={handleSubmitComposer}
+          onToggleTextOverlay={handleToggleTextOverlay}
+          onTranscript={handleVoiceTranscript}
+          send={sendToTerminal}
+          textOverlayOpen={textOverlay !== null}
         />
       )}
     </div>
