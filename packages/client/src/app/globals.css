@@ -159,6 +159,22 @@ html {
   input, select, textarea {
     font-size: 16px;
   }
+
+  /*
+   * xterm focuses a helper textarea to open the mobile keyboard. Keeping that
+   * textarea far off-screen can cause Safari/Chrome on mobile to surface a
+   * ghost input. Leave it in-viewport but clipped instead.
+   */
+  .xterm .xterm-helper-textarea {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    clip-path: inset(50%);
+    pointer-events: none;
+  }
 }
 
 ::-webkit-scrollbar {
