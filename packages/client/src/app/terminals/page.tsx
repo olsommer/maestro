@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { api, type Agent as TerminalRecord } from "@/lib/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
@@ -212,7 +213,7 @@ function TerminalPagePanel() {
   const [showNew, setShowNew] = useState(false);
   const [gridPreset, setGridPreset] = useState<GridPreset>("auto");
   const [projectFilterId, setProjectFilterId] = useState("all");
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [pendingDeleteTerminal, setPendingDeleteTerminal] =
     useState<TerminalRecord | null>(null);
   const mobileKeyboardOpen = useMobileKeyboard();
@@ -254,14 +255,6 @@ function TerminalPagePanel() {
       ),
     [visibleTerminals]
   );
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const sync = () => setIsMobile(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
 
   useEffect(() => {
     if (visibleTerminals.length === 0) {
@@ -333,6 +326,8 @@ function TerminalPagePanel() {
   );
   const selectedTerminal =
     selectedIndex >= 0 ? visibleTerminals[selectedIndex] : null;
+  const renderedTerminals =
+    isMobile && selectedTerminal ? [selectedTerminal] : visibleTerminals;
 
   const navigateTerminal = useCallback(
     (dir: -1 | 1) => {
@@ -456,18 +451,6 @@ function TerminalPagePanel() {
               </Button>
             )}
           </Empty>
-        ) : isMobile && selectedTerminal ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <TerminalPanel
-              key={selectedTerminal.id}
-              terminal={selectedTerminal}
-              isSelected
-              onSelect={() => {}}
-              onReconnect={() => handleReconnectTerminal(selectedTerminal.id)}
-              onDelete={() => setPendingDeleteTerminal(selectedTerminal)}
-              mobileKeyboardOpen={mobileKeyboardOpen}
-            />
-          </div>
         ) : (
           <div
             className="grid h-full min-h-full gap-3"
@@ -476,7 +459,7 @@ function TerminalPagePanel() {
               gridAutoRows: `minmax(${panelMinHeight}px, 1fr)`,
             }}
           >
-            {visibleTerminals.map((terminal) => (
+            {renderedTerminals.map((terminal) => (
               <TerminalPanel
                 key={terminal.id}
                 terminal={terminal}
@@ -484,6 +467,7 @@ function TerminalPagePanel() {
                 onSelect={() => selectTerminal(terminal.id)}
                 onReconnect={() => handleReconnectTerminal(terminal.id)}
                 onDelete={() => setPendingDeleteTerminal(terminal)}
+                mobileKeyboardOpen={isMobile ? mobileKeyboardOpen : undefined}
               />
             ))}
           </div>

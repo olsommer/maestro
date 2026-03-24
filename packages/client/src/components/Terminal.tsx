@@ -202,9 +202,24 @@ function extractBufferText(term: XtermTerminal): string {
   return lines.join("\n");
 }
 
+function applyMobileTextareaWorkaround(container: HTMLDivElement): void {
+  const helper = container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+  if (!helper) return;
+
+  helper.style.position = "fixed";
+  helper.style.top = "0";
+  helper.style.left = "0";
+  helper.style.width = "1px";
+  helper.style.height = "1px";
+  helper.style.opacity = "0";
+  helper.style.pointerEvents = "none";
+  helper.style.clipPath = "inset(50%)";
+}
+
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobileRef = useRef(isMobile);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -225,6 +240,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     }
     containerRef.current?.replaceChildren();
   }, [terminalId]);
+
+  useEffect(() => {
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || !containerRef.current) return;
+    applyMobileTextareaWorkaround(containerRef.current);
+  }, [isMobile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +283,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       term.loadAddon(serializeAddon);
       term.open(containerRef.current);
       fitAddon.fit();
-      if (!isMobile) {
+      if (!isMobileRef.current) {
         term.focus();
       }
 
@@ -500,7 +524,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       cancelled = true;
       disposeTerminal?.();
     };
-  }, [terminalId, isMobile]);
+  }, [terminalId]);
 
   // Refit when toolbar visibility changes (isActive controls toolbar rendering)
   useEffect(() => {
