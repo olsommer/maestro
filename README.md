@@ -130,7 +130,7 @@ The updater service:
 
 1. Checks GitHub releases for the configured repo
 2. Downloads each release tarball into the internal updater state volume
-3. Runs `docker compose --project-name <name> build` and `docker compose --project-name <name> up -d` from the extracted release
+3. Runs Compose build and `up -d` commands from the extracted release while keeping `COMPOSE_PROJECT_NAME` fixed across redeploys
 
 This avoids a required `STACK_DIR` host path because the updater keeps its own release checkout inside the Compose stack and talks to Docker through the mounted socket.
 
