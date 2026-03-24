@@ -14,6 +14,36 @@ import {
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
 
+function getShellPath(env?: Record<string, string>): string {
+  return env?.SHELL || process.env.SHELL || "/bin/bash";
+}
+
+function hardenShellHistory(env: Record<string, string>): Record<string, string> {
+  const shellName = path.basename(getShellPath(env));
+  const hardened = { ...env };
+
+  if (shellName === "bash") {
+    const existingPromptCommand = hardened.PROMPT_COMMAND?.trim();
+    const bashOpts = new Set((hardened.BASHOPTS || "").split(":").filter(Boolean));
+    const promptParts = ["history -a", "history -n"];
+    if (existingPromptCommand) {
+      promptParts.push(existingPromptCommand);
+    }
+
+    bashOpts.add("histappend");
+    hardened.BASHOPTS = Array.from(bashOpts).join(":");
+    hardened.PROMPT_COMMAND = promptParts.join("; ");
+    hardened.HISTCONTROL = hardened.HISTCONTROL || "ignoredups:erasedups";
+    hardened.HISTSIZE = hardened.HISTSIZE || "100000";
+    hardened.HISTFILESIZE = hardened.HISTFILESIZE || "200000";
+  } else if (shellName === "zsh") {
+    hardened.HISTSIZE = hardened.HISTSIZE || "100000";
+    hardened.SAVEHIST = hardened.SAVEHIST || "200000";
+  }
+
+  return hardened;
+}
+
 function ensureSpawnHelperExecutable(): void {
   if (didEnsureSpawnHelper || process.platform !== "darwin") return;
   didEnsureSpawnHelper = true;
@@ -40,10 +70,10 @@ function ensureSpawnHelperExecutable(): void {
 }
 
 function buildChildEnv(env?: Record<string, string>): Record<string, string> {
-  const childEnv = {
+  const childEnv = hardenShellHistory({
     ...(process.env as Record<string, string>),
     ...env,
-  };
+  });
 
   // Local Maestro launches may happen from within a Claude Code session.
   // Strip the parent marker so spawned Claude agents don't abort as nested sessions.
@@ -88,9 +118,10 @@ export interface PtySpawnOptions {
 export function spawnPty(options: PtySpawnOptions): PtyInstance {
   ensureSpawnHelperExecutable();
 
-  const shell = process.env.SHELL || "/bin/bash";
+  const shell = getShellPath(options.env);
   const cwd = options.cwd || os.homedir();
   const useSandbox = options.sandbox && isNsjailAvailable();
+  const fullEnv = buildChildEnv(options.env);
 
   let ptyProcess: pty.IPty;
 
@@ -99,8 +130,6 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     ensureSandboxWritable(cwd);
 
     // Sandboxed spawn: run shell inside nsjail
-    const fullEnv = buildChildEnv(options.env);
-
     const sandboxConfig: SandboxConfig = {
       cwd,
       env: fullEnv,
@@ -139,7 +168,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       cols: options.cols ?? 120,
       rows: options.rows ?? 30,
       cwd,
-      env: buildChildEnv(options.env),
+      env: fullEnv,
     });
   }
 

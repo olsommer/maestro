@@ -9,7 +9,6 @@ import {
   resizePty,
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
-import { isNsjailAvailable } from "./sandbox.js";
 import { removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
@@ -193,6 +192,10 @@ export async function startTerminal(
   const binaryPath = provider.resolveBinaryPath();
   const envVars = provider.getPtyEnvVars(agent.id, cwd, agent.skills);
   const githubEnvVars = getGitHubChildEnvVars();
+  const childEnv = {
+    ...envVars,
+    ...githubEnvVars,
+  };
 
   const settings = getSettings();
   const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
@@ -219,10 +222,7 @@ export async function startTerminal(
   const ptyInstance = spawnPty({
     terminalId,
     cwd,
-    env: {
-      ...envVars,
-      ...githubEnvVars,
-    },
+    env: childEnv,
     sandbox: sandboxEnabled,
     readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
