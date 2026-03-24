@@ -61,34 +61,6 @@ function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): vo
   }
 }
 
-function useMobileViewportState() {
-  const [state, setState] = useState({ keyboardInset: 0, keyboardOpen: false });
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const threshold = 100;
-    const check = () => {
-      const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setState({
-        keyboardInset,
-        keyboardOpen: window.innerHeight - vv.height > threshold,
-      });
-    };
-
-    check();
-    vv.addEventListener("resize", check);
-    vv.addEventListener("scroll", check);
-    return () => {
-      vv.removeEventListener("resize", check);
-      vv.removeEventListener("scroll", check);
-    };
-  }, []);
-
-  return state;
-}
-
 function appendDraft(base: string, next: string): string {
   const trimmedNext = next.trim();
   if (!trimmedNext) return base;
@@ -120,7 +92,6 @@ function MobileTerminalControls({
   textOverlayOpen: boolean;
 }) {
   const isMobile = useIsMobile();
-  const { keyboardInset } = useMobileViewportState();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
@@ -136,17 +107,13 @@ function MobileTerminalControls({
   if (!isMobile) return null;
 
   const isListening = voiceStatus === "listening";
-  const toolbarStyle = {
-    bottom: `${keyboardInset}px`,
-  };
   const toolbarButtonClassName = "min-w-0 font-mono";
 
   return (
     <>
       {composerOpen && (
         <div
-          className="absolute inset-x-0 top-0 z-[120] flex flex-col border bg-[#09090b] text-zinc-100 shadow-2xl"
-          style={toolbarStyle}
+          className="absolute inset-0 z-[120] flex flex-col border bg-[#09090b] text-zinc-100 shadow-2xl"
           onTouchMove={(event) => event.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
@@ -186,8 +153,7 @@ function MobileTerminalControls({
 
       {!composerOpen && (
         <div
-          className="absolute inset-x-0 z-40 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
-          style={toolbarStyle}
+          className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
           onTouchMove={(event) => event.stopPropagation()}
         >
           {moreOpen && (
