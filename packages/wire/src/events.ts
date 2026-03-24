@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { AgentStatus } from "./agent.js";
-import { KanbanColumn } from "./kanban.js";
+import { AgentStatus } from "./agent";
+import { KanbanColumn } from "./kanban";
 
 export const TerminalOutputChunk = z.object({
   seq: z.number().int().nonnegative(),

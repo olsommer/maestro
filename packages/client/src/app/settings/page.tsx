@@ -83,7 +83,6 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setLoading(true);
     api.getGitHubIntegration(refreshKey > 0)
       .then((res) => setStatus(res.github))
       .catch(() => {})
@@ -225,7 +224,6 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
     api.getClaudeAuthStatus(refreshKey > 0)
       .then(setStatus)
       .catch(() => {})
@@ -342,7 +340,6 @@ function CodexConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
     api.getCodexAuthStatus(refreshKey > 0)
       .then(setStatus)
       .catch(() => {})
