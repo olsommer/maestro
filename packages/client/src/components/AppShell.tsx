@@ -33,14 +33,15 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
     const vv = window.visualViewport;
     if (!vv) return;
 
-    const wrapper = insetRef.current?.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
+    const inset = insetRef.current;
+    const wrapper = inset?.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
 
     const update = () => {
       const h = `${vv.height}px`;
-      if (insetRef.current) {
-        insetRef.current.style.height = h;
-        insetRef.current.style.minHeight = h;
-        insetRef.current.style.maxHeight = h;
+      if (inset) {
+        inset.style.height = h;
+        inset.style.minHeight = h;
+        inset.style.maxHeight = h;
       }
       if (wrapper) {
         wrapper.style.height = h;
@@ -53,10 +54,10 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
     vv.addEventListener("resize", update);
     return () => {
       vv.removeEventListener("resize", update);
-      if (insetRef.current) {
-        insetRef.current.style.height = "";
-        insetRef.current.style.minHeight = "";
-        insetRef.current.style.maxHeight = "";
+      if (inset) {
+        inset.style.height = "";
+        inset.style.minHeight = "";
+        inset.style.maxHeight = "";
       }
       if (wrapper) {
         wrapper.style.height = "";
