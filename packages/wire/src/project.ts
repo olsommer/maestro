@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentProvider } from "./agent.js";
+import { AgentProvider } from "./agent";
 
 export const ProjectStatus = z.enum(["ready", "error"]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
