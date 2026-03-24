@@ -62,6 +62,29 @@ function getCurrentVersion() {
   }
 }
 
+async function seedCurrentReleaseIfMissing(tag) {
+  if (!tag || getCurrentVersion()) {
+    return;
+  }
+
+  await ensureDir(path.dirname(CURRENT_LINK));
+  const releaseDir = path.join(RELEASES_DIR, tag);
+  const tempLink = path.join(
+    path.dirname(CURRENT_LINK),
+    `.current-seed-${process.pid}-${Date.now()}`
+  );
+
+  try {
+    await fsp.symlink(releaseDir, tempLink);
+    if (!getCurrentVersion()) {
+      await fsp.rename(tempLink, CURRENT_LINK);
+      return;
+    }
+  } finally {
+    await fsp.rm(tempLink, { force: true }).catch(() => {});
+  }
+}
+
 function getStatusPayload() {
   const latestVersion = state.latestRelease?.tag ?? null;
   const currentVersion = getCurrentVersion();
@@ -158,6 +181,7 @@ async function fetchReleaseByTag(tag) {
 async function refreshLatestRelease() {
   try {
     state.latestRelease = await fetchLatestRelease();
+    await seedCurrentReleaseIfMissing(state.latestRelease?.tag ?? null);
     state.lastCheckedAt = new Date().toISOString();
     if (!state.updating) {
       state.lastError = null;
