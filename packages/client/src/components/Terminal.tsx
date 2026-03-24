@@ -165,10 +165,12 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const lastSeqRef = useRef(0);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     setTextOverlay(null);
+    lastSeqRef.current = 0;
     containerRef.current?.replaceChildren();
   }, [terminalId]);
 
@@ -269,8 +271,12 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       const socket = getSocket();
       socketRef.current = socket;
 
-      const handleOutput = (data: { terminalId: string; data: string }) => {
+      const handleOutput = (data: { terminalId: string; data: string; seq: number }) => {
         if (data.terminalId === terminalId) {
+          if (data.seq <= lastSeqRef.current) {
+            return;
+          }
+          lastSeqRef.current = data.seq;
           term.write(data.data);
         }
       };
@@ -311,7 +317,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       // Load existing output buffer
       try {
-        const { output } = await api.getTerminalOutput(terminalId);
+        const { output, cursor } = await api.getTerminalOutput(terminalId);
         if (cancelled) {
           cleanup();
           return;
@@ -319,6 +325,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         for (const chunk of output) {
           term.write(chunk);
         }
+        lastSeqRef.current = cursor;
       } catch {
         // Ignore
       }
@@ -329,14 +336,16 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       }
 
       // Subscribe to live output
-      socket.emit("terminal:subscribe", { terminalId });
-
+      socket.on("terminal:output", handleOutput);
+      socket.emit("terminal:subscribe", {
+        terminalId,
+        sinceSeq: lastSeqRef.current + 1,
+      });
       socket.emit("terminal:resize", {
         terminalId,
         cols: term.cols,
         rows: term.rows,
       });
-      socket.on("terminal:output", handleOutput);
     })();
 
     return () => {

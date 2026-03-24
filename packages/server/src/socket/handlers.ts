@@ -1,6 +1,10 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import { ClientEvents } from "@maestro/wire";
-import { sendTerminalInput, resizeTerminal } from "../agents/terminal-manager.js";
+import {
+  getBufferedTerminalOutputSince,
+  sendTerminalInput,
+  resizeTerminal,
+} from "../agents/terminal-manager.js";
 import { sendSetupInput, resizeSetupPty, getSetupOutputBuffer, isSetupDone, startSetupPty, isSetupRunning, resetSetup } from "../setup/setup-manager.js";
 
 export function registerSocketHandlers(io: SocketServer) {
@@ -10,8 +14,19 @@ export function registerSocketHandlers(io: SocketServer) {
     // Subscribe to terminal output stream
     socket.on("terminal:subscribe", (data) => {
       try {
-        const { terminalId } = ClientEvents["terminal:subscribe"].parse(data);
+        const { terminalId, sinceSeq } = ClientEvents["terminal:subscribe"].parse(data);
         socket.join(`terminal:${terminalId}`);
+
+        if (sinceSeq !== undefined) {
+          for (const chunk of getBufferedTerminalOutputSince(terminalId, sinceSeq)) {
+            socket.emit("terminal:output", {
+              terminalId,
+              data: chunk.data,
+              seq: chunk.seq,
+            });
+          }
+        }
+
         console.log(`Client ${socket.id} subscribed to terminal ${terminalId}`);
       } catch {
         socket.emit("error", { message: "Invalid subscribe payload" });

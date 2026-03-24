@@ -29,7 +29,8 @@ import type { TerminalRecord } from "../state/types.js";
 
 export interface TerminalRuntime {
   ptyId: string | null;
-  outputBuffer: string[];
+  outputBuffer: Array<{ seq: number; data: string }>;
+  nextOutputSeq: number;
   lastStartedAt: number | null;
   intentionalStop: boolean;
   restartTimer: ReturnType<typeof setTimeout> | null;
@@ -74,6 +75,7 @@ function getRuntime(terminalId: string): TerminalRuntime {
     rt = {
       ptyId: null,
       outputBuffer: [],
+      nextOutputSeq: 1,
       lastStartedAt: null,
       intentionalStop: false,
       restartTimer: null,
@@ -228,7 +230,8 @@ export async function startTerminal(
         return;
       }
 
-      rt.outputBuffer.push(data);
+      const seq = rt.nextOutputSeq++;
+      rt.outputBuffer.push({ seq, data });
       if (rt.outputBuffer.length > MAX_OUTPUT_LINES) {
         rt.outputBuffer = rt.outputBuffer.slice(-MAX_OUTPUT_LINES);
       }
@@ -238,6 +241,7 @@ export async function startTerminal(
       deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
         terminalId,
         data,
+        seq,
       });
 
       updateTerminalRecord(terminalId, {
@@ -476,20 +480,38 @@ export async function restorePersistentTerminals() {
 }
 
 export function getTerminalOutput(terminalId: string): string[] {
+  return getTerminalOutputSnapshot(terminalId).output;
+}
+
+export function getTerminalOutputSnapshot(
+  terminalId: string
+): { output: string[]; cursor: number } {
   const rt = getRuntime(terminalId);
+  const cursor = rt.nextOutputSeq - 1;
 
-  // If in-memory buffer has content, return it
-  if (rt.outputBuffer.length > 0) {
-    return rt.outputBuffer;
-  }
-
-  // Fallback: read from transcript.log on disk (e.g. after server restart)
+  // The transcript is the canonical reconnect source because it survives
+  // process restarts and terminal restarts.
   const history = readTerminalHistory(terminalId);
   if (history) {
-    return [history];
+    return { output: [history], cursor };
   }
 
-  return [];
+  if (rt.outputBuffer.length > 0) {
+    return {
+      output: rt.outputBuffer.map((chunk) => chunk.data),
+      cursor,
+    };
+  }
+
+  return { output: [], cursor };
+}
+
+export function getBufferedTerminalOutputSince(
+  terminalId: string,
+  sinceSeq: number
+): Array<{ seq: number; data: string }> {
+  const rt = getRuntime(terminalId);
+  return rt.outputBuffer.filter((chunk) => chunk.seq >= sinceSeq);
 }
 
 export async function listTerminals() {
