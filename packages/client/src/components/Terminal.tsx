@@ -218,6 +218,7 @@ function extractBufferText(term: XtermTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
+  const mobileKeyboardOpen = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
@@ -707,7 +708,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   }, [handleShowText, textOverlay]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      style={isMobile && mobileKeyboardOpen ? { paddingBottom: "12px" } : undefined}
+    >
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
 
       {textOverlay !== null && (
