@@ -4,7 +4,6 @@ import {
   AgentSpawnOptions,
   AgentStartInput,
   AgentSendInput,
-  TerminalSnapshotPayload,
 } from "@maestro/wire";
 import {
   createTerminal,
@@ -12,7 +11,6 @@ import {
   getTerminal,
   getTerminalOutputSnapshot,
   listTerminals,
-  persistTerminalSnapshot,
   sendTerminalInput,
   startTerminal,
   stopTerminal,
@@ -41,7 +39,7 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const terminal = await getTerminal(req.params.id);
       if (!terminal) return reply.status(404).send({ error: "Terminal not found" });
-      return getTerminalOutputSnapshot(req.params.id);
+      return await getTerminalOutputSnapshot(req.params.id);
     }
   );
 
@@ -184,30 +182,6 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
       } catch (err) {
         return reply.status(400).send({
           error: err instanceof Error ? err.message : "Failed to send input",
-        });
-      }
-    }
-  );
-
-  app.post<{ Params: { id: string } }>(
-    "/api/terminals/:id/snapshot",
-    async (req, reply) => {
-      try {
-        const snapshot = TerminalSnapshotPayload.parse(req.body);
-        if (snapshot.terminalId !== req.params.id) {
-          return reply.status(400).send({ error: "terminalId does not match route" });
-        }
-
-        const { terminalId, ...payload } = snapshot;
-        const persisted = persistTerminalSnapshot(terminalId, payload);
-        if (!persisted) {
-          return { ok: true, skipped: true };
-        }
-
-        return { ok: true, skipped: false };
-      } catch (err) {
-        return reply.status(400).send({
-          error: err instanceof Error ? err.message : "Failed to save terminal snapshot",
         });
       }
     }

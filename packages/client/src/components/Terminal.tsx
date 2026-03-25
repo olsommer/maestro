@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -24,7 +23,6 @@ import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import {
   TerminalAttachResponse as TerminalAttachResponseSchema,
   type TerminalAttachResponse,
-  type TerminalSnapshotPayload,
 } from "@maestro/wire";
 
 interface StoredTerminalSnapshot {
@@ -33,9 +31,14 @@ interface StoredTerminalSnapshot {
   savedAt: number;
 }
 
-const SNAPSHOT_PERSIST_DELAY_MS = 400;
-const SERVER_SNAPSHOT_THROTTLE_MS = 1500;
+interface LocalTerminalSnapshot {
+  terminalId: string;
+  cursor: number;
+  data: string;
+  savedAt: number;
+}
 
+const SNAPSHOT_PERSIST_DELAY_MS = 400;
 function isEditableElement(element: Element | null): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
   if (element.isContentEditable) return true;
@@ -116,7 +119,7 @@ function MobileTerminalControls({
     onTranscript,
   });
 
-  if (!isMobile || keyboardOpen) return null;
+  if (!isMobile) return null;
 
   const isListening = voiceStatus === "listening";
   const toolbarButtonClassName = "min-w-0 px-0";
@@ -124,7 +127,9 @@ function MobileTerminalControls({
   return (
     <div
       className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      aria-hidden={keyboardOpen}
       onTouchMove={(event) => event.stopPropagation()}
+      style={keyboardOpen ? { visibility: "hidden" } : undefined}
     >
       {moreOpen && (
         <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
@@ -218,7 +223,6 @@ function extractBufferText(term: XtermTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
-  const mobileKeyboardOpen = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
@@ -369,24 +373,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       });
       resizeObserver.observe(container);
 
-      let resizeTimer: ReturnType<typeof setTimeout>;
       let attachRequestId = 0;
-      const onViewportResize = () => {
-        fitAddon.fit();
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => fitAddon.fit(), 100);
-      };
-      window.visualViewport?.addEventListener("resize", onViewportResize);
       let cleanedUp = false;
 
       const socket = getSocket();
       socketRef.current = socket;
       const storedSnapshot = loadStoredSnapshot(terminalId);
 
-      let lastServerSnapshotSavedAt = 0;
-
-      const persistSnapshot = (options?: { forceServer?: boolean; keepalive?: boolean }) => {
-        const snapshot: TerminalSnapshotPayload = {
+      const persistSnapshot = () => {
+        const snapshot: LocalTerminalSnapshot = {
           terminalId,
           cursor: lastSeqRef.current,
           data: serializeAddon.serialize(),
@@ -398,25 +393,6 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           data: snapshot.data,
           savedAt: snapshot.savedAt,
         });
-
-        const shouldPersistServer =
-          options?.forceServer ||
-          snapshot.savedAt - lastServerSnapshotSavedAt >= SERVER_SNAPSHOT_THROTTLE_MS;
-
-        if (!shouldPersistServer) {
-          return;
-        }
-
-        lastServerSnapshotSavedAt = snapshot.savedAt;
-
-        if (options?.keepalive) {
-          void api
-            .saveTerminalSnapshot(terminalId, snapshot, { keepalive: true })
-            .catch(() => undefined);
-          return;
-        }
-
-        socket.emit("terminal:snapshot", snapshot);
       };
 
       const schedulePersistSnapshot = () => {
@@ -590,7 +566,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       const onPageHide = () => {
         rememberTerminalFocus();
-        persistSnapshot({ forceServer: true, keepalive: true });
+        persistSnapshot();
       };
       window.addEventListener("pagehide", onPageHide);
 
@@ -639,9 +615,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           persistTimerRef.current = null;
         }
         persistSnapshot();
-        clearTimeout(resizeTimer);
         resizeObserver.disconnect();
-        window.visualViewport?.removeEventListener("resize", onViewportResize);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         window.removeEventListener("blur", onWindowBlur);
@@ -708,10 +682,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   }, [handleShowText, textOverlay]);
 
   return (
-    <div
-      className="relative flex h-full min-h-0 flex-col"
-      style={isMobile && mobileKeyboardOpen ? { paddingBottom: "12px" } : undefined}
-    >
+    <div className="relative flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
 
       {textOverlay !== null && (

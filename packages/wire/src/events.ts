@@ -7,13 +7,6 @@ export const TerminalOutputChunk = z.object({
   data: z.string(),
 });
 
-export const TerminalSnapshotPayload = z.object({
-  terminalId: z.string(),
-  cursor: z.number().int().nonnegative(),
-  data: z.string(),
-  savedAt: z.number().int().nonnegative(),
-});
-
 export const TerminalAttachResponse = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("snapshot"),
@@ -116,7 +109,6 @@ export const ClientEvents = {
   "terminal:unsubscribe": z.object({
     terminalId: z.string(),
   }),
-  "terminal:snapshot": TerminalSnapshotPayload,
   "setup:input": z.object({
     data: z.string(),
   }),
@@ -148,4 +140,3 @@ export type ClientEventMap = {
 };
 
 export type TerminalAttachResponse = z.infer<typeof TerminalAttachResponse>;
-export type TerminalSnapshotPayload = z.infer<typeof TerminalSnapshotPayload>;
