@@ -9,7 +9,7 @@ import {
   updateProjectRecord,
 } from "./projects.js";
 import { runGhCommand, runGitHubApi } from "../integrations/github.js";
-import { findTerminalRecords, getTerminalRecord } from "./terminals.js";
+import { findTerminalRecords, getTerminalRecord, readTerminalHistory } from "./terminals.js";
 import type {
   KanbanOverlayRecord,
   KanbanTaskRecord,
@@ -67,6 +67,14 @@ interface GitHubPullRequestListItem {
   number: number;
   url: string;
 }
+
+interface PullRequestResolution {
+  pullRequest: GitHubPullRequest | null;
+  status: "none" | "existing" | "created";
+}
+
+const MAX_TERMINAL_COMMENT_LINES = 80;
+const MAX_TERMINAL_COMMENT_CHARS = 6000;
 
 function readOverlays(): Record<string, KanbanOverlayRecord> {
   return readJsonFile<Record<string, KanbanOverlayRecord>>(TASK_OVERLAYS_PATH, {});
@@ -137,6 +145,78 @@ function runGit(projectPath: string, args: string[]): string {
         : "";
     throw new Error(stderr || `git ${args.join(" ")} failed`);
   }
+}
+
+function getPreferredBaseRef(projectPath: string, defaultBranch: string): string {
+  try {
+    runGit(projectPath, ["rev-parse", "--verify", `origin/${defaultBranch}`]);
+    return `origin/${defaultBranch}`;
+  } catch {
+    return defaultBranch;
+  }
+}
+
+function countCommitsAhead(projectPath: string, baseRef: string): number {
+  const raw = runGit(projectPath, ["rev-list", "--count", `${baseRef}..HEAD`]);
+  const count = Number(raw);
+  return Number.isFinite(count) ? count : 0;
+}
+
+function stripAnsiSequences(input: string): string {
+  return input
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\r/g, "")
+    .replace(/\0/g, "");
+}
+
+export function extractTerminalTailForComment(
+  transcript: string,
+  maxLines = MAX_TERMINAL_COMMENT_LINES,
+  maxChars = MAX_TERMINAL_COMMENT_CHARS
+): string {
+  const cleaned = stripAnsiSequences(transcript).trim();
+  if (!cleaned) {
+    return "";
+  }
+
+  const tailLines = cleaned.split("\n").slice(-maxLines);
+  let tail = tailLines.join("\n").trim();
+  if (tail.length > maxChars) {
+    tail = tail.slice(-maxChars).trim();
+    const newlineIndex = tail.indexOf("\n");
+    if (newlineIndex !== -1 && newlineIndex < tail.length - 1) {
+      tail = tail.slice(newlineIndex + 1).trim();
+    }
+  }
+
+  return tail;
+}
+
+export function buildKanbanIssueCompletionComment(input: {
+  successful: boolean;
+  completionSummary: string;
+  pullRequest?: GitHubPullRequest | null;
+  terminalTail?: string;
+}): string {
+  const lines = [
+    `Maestro ${input.successful ? "finished" : "stopped"} work on this task.`,
+    "",
+    `Status: ${input.completionSummary}`,
+  ];
+
+  if (input.pullRequest?.html_url) {
+    lines.push(`Pull request: ${input.pullRequest.html_url}`);
+  }
+
+  const terminalTail = input.terminalTail?.trim();
+  if (terminalTail) {
+    lines.push("", "Last terminal output:", "", "```text");
+    lines.push(terminalTail.replace(/```/g, "'''"));
+    lines.push("```");
+  }
+
+  return lines.join("\n").trim();
 }
 
 function getColumnForIssue(issue: GitHubIssue): KanbanTaskRecord["column"] {
@@ -219,6 +299,17 @@ async function patchGitHubIssue(
   return githubRequest<GitHubIssue>(project, `/issues/${issueNumber}`, {
     method: "PATCH",
     body,
+  });
+}
+
+async function postGitHubIssueComment(
+  project: ProjectRecord,
+  issueNumber: number,
+  body: string
+): Promise<void> {
+  await githubRequest(project, `/issues/${issueNumber}/comments`, {
+    method: "POST",
+    body: { body },
   });
 }
 
@@ -546,6 +637,14 @@ export function handleGitHubPullRequestWebhookEvent(
       pullRequestNumber: pullRequest.number,
       pullRequestUrl: pullRequest.htmlUrl,
     });
+  } else if (action === "closed" && pullRequest.merged) {
+    setOverlay(projectId, issueNumber, {
+      pullRequestNumber: pullRequest.number,
+      pullRequestUrl: pullRequest.htmlUrl,
+      assignedTerminalId: null,
+      progress: 100,
+      completionSummary: `PR #${pullRequest.number} merged.`,
+    });
   } else if (action === "closed" && !pullRequest.merged) {
     setOverlay(projectId, issueNumber, {
       pullRequestNumber: null,
@@ -644,16 +743,19 @@ async function createOrUpdatePullRequestForTask(
   project: ProjectRecord,
   issueNumber: number,
   gitPath: string
-): Promise<GitHubPullRequest | null> {
+): Promise<PullRequestResolution> {
   if (!project.githubOwner || !project.githubRepo) {
-    return null;
+    return { pullRequest: null, status: "none" };
   }
 
   const existingOverlay = getOverlay(project.id, issueNumber);
   if (existingOverlay?.pullRequestNumber && existingOverlay.pullRequestUrl) {
     return {
-      number: existingOverlay.pullRequestNumber,
-      html_url: existingOverlay.pullRequestUrl,
+      pullRequest: {
+        number: existingOverlay.pullRequestNumber,
+        html_url: existingOverlay.pullRequestUrl,
+      },
+      status: "existing",
     };
   }
 
@@ -661,6 +763,7 @@ async function createOrUpdatePullRequestForTask(
 
   const currentBranch = runGit(gitPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const defaultBranch = project.defaultBranch || "main";
+  const baseRef = getPreferredBaseRef(gitPath, defaultBranch);
   const branchName =
     existingOverlay?.branchName ||
     (currentBranch !== "HEAD" && currentBranch !== defaultBranch
@@ -678,18 +781,6 @@ async function createOrUpdatePullRequestForTask(
   setOverlay(project.id, issueNumber, {
     branchName,
   });
-
-  if (!runGit(gitPath, ["status", "--porcelain"])) {
-    return null;
-  }
-
-  runGit(gitPath, ["add", "-A"]);
-  if (!runGit(gitPath, ["diff", "--cached", "--name-only"])) {
-    return null;
-  }
-
-  runGit(gitPath, ["commit", "-m", `Resolve #${issueNumber}: ${task.title}`]);
-  runGit(gitPath, ["push", "-u", "origin", branchName]);
 
   const findPullRequest = (): GitHubPullRequest | null => {
     const raw = runGhCommand(
@@ -718,6 +809,35 @@ async function createOrUpdatePullRequestForTask(
   };
 
   let pullRequest = findPullRequest();
+  if (pullRequest) {
+    setOverlay(project.id, issueNumber, {
+      branchName,
+      pullRequestNumber: pullRequest.number,
+      pullRequestUrl: pullRequest.html_url,
+    });
+    return { pullRequest, status: "existing" };
+  }
+
+  const hasUncommittedChanges = Boolean(runGit(gitPath, ["status", "--porcelain"]));
+  if (hasUncommittedChanges) {
+    runGit(gitPath, ["add", "-A"]);
+    if (!runGit(gitPath, ["diff", "--cached", "--name-only"])) {
+      return { pullRequest: null, status: "none" };
+    }
+
+    runGit(gitPath, ["commit", "-m", `Resolve #${issueNumber}: ${task.title}`]);
+  }
+
+  if (!hasUncommittedChanges) {
+    if (branchName === defaultBranch || countCommitsAhead(gitPath, baseRef) === 0) {
+      return { pullRequest: null, status: "none" };
+    }
+  }
+
+  runGit(gitPath, ["push", "-u", "origin", branchName]);
+
+  pullRequest = findPullRequest();
+  let status: PullRequestResolution["status"] = "existing";
   if (!pullRequest) {
     runGhCommand(
       [
@@ -735,6 +855,7 @@ async function createOrUpdatePullRequestForTask(
       { cwd: gitPath }
     );
     pullRequest = findPullRequest();
+    status = "created";
   }
 
   if (!pullRequest) {
@@ -747,7 +868,7 @@ async function createOrUpdatePullRequestForTask(
     pullRequestUrl: pullRequest.html_url,
   });
 
-  return pullRequest;
+  return { pullRequest, status };
 }
 
 export async function finalizeKanbanTaskAfterTerminalExit(
@@ -760,12 +881,38 @@ export async function finalizeKanbanTaskAfterTerminalExit(
     throw new Error("Task not found");
   }
 
+  const terminalTail = extractTerminalTailForComment(readTerminalHistory(terminalId));
+
   if (!successful) {
     const resetTask = await updateKanbanTaskRecord(task.id, {
       column: "planned",
       assignedTerminalId: null,
       completionSummary: "Terminal run failed. Task moved back to planned.",
     });
+
+    const parsedFailureTask = parseGitHubTaskId(task.id);
+    if (parsedFailureTask) {
+      const failureProject = getProjectRecordById(parsedFailureTask.projectId);
+      if (failureProject) {
+        try {
+          await postGitHubIssueComment(
+            failureProject,
+            parsedFailureTask.issueNumber,
+            buildKanbanIssueCompletionComment({
+              successful: false,
+              completionSummary: "Terminal run failed. Task moved back to planned.",
+              terminalTail,
+            })
+          );
+        } catch (error) {
+          console.warn(
+            `Failed to post kanban completion comment for issue ${parsedFailureTask.issueNumber}:`,
+            error
+          );
+        }
+      }
+    }
+
     return { taskId: resetTask.id, column: resetTask.column };
   }
 
@@ -791,20 +938,40 @@ export async function finalizeKanbanTaskAfterTerminalExit(
   const terminal = getTerminalRecord(terminalId);
   const gitPath = terminal?.worktreePath || terminal?.projectPath || project.localPath;
 
-  const pullRequest = await createOrUpdatePullRequestForTask(
+  const pullRequestResult = await createOrUpdatePullRequestForTask(
     task,
     project,
     parsed.issueNumber,
     gitPath
   );
+  const pullRequest = pullRequestResult.pullRequest;
+  const completionSummary = pullRequest
+    ? `PR #${pullRequest.number} ready for review.`
+    : "Completed without code changes.";
   const nextTask = await updateKanbanTaskRecord(task.id, {
     column: pullRequest ? "review" : "done",
     progress: 100,
     assignedTerminalId: terminalId,
-    completionSummary: pullRequest
-      ? `Opened PR #${pullRequest.number}`
-      : "Completed without code changes.",
+    completionSummary,
   });
+
+  try {
+    await postGitHubIssueComment(
+      project,
+      parsed.issueNumber,
+      buildKanbanIssueCompletionComment({
+        successful: true,
+        completionSummary,
+        pullRequest,
+        terminalTail,
+      })
+    );
+  } catch (error) {
+    console.warn(
+      `Failed to post kanban completion comment for issue ${parsed.issueNumber}:`,
+      error
+    );
+  }
 
   return { taskId: nextTask.id, column: nextTask.column };
 }
