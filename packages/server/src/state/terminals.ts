@@ -144,7 +144,7 @@ function trimPartialTerminalTail(content: string): string {
  */
 export function readTerminalHistory(
   terminalId: string,
-  maxBytes = 512 * 1024
+  maxBytes = 2 * 1024 * 1024
 ): string {
   const historyPath = path.join(terminalDir(terminalId), "transcript.log");
   if (!fs.existsSync(historyPath)) return "";

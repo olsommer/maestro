@@ -59,7 +59,7 @@ export function SetupDialog({
         fontFamily: "monospace",
         fontSize: 13,
         cursorBlink: true,
-        scrollback: 5000,
+        scrollback: 50000,
       });
 
       term.loadAddon(fitAddon);

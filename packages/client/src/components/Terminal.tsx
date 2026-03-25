@@ -299,7 +299,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: window.innerWidth < 768 ? 10 : 13,
         cursorBlink: true,
-        scrollback: 5000,
+        scrollback: 50000,
         convertEol: false,
         disableStdin: false,
       });
