@@ -10,6 +10,7 @@ import {
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
 import {
+  buildTerminalSnapshotOutput,
   buildTerminalAttachResponse,
   type TerminalAttachResponse,
 } from "./terminal-attach.js";
@@ -618,27 +619,13 @@ export function getTerminalOutputSnapshot(
 ): { output: string[]; cursor: number } {
   const rt = getRuntime(terminalId);
   const persistedSnapshot = readTerminalSnapshot(terminalId);
-  const cursor = Math.max(rt.nextOutputSeq - 1, persistedSnapshot?.cursor ?? 0);
-
-  if (rt.outputBuffer.length > 0) {
-    return {
-      output: rt.outputBuffer.map((chunk) => chunk.data),
-      cursor,
-    };
-  }
-
-  if (persistedSnapshot) {
-    return { output: [persistedSnapshot.data], cursor };
-  }
-
-  // Fall back to the persisted transcript after server restart or when no
-  // in-memory replay buffer is available.
   const history = readTerminalHistory(terminalId);
-  if (history) {
-    return { output: [history], cursor };
-  }
 
-  return { output: [], cursor };
+  return buildTerminalSnapshotOutput({
+    outputBuffer: rt.outputBuffer,
+    persistedSnapshot,
+    history,
+  });
 }
 
 export function getBufferedTerminalOutputSince(
