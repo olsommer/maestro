@@ -31,7 +31,7 @@ Notes:
 - `UPDATE_SERVICES` defaults to `server`; keep the updater itself outside this list.
 - `GITHUB_TOKEN` is optional for public repos, but recommended to avoid rate limits.
 - `UPDATER_TOKEN` is optional on the internal Docker network. Set it if you want explicit request authentication.
-- The updater passes `COMPOSE_PROJECT_NAME` through the environment and can use either `docker compose` or `docker-compose`, depending on what is available in the container.
+- The bundled updater image installs `docker`, the Compose plugin, and `buildx`; it talks to the host Docker daemon through `/var/run/docker.sock`.
 
 ## Compose Topology
 
@@ -54,7 +54,8 @@ docker compose up -d --build
 
 Host requirements:
 
-- a Docker installation that provides either `docker compose` or `docker-compose`
+- for launching the stack locally: a Docker installation with `docker compose`
+- for runtime redeploys: the updater container must have `/var/run/docker.sock` mounted so its bundled Docker CLI can reach the host daemon
 
 ## Maestro server integration
 
