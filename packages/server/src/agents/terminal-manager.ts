@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider, TerminalSnapshotPayload } from "@maestro/wire";
+import type { AgentStatus, AgentProvider } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -219,52 +219,6 @@ async function flushRuntimePersistence(terminalId: string, rt: TerminalRuntime) 
   await flushBufferedHistory(terminalId, rt);
   await persistRuntimeSnapshot(terminalId, rt);
   flushLastActivity(terminalId, rt);
-}
-
-function isSnapshotNewer(
-  current: Pick<TerminalSnapshotPayload, "cursor" | "savedAt"> | null,
-  next: Pick<TerminalSnapshotPayload, "cursor" | "savedAt">
-) {
-  if (!current) {
-    return true;
-  }
-  if (next.cursor !== current.cursor) {
-    return next.cursor > current.cursor;
-  }
-  return next.savedAt >= current.savedAt;
-}
-
-export function persistTerminalSnapshot(
-  terminalId: string,
-  snapshot: Omit<TerminalSnapshotPayload, "terminalId">
-): boolean {
-  if (!getTerminalRecord(terminalId)) {
-    return false;
-  }
-
-  const current = readTerminalSnapshot(terminalId);
-  if (!isSnapshotNewer(current, snapshot)) {
-    return false;
-  }
-
-  writeTerminalSnapshot(terminalId, {
-    ...snapshot,
-    cols: current?.cols,
-    rows: current?.rows,
-  });
-  const rt = getRuntime(terminalId);
-  if (rt.nextOutputSeq <= snapshot.cursor) {
-    rt.nextOutputSeq = snapshot.cursor + 1;
-  }
-  void rt.replica.replaceSnapshot(
-    {
-      data: snapshot.data,
-      cols: current?.cols ?? 120,
-      rows: current?.rows ?? 30,
-    },
-    snapshot.cursor
-  );
-  return true;
 }
 
 type TerminalWithProject = TerminalRecord & {

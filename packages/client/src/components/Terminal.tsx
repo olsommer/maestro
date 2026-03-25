@@ -23,7 +23,6 @@ import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import {
   TerminalAttachResponse as TerminalAttachResponseSchema,
   type TerminalAttachResponse,
-  type TerminalSnapshotPayload,
 } from "@maestro/wire";
 
 interface StoredTerminalSnapshot {
@@ -32,6 +31,12 @@ interface StoredTerminalSnapshot {
   savedAt: number;
 }
 
+interface LocalTerminalSnapshot {
+  terminalId: string;
+  cursor: number;
+  data: string;
+  savedAt: number;
+}
 const SNAPSHOT_PERSIST_DELAY_MS = 400;
 function isEditableElement(element: Element | null): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
@@ -380,7 +385,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       const storedSnapshot = loadStoredSnapshot(terminalId);
 
       const persistSnapshot = () => {
-        const snapshot: TerminalSnapshotPayload = {
+        const snapshot: LocalTerminalSnapshot = {
           terminalId,
           cursor: lastSeqRef.current,
           data: serializeAddon.serialize(),
