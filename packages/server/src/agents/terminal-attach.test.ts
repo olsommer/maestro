@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTerminalAttachResponse } from "./terminal-attach.js";
+import {
+  buildTerminalAttachResponse,
+  buildTerminalSnapshotOutput,
+} from "./terminal-attach.js";
 
 test("returns a snapshot for an initial attach", () => {
   const result = buildTerminalAttachResponse({
@@ -81,5 +84,59 @@ test("falls back to a snapshot after a restart when no replay buffer is availabl
     terminalId: "term-1",
     output: ["persisted transcript after restart"],
     cursor: 0,
+  });
+});
+
+test("builds snapshot output from the persisted snapshot plus a contiguous live tail", () => {
+  const result = buildTerminalSnapshotOutput({
+    persistedSnapshot: {
+      data: "persisted-screen",
+      cursor: 10,
+    },
+    outputBuffer: [
+      { seq: 11, data: "a" },
+      { seq: 12, data: "b" },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    output: ["persisted-screen", "a", "b"],
+    cursor: 12,
+  });
+});
+
+test("does not use non-contiguous live chunks to advance a persisted snapshot", () => {
+  const result = buildTerminalSnapshotOutput({
+    persistedSnapshot: {
+      data: "persisted-screen",
+      cursor: 10,
+    },
+    outputBuffer: [
+      { seq: 12, data: "b" },
+      { seq: 13, data: "c" },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    output: ["persisted-screen"],
+    cursor: 10,
+  });
+});
+
+test("prefers a persisted snapshot over replay chunks when building snapshot output", () => {
+  const result = buildTerminalSnapshotOutput({
+    persistedSnapshot: {
+      data: "rendered-screen",
+      cursor: 6,
+    },
+    outputBuffer: [
+      { seq: 5, data: "hello" },
+      { seq: 6, data: " world" },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    output: ["rendered-screen"],
+    cursor: 6,
   });
 });

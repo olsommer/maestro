@@ -3,6 +3,11 @@ export interface TerminalOutputChunk {
   data: string;
 }
 
+export interface TerminalSnapshotState {
+  cursor: number;
+  data: string;
+}
+
 export type TerminalAttachResponse =
   | {
       mode: "snapshot";
@@ -16,6 +21,48 @@ export type TerminalAttachResponse =
       chunks: TerminalOutputChunk[];
       cursor: number;
     };
+
+export function buildTerminalSnapshotOutput(options: {
+  outputBuffer: TerminalOutputChunk[];
+  persistedSnapshot?: TerminalSnapshotState | null;
+  history?: string;
+}): { output: string[]; cursor: number } {
+  const { outputBuffer, persistedSnapshot, history } = options;
+
+  if (persistedSnapshot) {
+    const output = [persistedSnapshot.data];
+    let cursor = persistedSnapshot.cursor;
+    let nextSeq = persistedSnapshot.cursor + 1;
+
+    for (const chunk of outputBuffer) {
+      if (chunk.seq < nextSeq) {
+        continue;
+      }
+      if (chunk.seq !== nextSeq) {
+        break;
+      }
+
+      output.push(chunk.data);
+      cursor = chunk.seq;
+      nextSeq += 1;
+    }
+
+    return { output, cursor };
+  }
+
+  if (outputBuffer.length > 0) {
+    return {
+      output: outputBuffer.map((chunk) => chunk.data),
+      cursor: outputBuffer[outputBuffer.length - 1].seq,
+    };
+  }
+
+  if (history) {
+    return { output: [history], cursor: 0 };
+  }
+
+  return { output: [], cursor: 0 };
+}
 
 export function buildTerminalAttachResponse(options: {
   terminalId: string;
