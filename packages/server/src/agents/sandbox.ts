@@ -47,6 +47,15 @@ export function getNsjailPath(): string {
 
 const SANDBOX_UID = 1500;
 const SANDBOX_GID = 1500;
+const BASE_READONLY_MOUNTS = ["/usr", "/bin", "/lib", "/sbin", "/etc"];
+const BASE_PATH_DIRS = [
+  "/usr/local/sbin",
+  "/usr/local/bin",
+  "/usr/sbin",
+  "/usr/bin",
+  "/sbin",
+  "/bin",
+];
 
 /**
  * Ensure a directory is writable by the sandbox user.
@@ -74,6 +83,10 @@ export function ensureSandboxWritable(dirPath: string): void {
  */
 export function buildNsjailArgs(config: SandboxConfig): string[] {
   const home = os.homedir();
+  const mountedReadonlyRoots = [...BASE_READONLY_MOUNTS];
+  const nodeBin = getNodeBinaryDir();
+  const npmGlobalPrefix = getNpmGlobalPrefix();
+  const codexCompanionBinDir = getCliCompanionBinDir("codex");
 
   const args: string[] = [
     // One-shot mode (run command once, exit)
@@ -118,7 +131,7 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
   ];
 
   // -- Read-only system mounts --
-  for (const dir of ["/usr", "/bin", "/lib", "/sbin", "/etc"]) {
+  for (const dir of BASE_READONLY_MOUNTS) {
     if (fs.existsSync(dir)) {
       args.push("--bindmount_ro", `${dir}:${dir}`);
     }
@@ -147,15 +160,22 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
   // Node.js binary + npm global modules (read-only)
   // In Docker these are typically under /usr/local which is already mounted,
   // but on custom setups (nvm, volta) they may be elsewhere.
-  const nodeBin = getNodeBinaryDir();
-  if (nodeBin && !isAlreadyMounted(nodeBin, ["/usr", "/bin", "/lib", "/sbin"])) {
+  if (nodeBin && !isAlreadyMounted(nodeBin, mountedReadonlyRoots)) {
     args.push("--bindmount_ro", `${nodeBin}:${nodeBin}`);
+    mountedReadonlyRoots.push(nodeBin);
   }
 
   // npm global prefix (for globally installed CLIs like claude, codex)
-  const npmGlobalPrefix = getNpmGlobalPrefix();
-  if (npmGlobalPrefix && !isAlreadyMounted(npmGlobalPrefix, ["/usr", "/bin", "/lib", "/sbin"])) {
+  if (npmGlobalPrefix && !isAlreadyMounted(npmGlobalPrefix, mountedReadonlyRoots)) {
     args.push("--bindmount_ro", `${npmGlobalPrefix}:${npmGlobalPrefix}`);
+    mountedReadonlyRoots.push(npmGlobalPrefix);
+  }
+
+  // Codex ships an `rg` wrapper next to its real CLI entrypoint. When that
+  // directory sits outside the usual mounted roots, expose it explicitly.
+  if (codexCompanionBinDir && !isAlreadyMounted(codexCompanionBinDir, mountedReadonlyRoots)) {
+    args.push("--bindmount_ro", `${codexCompanionBinDir}:${codexCompanionBinDir}`);
+    mountedReadonlyRoots.push(codexCompanionBinDir);
   }
 
   // Maestro data directory (read-write for agent state)
@@ -227,8 +247,14 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
     args.push("--env", `${key}=${value}`);
   }
 
-  // PATH must include dirs where node, claude, codex, gh live
-  args.push("--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+  // PATH must include Codex companion dirs so bundled helpers like `rg`
+  // remain available inside the jail.
+  const sandboxPath = buildSandboxPath({
+    nodeBin,
+    npmGlobalPrefix,
+    companionBinDirs: [codexCompanionBinDir],
+  });
+  args.push("--env", `PATH=${sandboxPath}`);
   args.push("--env", `HOME=${sandboxHome}`);
   args.push("--env", "USER=sandbox");
   args.push("--env", "TERM=xterm-256color");
@@ -265,4 +291,29 @@ function getNpmGlobalPrefix(): string | null {
   } catch {
     return null;
   }
+}
+
+function getCliCompanionBinDir(binaryName: string): string | null {
+  try {
+    const binaryPath = execSync(`which ${binaryName}`, { encoding: "utf-8" }).trim();
+    const realPath = fs.realpathSync(binaryPath);
+    const companionDir = path.dirname(realPath);
+    return fs.existsSync(companionDir) ? companionDir : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSandboxPath(options: {
+  nodeBin: string | null;
+  npmGlobalPrefix: string | null;
+  companionBinDirs: Array<string | null>;
+}): string {
+  const extraPathDirs = [
+    options.nodeBin,
+    options.npmGlobalPrefix ? path.join(options.npmGlobalPrefix, "bin") : null,
+    ...options.companionBinDirs,
+  ].filter((dir): dir is string => typeof dir === "string" && fs.existsSync(dir));
+
+  return Array.from(new Set([...BASE_PATH_DIRS, ...extraPathDirs])).join(":");
 }
