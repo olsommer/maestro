@@ -57,7 +57,6 @@ async function assignTaskToTerminal(
   let terminalId: string | null = null;
   try {
     const terminal = await createAutoSpawnTerminal({
-      name: `kanban-${task.title}-${Date.now()}`,
       kind: "kanban",
       projectId: task.projectId ?? undefined,
       projectPath: task.projectPath,
