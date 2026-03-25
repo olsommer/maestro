@@ -41,7 +41,7 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const terminal = await getTerminal(req.params.id);
       if (!terminal) return reply.status(404).send({ error: "Terminal not found" });
-      return getTerminalOutputSnapshot(req.params.id);
+      return await getTerminalOutputSnapshot(req.params.id);
     }
   );
 
