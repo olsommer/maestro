@@ -3,7 +3,6 @@ import { ClientEvents, TerminalAttachResponse } from "@maestro/wire";
 import {
   getTerminalAttachment,
   getBufferedTerminalOutputSince,
-  persistTerminalSnapshot,
   sendTerminalInput,
   resizeTerminal,
 } from "../agents/terminal-manager.js";
@@ -53,15 +52,6 @@ export function registerSocketHandlers(io: SocketServer) {
         socket.leave(`terminal:${terminalId}`);
       } catch {
         socket.emit("error", { message: "Invalid unsubscribe payload" });
-      }
-    });
-
-    socket.on("terminal:snapshot", (data) => {
-      try {
-        const { terminalId, ...snapshot } = ClientEvents["terminal:snapshot"].parse(data);
-        persistTerminalSnapshot(terminalId, snapshot);
-      } catch {
-        socket.emit("error", { message: "Invalid snapshot payload" });
       }
     });
 

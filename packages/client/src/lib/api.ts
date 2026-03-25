@@ -1,5 +1,4 @@
 import { getAuthToken, getServerUrl, invalidateAuth } from "./auth";
-import type { TerminalSnapshotPayload } from "@maestro/wire";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
@@ -315,17 +314,6 @@ export const api = {
     request<{ ok: boolean }>(`/api/terminals/${id}/input`, {
       method: "POST",
       body: JSON.stringify({ text }),
-    }),
-
-  saveTerminalSnapshot: (
-    id: string,
-    snapshot: TerminalSnapshotPayload,
-    options?: RequestInit
-  ) =>
-    request<{ ok: boolean; skipped: boolean }>(`/api/terminals/${id}/snapshot`, {
-      method: "POST",
-      body: JSON.stringify(snapshot),
-      ...options,
     }),
 
   deleteTerminal: (id: string) =>
