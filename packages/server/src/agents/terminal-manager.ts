@@ -53,7 +53,7 @@ export interface StartTerminalOptions {
 }
 
 const agentRuntimes = new Map<string, TerminalRuntime>();
-const MAX_OUTPUT_LINES = 1000;
+const MAX_OUTPUT_LINES = 10000;
 const HISTORY_FLUSH_DELAY_MS = 64;
 const LAST_ACTIVITY_FLUSH_DELAY_MS = 1000;
 
