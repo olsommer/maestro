@@ -8,6 +8,14 @@ import { SocketProvider } from "@/components/SocketProvider";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { api } from "@/lib/api";
 
+function isEditableElement(element: Element | null): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.isContentEditable) return true;
+
+  const tagName = element.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
 function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNode; hideMobileHeader?: boolean }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -25,19 +33,18 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
       });
   }, []);
 
-  // On pages that manage their own mobile header (e.g. agents with terminal),
-  // track visualViewport height to resize when the keyboard opens/closes.
-  // Also constrain the sidebar wrapper to prevent page-level scrolling.
+  // Lock the mobile shell to the layout viewport height so the software
+  // keyboard overlays the page instead of reflowing the terminal.
   useEffect(() => {
     if (!hideMobileHeader) return;
-    const vv = window.visualViewport;
-    if (!vv) return;
 
     const inset = insetRef.current;
     const wrapper = inset?.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
+    let lockedWidth = window.innerWidth;
+    let lockedHeight = window.innerHeight;
 
-    const update = () => {
-      const h = `${vv.height}px`;
+    const applyHeight = (height: number) => {
+      const h = `${height}px`;
       if (inset) {
         inset.style.height = h;
         inset.style.minHeight = h;
@@ -50,10 +57,29 @@ function AppShellInner({ children, hideMobileHeader }: { children: React.ReactNo
         wrapper.style.overflow = "hidden";
       }
     };
-    update();
-    vv.addEventListener("resize", update);
+
+    const update = () => {
+      const nextWidth = window.innerWidth;
+      const nextHeight = window.innerHeight;
+      const keyboardLikeResize =
+        nextWidth === lockedWidth &&
+        nextHeight < lockedHeight &&
+        isEditableElement(document.activeElement);
+
+      if (keyboardLikeResize) {
+        applyHeight(lockedHeight);
+        return;
+      }
+
+      lockedWidth = nextWidth;
+      lockedHeight = nextHeight;
+      applyHeight(lockedHeight);
+    };
+
+    applyHeight(lockedHeight);
+    window.addEventListener("resize", update);
     return () => {
-      vv.removeEventListener("resize", update);
+      window.removeEventListener("resize", update);
       if (inset) {
         inset.style.height = "";
         inset.style.minHeight = "";
