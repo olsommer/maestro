@@ -20,6 +20,10 @@ function terminalDir(terminalId: string): string {
   return ensureDir(path.join(TERMINAL_HISTORY_DIR, terminalId));
 }
 
+function terminalSnapshotPath(terminalId: string): string {
+  return path.join(terminalDir(terminalId), "snapshot.json");
+}
+
 function syncTerminalMeta(terminal: TerminalRecord): void {
   writeJsonFile(path.join(terminalDir(terminal.id), "meta.json"), terminal);
 }
@@ -84,6 +88,43 @@ export function deleteTerminalRecord(terminalId: string): void {
 export function appendTerminalHistory(terminalId: string, data: string): void {
   const historyPath = path.join(terminalDir(terminalId), "transcript.log");
   fs.appendFileSync(historyPath, data);
+}
+
+export async function appendTerminalHistoryBatch(
+  terminalId: string,
+  data: string
+): Promise<void> {
+  const historyPath = path.join(terminalDir(terminalId), "transcript.log");
+  await fs.promises.appendFile(historyPath, data);
+}
+
+export interface PersistedTerminalSnapshot {
+  cursor: number;
+  data: string;
+  savedAt: number;
+}
+
+export function readTerminalSnapshot(terminalId: string): PersistedTerminalSnapshot | null {
+  const snapshot = readJsonFile<Partial<PersistedTerminalSnapshot> | null>(
+    terminalSnapshotPath(terminalId),
+    null
+  );
+  if (
+    snapshot == null ||
+    typeof snapshot.cursor !== "number" ||
+    typeof snapshot.data !== "string" ||
+    typeof snapshot.savedAt !== "number"
+  ) {
+    return null;
+  }
+  return snapshot as PersistedTerminalSnapshot;
+}
+
+export function writeTerminalSnapshot(
+  terminalId: string,
+  snapshot: PersistedTerminalSnapshot
+): void {
+  writeJsonFile(terminalSnapshotPath(terminalId), snapshot);
 }
 
 function trimPartialTerminalTail(content: string): string {
