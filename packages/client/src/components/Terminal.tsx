@@ -118,7 +118,7 @@ function MobileTerminalControls({
     onTranscript,
   });
 
-  if (!isMobile || keyboardOpen) return null;
+  if (!isMobile) return null;
 
   const isListening = voiceStatus === "listening";
   const toolbarButtonClassName = "min-w-0 px-0";
@@ -126,7 +126,9 @@ function MobileTerminalControls({
   return (
     <div
       className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      aria-hidden={keyboardOpen}
       onTouchMove={(event) => event.stopPropagation()}
+      style={keyboardOpen ? { visibility: "hidden" } : undefined}
     >
       {moreOpen && (
         <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
@@ -370,14 +372,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       });
       resizeObserver.observe(container);
 
-      let resizeTimer: ReturnType<typeof setTimeout>;
       let attachRequestId = 0;
-      const onViewportResize = () => {
-        fitAddon.fit();
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => fitAddon.fit(), 100);
-      };
-      window.visualViewport?.addEventListener("resize", onViewportResize);
       let cleanedUp = false;
 
       const socket = getSocket();
@@ -619,9 +614,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           persistTimerRef.current = null;
         }
         persistSnapshot();
-        clearTimeout(resizeTimer);
         resizeObserver.disconnect();
-        window.visualViewport?.removeEventListener("resize", onViewportResize);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         window.removeEventListener("blur", onWindowBlur);

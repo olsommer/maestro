@@ -71,37 +71,18 @@ function getProviderLabel(terminal: TerminalRecord) {
     : terminal.provider;
 }
 
-function useMobileKeyboard() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const threshold = 100;
-    const check = () => setOpen(window.innerHeight - vv.height > threshold);
-    check();
-    vv.addEventListener("resize", check);
-    return () => vv.removeEventListener("resize", check);
-  }, []);
-
-  return open;
-}
-
 function TerminalPanel({
   terminal,
   isSelected,
   onSelect,
   onReconnect,
   onDelete,
-  mobileKeyboardOpen,
 }: {
   terminal: TerminalRecord;
   isSelected: boolean;
   onSelect: () => void;
   onReconnect: () => void;
   onDelete: () => void;
-  mobileKeyboardOpen?: boolean;
 }) {
   const providerLabel = getProviderLabel(terminal);
   const canReconnect =
@@ -117,72 +98,70 @@ function TerminalPanel({
         isSelected ? "ring-ring/50 shadow-lg" : "ring-border"
       )}
     >
-      {!mobileKeyboardOpen && (
-        <div className="flex items-center justify-between gap-2 border-b bg-card px-2 py-1.5 md:px-3 md:py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 md:block">
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <span className="truncate text-xs font-medium md:text-sm">
-                {terminal.name || `Terminal ${terminal.id.slice(0, 8)}`}
-              </span>
-              <StatusDot status={terminal.status} className="md:hidden" />
-              <span className="hidden md:inline-flex">
-                <StatusBadge status={terminal.status} />
-              </span>
-            </div>
-            <div className="hidden flex-wrap items-center gap-1.5 md:mt-1 md:flex">
-              <Badge variant="secondary" className="text-[10px]">
-                {providerLabel}
-              </Badge>
-              {terminal.model && (
-                <Badge variant="outline" className="text-[10px]">
-                  {terminal.model}
-                </Badge>
-              )}
-              <Badge variant="outline" className="max-w-full truncate text-[10px]">
-                {terminal.project?.name || terminal.projectPath}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-1 md:hidden">
-              {terminal.model && (
-                <Badge variant="outline" className="px-1 py-0 text-[9px]">
-                  {terminal.model}
-                </Badge>
-              )}
-              <Badge variant="outline" className="max-w-[120px] truncate px-1 py-0 text-[9px]">
-                {terminal.project?.name || terminal.projectPath}
-              </Badge>
-            </div>
+      <div className="flex items-center justify-between gap-2 border-b bg-card px-2 py-1.5 md:px-3 md:py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 md:block">
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <span className="truncate text-xs font-medium md:text-sm">
+              {terminal.name || `Terminal ${terminal.id.slice(0, 8)}`}
+            </span>
+            <StatusDot status={terminal.status} className="md:hidden" />
+            <span className="hidden md:inline-flex">
+              <StatusBadge status={terminal.status} />
+            </span>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {canReconnect && (
-              <Button
-                size="xs"
-                variant="default"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onReconnect();
-                }}
-              >
-                <RotateCcwIcon data-icon="inline-start" />
-                Reconnect
-              </Button>
+          <div className="hidden flex-wrap items-center gap-1.5 md:mt-1 md:flex">
+            <Badge variant="secondary" className="text-[10px]">
+              {providerLabel}
+            </Badge>
+            {terminal.model && (
+              <Badge variant="outline" className="text-[10px]">
+                {terminal.model}
+              </Badge>
             )}
-            <Button
-              size="icon-xs"
-              variant="destructive"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2Icon />
-              <span className="sr-only">Delete terminal</span>
-            </Button>
+            <Badge variant="outline" className="max-w-full truncate text-[10px]">
+              {terminal.project?.name || terminal.projectPath}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1 md:hidden">
+            {terminal.model && (
+              <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                {terminal.model}
+              </Badge>
+            )}
+            <Badge variant="outline" className="max-w-[120px] truncate px-1 py-0 text-[9px]">
+              {terminal.project?.name || terminal.projectPath}
+            </Badge>
           </div>
         </div>
-      )}
+        <div className="flex shrink-0 items-center gap-1">
+          {canReconnect && (
+            <Button
+              size="xs"
+              variant="default"
+              onClick={(event) => {
+                event.stopPropagation();
+                onReconnect();
+              }}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              Reconnect
+            </Button>
+          )}
+          <Button
+            size="icon-xs"
+            variant="destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2Icon />
+            <span className="sr-only">Delete terminal</span>
+          </Button>
+        </div>
+      </div>
 
-      {terminal.error && !mobileKeyboardOpen && (
+      {terminal.error && (
         <div className="border-b bg-card/50 px-3 py-1.5 text-[11px] text-muted-foreground">
           <Alert variant="destructive" className="px-2 py-1.5 text-[11px]">
             <TriangleAlertIcon />
@@ -216,7 +195,6 @@ function TerminalPagePanel() {
   const isMobile = useIsMobile();
   const [pendingDeleteTerminal, setPendingDeleteTerminal] =
     useState<TerminalRecord | null>(null);
-  const mobileKeyboardOpen = useMobileKeyboard();
 
   const uniqueProjects = useMemo(() => {
     const seen = new Map<string, { id: string; name: string }>();
@@ -343,12 +321,7 @@ function TerminalPagePanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
-      <div
-        className={cn(
-          "sticky top-0 flex h-auto shrink-0 items-center gap-2 border-b bg-background px-2 py-2 md:h-16 md:px-4 md:py-3",
-          mobileKeyboardOpen && "hidden md:flex"
-        )}
-      >
+      <div className="sticky top-0 flex h-auto shrink-0 items-center gap-2 border-b bg-background px-2 py-2 md:h-16 md:px-4 md:py-3">
         <div className="flex flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-between">
           <SidebarTrigger className="-ml-1 md:hidden" />
           <div className="hidden md:contents">
@@ -467,7 +440,6 @@ function TerminalPagePanel() {
                 onSelect={() => selectTerminal(terminal.id)}
                 onReconnect={() => handleReconnectTerminal(terminal.id)}
                 onDelete={() => setPendingDeleteTerminal(terminal)}
-                mobileKeyboardOpen={isMobile ? mobileKeyboardOpen : undefined}
               />
             ))}
           </div>
