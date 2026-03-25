@@ -85,6 +85,10 @@ export function deleteTerminalRecord(terminalId: string): void {
   writeTerminals(readTerminals().filter((terminal) => terminal.id !== terminalId));
 }
 
+export function deleteTerminalState(terminalId: string): void {
+  fs.rmSync(terminalDir(terminalId), { recursive: true, force: true });
+}
+
 export function appendTerminalHistory(terminalId: string, data: string): void {
   const historyPath = path.join(terminalDir(terminalId), "transcript.log");
   fs.appendFileSync(historyPath, data);
@@ -102,6 +106,8 @@ export interface PersistedTerminalSnapshot {
   cursor: number;
   data: string;
   savedAt: number;
+  cols?: number;
+  rows?: number;
 }
 
 export function readTerminalSnapshot(terminalId: string): PersistedTerminalSnapshot | null {
@@ -113,7 +119,9 @@ export function readTerminalSnapshot(terminalId: string): PersistedTerminalSnaps
     snapshot == null ||
     typeof snapshot.cursor !== "number" ||
     typeof snapshot.data !== "string" ||
-    typeof snapshot.savedAt !== "number"
+    typeof snapshot.savedAt !== "number" ||
+    (snapshot.cols !== undefined && typeof snapshot.cols !== "number") ||
+    (snapshot.rows !== undefined && typeof snapshot.rows !== "number")
   ) {
     return null;
   }

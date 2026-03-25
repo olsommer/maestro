@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -34,8 +33,6 @@ interface StoredTerminalSnapshot {
 }
 
 const SNAPSHOT_PERSIST_DELAY_MS = 400;
-const SERVER_SNAPSHOT_THROTTLE_MS = 1500;
-
 function isEditableElement(element: Element | null): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
   if (element.isContentEditable) return true;
@@ -382,9 +379,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       socketRef.current = socket;
       const storedSnapshot = loadStoredSnapshot(terminalId);
 
-      let lastServerSnapshotSavedAt = 0;
-
-      const persistSnapshot = (options?: { forceServer?: boolean; keepalive?: boolean }) => {
+      const persistSnapshot = () => {
         const snapshot: TerminalSnapshotPayload = {
           terminalId,
           cursor: lastSeqRef.current,
@@ -397,25 +392,6 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           data: snapshot.data,
           savedAt: snapshot.savedAt,
         });
-
-        const shouldPersistServer =
-          options?.forceServer ||
-          snapshot.savedAt - lastServerSnapshotSavedAt >= SERVER_SNAPSHOT_THROTTLE_MS;
-
-        if (!shouldPersistServer) {
-          return;
-        }
-
-        lastServerSnapshotSavedAt = snapshot.savedAt;
-
-        if (options?.keepalive) {
-          void api
-            .saveTerminalSnapshot(terminalId, snapshot, { keepalive: true })
-            .catch(() => undefined);
-          return;
-        }
-
-        socket.emit("terminal:snapshot", snapshot);
       };
 
       const schedulePersistSnapshot = () => {
@@ -589,7 +565,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       const onPageHide = () => {
         rememberTerminalFocus();
-        persistSnapshot({ forceServer: true, keepalive: true });
+        persistSnapshot();
       };
       window.addEventListener("pagehide", onPageHide);
 
