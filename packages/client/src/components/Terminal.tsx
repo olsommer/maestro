@@ -351,7 +351,12 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (didScroll) {
           e.preventDefault();
           e.stopPropagation();
+          return;
         }
+
+        shouldRestoreFocusRef.current = isActiveRef.current;
+        term.focus();
+        requestAnimationFrame(() => fitAddon.fit());
       };
 
       container.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -500,6 +505,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       });
 
       const onPointerDown = () => {
+        if (isMobileRef.current) {
+          return;
+        }
         shouldRestoreFocusRef.current = isActiveRef.current;
         term.focus();
         requestAnimationFrame(() => fitAddon.fit());
