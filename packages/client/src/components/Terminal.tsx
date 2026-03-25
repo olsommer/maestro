@@ -218,7 +218,6 @@ function extractBufferText(term: XtermTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
-  const mobileKeyboardOpen = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
@@ -679,11 +678,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     };
   }, [terminalId]);
 
-  // Refit when the active terminal changes or when the mobile keyboard toggles.
+  // Refit when the active terminal changes and the mobile controls mount/unmount.
   useEffect(() => {
     const id = setTimeout(() => fitAddonRef.current?.fit(), 50);
     return () => clearTimeout(id);
-  }, [isActive, mobileKeyboardOpen]);
+  }, [isActive]);
 
   const handleShowText = useCallback(() => {
     if (termRef.current) {
