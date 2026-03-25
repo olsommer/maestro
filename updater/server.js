@@ -31,6 +31,7 @@ const state = {
   lastError: null,
   latestRelease: null,
 };
+let composeCliPromise = null;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -211,12 +212,15 @@ async function downloadReleaseTarball(release, destinationPath) {
   await pipeline(Readable.fromWeb(res.body), output);
 }
 
-async function runCommand(command, args, cwd) {
+async function runCommand(command, args, cwd, extraEnv = {}) {
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: {
+        ...process.env,
+        ...extraEnv,
+      },
     });
 
     let output = "";
@@ -275,24 +279,46 @@ async function ensureReleaseDownloaded(release) {
   }
 }
 
-function composeArgs(composePath, commandArgs) {
-  return [
-    "compose",
-    "--project-name",
-    COMPOSE_PROJECT_NAME,
-    "-f",
-    composePath,
-    ...commandArgs,
-  ];
+async function resolveComposeCli() {
+  if (!composeCliPromise) {
+    composeCliPromise = (async () => {
+      try {
+        await runCommand("docker", ["compose", "version"], process.cwd());
+        return { command: "docker", args: ["compose"] };
+      } catch (dockerComposeError) {
+        try {
+          await runCommand("docker-compose", ["version"], process.cwd());
+          return { command: "docker-compose", args: [] };
+        } catch (dockerComposeLegacyError) {
+          throw new Error(
+            "No supported Docker Compose CLI was found. Tried `docker compose` and `docker-compose`." +
+              " If this updater runs in Alpine, install the Compose plugin package (`docker-cli-compose`) in the image." +
+              `\n${String(dockerComposeError)}` +
+              `\n${String(dockerComposeLegacyError)}`
+          );
+        }
+      }
+    })();
+  }
+
+  return composeCliPromise;
+}
+
+async function runComposeCommand(composePath, commandArgs, cwd) {
+  const composeCli = await resolveComposeCli();
+  await runCommand(
+    composeCli.command,
+    [...composeCli.args, "-f", composePath, ...commandArgs],
+    cwd,
+    {
+      COMPOSE_PROJECT_NAME,
+    }
+  );
 }
 
 async function buildRelease(releaseDir) {
   const composePath = path.join(releaseDir, COMPOSE_FILE);
-  await runCommand(
-    "docker",
-    composeArgs(composePath, ["build", ...UPDATE_SERVICES]),
-    releaseDir
-  );
+  await runComposeCommand(composePath, ["build", ...UPDATE_SERVICES], releaseDir);
 }
 
 async function switchCurrentRelease(releaseDir) {
@@ -304,9 +330,9 @@ async function switchCurrentRelease(releaseDir) {
 
 async function bringUpServices() {
   const composePath = path.join(CURRENT_LINK, COMPOSE_FILE);
-  await runCommand(
-    "docker",
-    composeArgs(composePath, ["up", "-d", ...UPDATE_SERVICES]),
+  await runComposeCommand(
+    composePath,
+    ["up", "-d", ...UPDATE_SERVICES],
     path.dirname(composePath)
   );
 }

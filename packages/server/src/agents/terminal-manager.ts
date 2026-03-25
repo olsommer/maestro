@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider } from "@maestro/wire";
+import type { AgentStatus, AgentProvider, TerminalSnapshotPayload } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -10,19 +10,22 @@ import {
 } from "./pty-manager.js";
 import { getProvider } from "./providers.js";
 import {
+  buildTerminalSnapshotOutput,
   buildTerminalAttachResponse,
   type TerminalAttachResponse,
 } from "./terminal-attach.js";
 import { removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
-  appendTerminalHistory,
+  appendTerminalHistoryBatch,
   readTerminalHistory,
+  readTerminalSnapshot,
   createTerminalRecord,
   deleteTerminalRecord,
   getTerminalRecord,
   listTerminalRecords,
   updateTerminalRecord,
+  writeTerminalSnapshot,
 } from "../state/terminals.js";
 import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
@@ -37,6 +40,11 @@ export interface TerminalRuntime {
   lastStartedAt: number | null;
   intentionalStop: boolean;
   restartTimer: ReturnType<typeof setTimeout> | null;
+  pendingHistory: string[];
+  historyFlushTimer: ReturnType<typeof setTimeout> | null;
+  historyWritePromise: Promise<void>;
+  pendingLastActivity: string | null;
+  lastActivityFlushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface StartTerminalOptions {
@@ -46,7 +54,9 @@ export interface StartTerminalOptions {
 }
 
 const agentRuntimes = new Map<string, TerminalRuntime>();
-const MAX_OUTPUT_LINES = 1000;
+const MAX_OUTPUT_LINES = 10000;
+const HISTORY_FLUSH_DELAY_MS = 64;
+const LAST_ACTIVITY_FLUSH_DELAY_MS = 1000;
 
 export interface TerminalManagerDeps {
   io: SocketServer;
@@ -75,17 +85,124 @@ function normalizeTerminalName(name?: string): string | null {
 function getRuntime(terminalId: string): TerminalRuntime {
   let rt = agentRuntimes.get(terminalId);
   if (!rt) {
+    const persistedSnapshot = readTerminalSnapshot(terminalId);
     rt = {
       ptyId: null,
       outputBuffer: [],
-      nextOutputSeq: 1,
+      nextOutputSeq: persistedSnapshot ? persistedSnapshot.cursor + 1 : 1,
       lastStartedAt: null,
       intentionalStop: false,
       restartTimer: null,
+      pendingHistory: [],
+      historyFlushTimer: null,
+      historyWritePromise: Promise.resolve(),
+      pendingLastActivity: null,
+      lastActivityFlushTimer: null,
     };
     agentRuntimes.set(terminalId, rt);
   }
   return rt;
+}
+
+function scheduleLastActivityFlush(terminalId: string, rt: TerminalRuntime) {
+  if (rt.lastActivityFlushTimer) {
+    return;
+  }
+
+  rt.lastActivityFlushTimer = setTimeout(() => {
+    rt.lastActivityFlushTimer = null;
+    flushLastActivity(terminalId, rt);
+  }, LAST_ACTIVITY_FLUSH_DELAY_MS);
+}
+
+function flushLastActivity(terminalId: string, rt: TerminalRuntime) {
+  const lastActivity = rt.pendingLastActivity;
+  rt.pendingLastActivity = null;
+  if (!lastActivity || !getTerminalRecord(terminalId)) {
+    return;
+  }
+
+  try {
+    updateTerminalRecord(terminalId, { lastActivity });
+  } catch (error) {
+    console.warn(`Failed to persist last activity for terminal ${terminalId}:`, error);
+  }
+}
+
+function scheduleHistoryFlush(terminalId: string, rt: TerminalRuntime) {
+  if (rt.historyFlushTimer) {
+    return;
+  }
+
+  rt.historyFlushTimer = setTimeout(() => {
+    rt.historyFlushTimer = null;
+    void flushBufferedHistory(terminalId, rt);
+  }, HISTORY_FLUSH_DELAY_MS);
+}
+
+async function flushBufferedHistory(terminalId: string, rt: TerminalRuntime) {
+  if (rt.pendingHistory.length === 0) {
+    return;
+  }
+
+  const batch = rt.pendingHistory.join("");
+  rt.pendingHistory = [];
+  rt.historyWritePromise = rt.historyWritePromise
+    .catch(() => undefined)
+    .then(() => appendTerminalHistoryBatch(terminalId, batch))
+    .catch((error) => {
+      console.error(`Failed to append history for terminal ${terminalId}:`, error);
+    });
+
+  await rt.historyWritePromise;
+}
+
+async function flushRuntimePersistence(terminalId: string, rt: TerminalRuntime) {
+  if (rt.historyFlushTimer) {
+    clearTimeout(rt.historyFlushTimer);
+    rt.historyFlushTimer = null;
+  }
+  if (rt.lastActivityFlushTimer) {
+    clearTimeout(rt.lastActivityFlushTimer);
+    rt.lastActivityFlushTimer = null;
+  }
+
+  await flushBufferedHistory(terminalId, rt);
+  flushLastActivity(terminalId, rt);
+}
+
+function isSnapshotNewer(
+  current: Pick<TerminalSnapshotPayload, "cursor" | "savedAt"> | null,
+  next: Pick<TerminalSnapshotPayload, "cursor" | "savedAt">
+) {
+  if (!current) {
+    return true;
+  }
+  if (next.cursor !== current.cursor) {
+    return next.cursor > current.cursor;
+  }
+  return next.savedAt >= current.savedAt;
+}
+
+export function persistTerminalSnapshot(
+  terminalId: string,
+  snapshot: Omit<TerminalSnapshotPayload, "terminalId">
+): boolean {
+  if (!getTerminalRecord(terminalId)) {
+    return false;
+  }
+
+  const current = readTerminalSnapshot(terminalId);
+  if (!isSnapshotNewer(current, snapshot)) {
+    return false;
+  }
+
+  writeTerminalSnapshot(terminalId, snapshot);
+  const rt = getRuntime(terminalId);
+  if (rt.nextOutputSeq <= snapshot.cursor) {
+    rt.nextOutputSeq = snapshot.cursor + 1;
+  }
+  return true;
 }
 
 type TerminalWithProject = TerminalRecord & {
@@ -219,6 +336,10 @@ export async function startTerminal(
     clearTimeout(rt.restartTimer);
     rt.restartTimer = null;
   }
+  const persistedSnapshot = readTerminalSnapshot(terminalId);
+  if (persistedSnapshot && rt.nextOutputSeq <= persistedSnapshot.cursor) {
+    rt.nextOutputSeq = persistedSnapshot.cursor + 1;
+  }
   rt.intentionalStop = false;
   rt.lastStartedAt = Date.now();
   rt.outputBuffer = [];
@@ -240,17 +361,16 @@ export async function startTerminal(
         rt.outputBuffer = rt.outputBuffer.slice(-MAX_OUTPUT_LINES);
       }
 
-      appendTerminalHistory(terminalId, data);
-
       deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
         terminalId,
         data,
         seq,
       });
 
-      updateTerminalRecord(terminalId, {
-        lastActivity: new Date().toISOString(),
-      });
+      rt.pendingHistory.push(data);
+      scheduleHistoryFlush(terminalId, rt);
+      rt.pendingLastActivity = new Date().toISOString();
+      scheduleLastActivityFlush(terminalId, rt);
     },
     onExit: async (exitCode) => {
       const newStatus: AgentStatus = exitCode === 0 ? "completed" : "error";
@@ -258,6 +378,7 @@ export async function startTerminal(
       const agent = getTerminalRecord(terminalId);
       const ranForMs = rt.lastStartedAt ? Date.now() - rt.lastStartedAt : null;
       rt.lastStartedAt = null;
+      await flushRuntimePersistence(terminalId, rt);
 
       if (!agent) {
         return;
@@ -385,6 +506,9 @@ export async function stopTerminal(terminalId: string) {
     killPty(rt.ptyId);
     rt.ptyId = null;
   }
+  if (rt) {
+    await flushRuntimePersistence(terminalId, rt);
+  }
 
   updateTerminalRecord(terminalId, {
     status: "idle",
@@ -417,6 +541,9 @@ export async function deleteTerminal(terminalId: string) {
   }
   if (rt?.ptyId) {
     killPty(rt.ptyId);
+  }
+  if (rt) {
+    await flushRuntimePersistence(terminalId, rt);
   }
   agentRuntimes.delete(terminalId);
 
@@ -491,23 +618,14 @@ export function getTerminalOutputSnapshot(
   terminalId: string
 ): { output: string[]; cursor: number } {
   const rt = getRuntime(terminalId);
-  const cursor = rt.nextOutputSeq - 1;
-
-  if (rt.outputBuffer.length > 0) {
-    return {
-      output: rt.outputBuffer.map((chunk) => chunk.data),
-      cursor,
-    };
-  }
-
-  // Fall back to the persisted transcript after server restart or when no
-  // in-memory replay buffer is available.
+  const persistedSnapshot = readTerminalSnapshot(terminalId);
   const history = readTerminalHistory(terminalId);
-  if (history) {
-    return { output: [history], cursor };
-  }
 
-  return { output: [], cursor };
+  return buildTerminalSnapshotOutput({
+    outputBuffer: rt.outputBuffer,
+    persistedSnapshot,
+    history,
+  });
 }
 
 export function getBufferedTerminalOutputSince(

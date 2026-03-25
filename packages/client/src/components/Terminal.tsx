@@ -1,21 +1,47 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
+import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { TextIcon, XIcon } from "lucide-react";
+import {
+  ArrowRightToLineIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  CornerDownLeftIcon,
+  EllipsisIcon,
+  MicIcon,
+  MicOffIcon,
+  TextIcon,
+  XIcon,
+} from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import {
   TerminalAttachResponse as TerminalAttachResponseSchema,
   type TerminalAttachResponse,
+  type TerminalSnapshotPayload,
 } from "@maestro/wire";
 
 interface StoredTerminalSnapshot {
   cursor: number;
   data: string;
   savedAt: number;
+}
+
+const SNAPSHOT_PERSIST_DELAY_MS = 400;
+const SERVER_SNAPSHOT_THROTTLE_MS = 1500;
+
+function isEditableElement(element: Element | null): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.isContentEditable) return true;
+
+  const tagName = element.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
 }
 
 function getSnapshotStorageKey(terminalId: string): string {
@@ -53,116 +79,127 @@ function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): vo
 }
 
 function useMobileKeyboard() {
-  const [open, setOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
+
     const threshold = 100;
-    const check = () => setOpen(window.innerHeight - vv.height > threshold);
+    const check = () => {
+      setKeyboardOpen(window.innerHeight - vv.height > threshold);
+    };
+
     check();
     vv.addEventListener("resize", check);
     return () => vv.removeEventListener("resize", check);
   }, []);
 
-  return open;
+  return keyboardOpen;
 }
 
-function MobileTerminalComposer({
-  terminalId,
-  socketRef,
-  onShowText,
+function MobileTerminalControls({
+  onToggleTextOverlay,
+  onTranscript,
+  send,
+  textOverlayOpen,
 }: {
-  terminalId: string;
-  socketRef: React.RefObject<Socket | null>;
-  onShowText: () => void;
+  onToggleTextOverlay: () => void;
+  onTranscript: (text: string) => void;
+  send: (data: string) => void;
+  textOverlayOpen: boolean;
 }) {
   const isMobile = useIsMobile();
   const keyboardOpen = useMobileKeyboard();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
+    onTranscript,
+  });
 
-  const send = useCallback(
-    (data: string) => {
-      socketRef.current?.emit("terminal:input", { terminalId, data });
-    },
-    [terminalId, socketRef]
-  );
+  if (!isMobile || keyboardOpen) return null;
 
-  useEffect(() => {
-    if (!open) return;
-    const id = window.setTimeout(() => textareaRef.current?.focus(), 0);
-    return () => window.clearTimeout(id);
-  }, [open]);
-
-  const closeComposer = useCallback(() => {
-    setOpen(false);
-    setDraft("");
-    textareaRef.current?.blur();
-  }, []);
-
-  const submit = useCallback(() => {
-    send(draft);
-    send("\r");
-    closeComposer();
-  }, [closeComposer, draft, send]);
-
-  if (!isMobile) return null;
+  const isListening = voiceStatus === "listening";
+  const toolbarButtonClassName = "min-w-0 px-0";
 
   return (
-    <>
-      {!open && !keyboardOpen && (
-        <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 border-t bg-card/95 px-3 py-2 backdrop-blur-sm">
-          <Button size="sm" className="flex-1 font-mono" onClick={() => setOpen(true)}>
-            Type Into Terminal
+    <div
+      className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      onTouchMove={(event) => event.stopPropagation()}
+    >
+      {moreOpen && (
+        <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
+          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
+            <ChevronUpIcon className="size-3.5" />
           </Button>
-          <Button size="sm" variant="secondary" onClick={onShowText}>
-            <TextIcon className="size-4" />
-            Text
+          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
+            <ChevronLeftIcon className="size-3.5" />
+          </Button>
+          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
+            <ChevronDownIcon className="size-3.5" />
+          </Button>
+          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
+            <ChevronRightIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant={textOverlayOpen ? "default" : "secondary"}
+            className={toolbarButtonClassName}
+            onClick={onToggleTextOverlay}
+            aria-label="Show terminal text"
+          >
+            <TextIcon className="size-3.5" />
           </Button>
         </div>
       )}
 
-      {open && (
-        <div
-          className="absolute inset-x-0 bottom-0 z-20 border-t bg-[#09090b] px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 text-zinc-100"
-          onTouchMove={(e) => e.stopPropagation()}
+      <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
+        <Button
+          size="xs"
+          variant="secondary"
+          className={toolbarButtonClassName}
+          onClick={() => send("\x1b")}
+          aria-label="Escape"
         >
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                Terminal Input
-              </p>
-              <p className="text-[11px] text-zinc-500">Press Enter to send and close.</p>
-            </div>
-            <Button size="icon-xs" variant="ghost" className="text-zinc-300" onClick={closeComposer}>
-              <XIcon className="size-4" />
-              <span className="sr-only">Close terminal input</span>
-            </Button>
-          </div>
-
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-                return;
-              }
-              event.preventDefault();
-              submit();
-            }}
-            placeholder="$ type a command"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            rows={5}
-            className="min-h-36 w-full resize-none rounded-none border border-zinc-800 bg-[#09090b] px-3 py-3 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:border-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-700/40"
-          />
-        </div>
-      )}
-    </>
+          <XIcon className="size-3.5" />
+        </Button>
+        <Button
+          size="xs"
+          variant="secondary"
+          className={toolbarButtonClassName}
+          onClick={() => send("\t")}
+          aria-label="Tab"
+        >
+          <ArrowRightToLineIcon className="size-3.5" />
+        </Button>
+        <Button
+          size="xs"
+          variant="secondary"
+          className={toolbarButtonClassName}
+          onClick={() => send("\r")}
+          aria-label="Enter"
+        >
+          <CornerDownLeftIcon className="size-3.5" />
+        </Button>
+        <Button
+          size="xs"
+          variant={isListening ? "destructive" : "secondary"}
+          className={toolbarButtonClassName}
+          onClick={toggleVoice}
+          aria-label={isListening ? "Stop voice input" : "Start voice input"}
+        >
+          {isListening ? <MicOffIcon className="size-3.5" /> : <MicIcon className="size-3.5" />}
+        </Button>
+        <Button
+          size="xs"
+          variant={moreOpen ? "default" : "secondary"}
+          className={toolbarButtonClassName}
+          onClick={() => setMoreOpen((current) => !current)}
+          aria-label="More controls"
+        >
+          <EllipsisIcon className="size-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -181,7 +218,9 @@ function extractBufferText(term: XtermTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
+  const mobileKeyboardOpen = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
+  const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
@@ -190,6 +229,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const lastSeqRef = useRef(0);
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldRestoreFocusRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -205,8 +245,35 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   }, [terminalId]);
 
   useEffect(() => {
+    isActiveRef.current = Boolean(isActive);
+    if (!isActive) {
+      shouldRestoreFocusRef.current = false;
+    }
+  }, [isActive]);
+
+  useEffect(() => {
     isMobileRef.current = isMobile;
+    if (termRef.current) {
+      termRef.current.options.disableStdin = false;
+    }
+    if (isMobile) {
+      shouldRestoreFocusRef.current = false;
+    }
   }, [isMobile]);
+
+  const sendToTerminal = useCallback(
+    (data: string) => {
+      socketRef.current?.emit("terminal:input", { terminalId, data });
+    },
+    [terminalId]
+  );
+
+  const handleVoiceTranscript = useCallback(
+    (text: string) => {
+      sendToTerminal(text);
+    },
+    [sendToTerminal]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -233,8 +300,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: window.innerWidth < 768 ? 10 : 13,
         cursorBlink: true,
-        scrollback: 5000,
+        scrollback: 50000,
         convertEol: false,
+        disableStdin: false,
       });
 
       term.loadAddon(fitAddon);
@@ -284,7 +352,12 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (didScroll) {
           e.preventDefault();
           e.stopPropagation();
+          return;
         }
+
+        shouldRestoreFocusRef.current = isActiveRef.current;
+        term.focus();
+        requestAnimationFrame(() => fitAddon.fit());
       };
 
       container.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -310,12 +383,40 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       socketRef.current = socket;
       const storedSnapshot = loadStoredSnapshot(terminalId);
 
-      const persistSnapshot = () => {
-        storeSnapshot(terminalId, {
+      let lastServerSnapshotSavedAt = 0;
+
+      const persistSnapshot = (options?: { forceServer?: boolean; keepalive?: boolean }) => {
+        const snapshot: TerminalSnapshotPayload = {
+          terminalId,
           cursor: lastSeqRef.current,
           data: serializeAddon.serialize(),
           savedAt: Date.now(),
+        };
+
+        storeSnapshot(terminalId, {
+          cursor: snapshot.cursor,
+          data: snapshot.data,
+          savedAt: snapshot.savedAt,
         });
+
+        const shouldPersistServer =
+          options?.forceServer ||
+          snapshot.savedAt - lastServerSnapshotSavedAt >= SERVER_SNAPSHOT_THROTTLE_MS;
+
+        if (!shouldPersistServer) {
+          return;
+        }
+
+        lastServerSnapshotSavedAt = snapshot.savedAt;
+
+        if (options?.keepalive) {
+          void api
+            .saveTerminalSnapshot(terminalId, snapshot, { keepalive: true })
+            .catch(() => undefined);
+          return;
+        }
+
+        socket.emit("terminal:snapshot", snapshot);
       };
 
       const schedulePersistSnapshot = () => {
@@ -325,7 +426,33 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         persistTimerRef.current = setTimeout(() => {
           persistTimerRef.current = null;
           persistSnapshot();
-        }, 200);
+        }, SNAPSHOT_PERSIST_DELAY_MS);
+      };
+
+      const rememberTerminalFocus = () => {
+        if (isMobileRef.current || !isActiveRef.current) {
+          shouldRestoreFocusRef.current = false;
+          return;
+        }
+        shouldRestoreFocusRef.current = container.contains(document.activeElement);
+      };
+
+      const restoreTerminalFocus = () => {
+        if (isMobileRef.current || !isActiveRef.current || !shouldRestoreFocusRef.current) {
+          return;
+        }
+
+        const activeElement = document.activeElement;
+        if (isEditableElement(activeElement) && !container.contains(activeElement)) {
+          return;
+        }
+
+        requestAnimationFrame(() => {
+          if (cancelled || cleanedUp || isMobileRef.current || !isActiveRef.current) {
+            return;
+          }
+          term.focus();
+        });
       };
 
       const flushPendingChunks = () => {
@@ -382,10 +509,31 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (isMobileRef.current) {
           return;
         }
+        shouldRestoreFocusRef.current = isActiveRef.current;
         term.focus();
         requestAnimationFrame(() => fitAddon.fit());
       };
       container.addEventListener("pointerdown", onPointerDown);
+
+      const helperTextarea =
+        term.textarea ??
+        container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+
+      const onTerminalFocus = () => {
+        shouldRestoreFocusRef.current = isActiveRef.current;
+      };
+
+      const onTerminalBlur = () => {
+        if (document.visibilityState === "hidden") {
+          return;
+        }
+        if (!container.contains(document.activeElement)) {
+          shouldRestoreFocusRef.current = false;
+        }
+      };
+
+      helperTextarea?.addEventListener("focus", onTerminalFocus);
+      helperTextarea?.addEventListener("blur", onTerminalBlur);
 
       const attachTerminal = async () => {
         const requestedCursor = lastSeqRef.current;
@@ -428,6 +576,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
           attachedRef.current = true;
           flushPendingChunks();
           requestAnimationFrame(() => fitAddon.fit());
+          restoreTerminalFocus();
 
           socket.emit("terminal:resize", {
             terminalId,
@@ -440,7 +589,8 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onPageHide = () => {
-        persistSnapshot();
+        rememberTerminalFocus();
+        persistSnapshot({ forceServer: true, keepalive: true });
       };
       window.addEventListener("pagehide", onPageHide);
 
@@ -449,6 +599,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (document.visibilityState === "hidden") return;
         requestAnimationFrame(() => fitAddon.fit());
         if (socket.connected) {
+          restoreTerminalFocus();
           void attachTerminal();
           return;
         }
@@ -460,7 +611,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onVisibilityChange = () => {
+        if (document.visibilityState === "hidden") {
+          rememberTerminalFocus();
+          return;
+        }
         resumeTerminal();
+      };
+
+      const onWindowBlur = () => {
+        rememberTerminalFocus();
       };
 
       const onWindowFocus = () => {
@@ -469,6 +628,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       socket.on("connect", onSocketConnect);
       document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("blur", onWindowBlur);
       window.addEventListener("focus", onWindowFocus);
 
       const cleanup = () => {
@@ -484,8 +644,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         window.visualViewport?.removeEventListener("resize", onViewportResize);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("blur", onWindowBlur);
         window.removeEventListener("focus", onWindowFocus);
         container.removeEventListener("pointerdown", onPointerDown);
+        helperTextarea?.removeEventListener("focus", onTerminalFocus);
+        helperTextarea?.removeEventListener("blur", onTerminalBlur);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
@@ -530,18 +693,29 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     return () => clearTimeout(id);
   }, [isActive]);
 
-  const handleShowText = () => {
+  const handleShowText = useCallback(() => {
     if (termRef.current) {
       setTextOverlay(extractBufferText(termRef.current));
     }
-  };
+  }, []);
+
+  const handleToggleTextOverlay = useCallback(() => {
+    if (textOverlay !== null) {
+      setTextOverlay(null);
+      return;
+    }
+    handleShowText();
+  }, [handleShowText, textOverlay]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      style={isMobile && mobileKeyboardOpen ? { paddingBottom: "12px" } : undefined}
+    >
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
 
       {textOverlay !== null && (
-        <div className="absolute inset-0 z-10 flex flex-col bg-background">
+        <div className="absolute inset-0 z-[110] flex flex-col bg-background">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">
               Select text to copy
@@ -557,10 +731,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       )}
 
       {isActive && (
-        <MobileTerminalComposer
-          terminalId={terminalId}
-          socketRef={socketRef}
-          onShowText={handleShowText}
+        <MobileTerminalControls
+          onToggleTextOverlay={handleToggleTextOverlay}
+          onTranscript={handleVoiceTranscript}
+          send={sendToTerminal}
+          textOverlayOpen={textOverlay !== null}
         />
       )}
     </div>
