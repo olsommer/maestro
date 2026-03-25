@@ -292,6 +292,7 @@ async function resolveComposeCli() {
         } catch (dockerComposeLegacyError) {
           throw new Error(
             "No supported Docker Compose CLI was found. Tried `docker compose` and `docker-compose`." +
+              " If this updater runs in Alpine, install the Compose plugin package (`docker-cli-compose`) in the image." +
               `\n${String(dockerComposeError)}` +
               `\n${String(dockerComposeLegacyError)}`
           );
