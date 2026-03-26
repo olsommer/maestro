@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider } from "@maestro/wire";
+import type { AgentStatus, AgentProvider, SandboxProvider } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -15,7 +15,7 @@ import {
   type TerminalAttachResponse,
 } from "./terminal-attach.js";
 import { createTerminalReplica, type TerminalReplica } from "./terminal-replica.js";
-import { removeTerminalWorktree } from "./worktree.js";
+import { createTerminalWorktree, isGitRepo, removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
   appendTerminalHistoryBatch,
@@ -32,6 +32,7 @@ import {
 import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
+import { syncProjectRepoBeforeSpawn } from "../projects/repo-sync.js";
 import { getSettings } from "../state/settings.js";
 import type { TerminalRecord } from "../state/types.js";
 
@@ -54,8 +55,8 @@ export interface TerminalRuntime {
 
 export interface StartTerminalOptions {
   mcpConfigPath?: string;
-  /** Enable nsjail sandbox for this agent (Linux only, graceful fallback) */
-  sandbox?: boolean;
+  /** Override the sandbox provider for this start */
+  sandboxProvider?: SandboxProvider;
 }
 
 const agentRuntimes = new Map<string, TerminalRuntime>();
@@ -316,7 +317,25 @@ export async function startTerminal(
     throw new Error(`Agent ${terminalId} is already running`);
   }
 
-  const cwd = agent.worktreePath || agent.projectPath;
+  await syncProjectRepoBeforeSpawn({
+    projectId: agent.projectId,
+    projectPath: agent.worktreePath || agent.projectPath,
+  });
+
+  let cwd = agent.worktreePath || agent.projectPath;
+  if (agent.autoWorktree && !agent.worktreePath) {
+    if (!isGitRepo(agent.projectPath)) {
+      throw new Error("Auto-worktree requires the project to be a git repository");
+    }
+
+    const worktreePath = createTerminalWorktree(agent.projectPath, terminalId);
+    updateTerminalRecord(terminalId, {
+      worktreePath,
+      lastActivity: new Date().toISOString(),
+    });
+    cwd = worktreePath;
+  }
+
   if (!fs.existsSync(cwd)) {
     throw new Error(`Agent working directory does not exist: ${cwd}`);
   }
@@ -335,7 +354,9 @@ export async function startTerminal(
   };
 
   const settings = getSettings();
-  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
+  const sandboxProvider =
+    agent.disableSandbox ? "none" : (options?.sandboxProvider ?? settings.sandboxProvider);
+  const sandboxEnabled = sandboxProvider !== "none";
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -364,7 +385,7 @@ export async function startTerminal(
     terminalId,
     cwd,
     env: childEnv,
-    sandbox: sandboxEnabled,
+    sandboxProvider,
     readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
       if (!getTerminalRecord(terminalId)) {
