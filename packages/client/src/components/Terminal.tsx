@@ -220,11 +220,20 @@ function extractBufferText(term: XtermTerminal): string {
   return lines.join("\n");
 }
 
-export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
+export function Terminal({
+  terminalId,
+  isActive,
+  onSwipeNavigate,
+}: {
+  terminalId: string;
+  isActive?: boolean;
+  onSwipeNavigate?: (dir: -1 | 1) => void;
+}) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
+  const onSwipeNavigateRef = useRef(onSwipeNavigate);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -263,6 +272,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       shouldRestoreFocusRef.current = false;
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    onSwipeNavigateRef.current = onSwipeNavigate;
+  }, [onSwipeNavigate]);
 
   const sendToTerminal = useCallback(
     (data: string) => {
@@ -321,24 +334,75 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       setTextOverlay(null);
 
       // Touch scrolling for mobile
+      let touchStartX = 0;
       let touchStartY = 0;
+      let lastTouchY = 0;
       let touchAccum = 0;
       let didScroll = false;
+      let swipeTriggered = false;
+      let gestureAxis: "pending" | "horizontal" | "vertical" = "pending";
       const container = containerRef.current;
+      const gestureLockThreshold = 16;
+      const swipeTriggerThreshold = 56;
 
       const lineHeight = term.rows > 0
         ? container.clientHeight / term.rows
         : 16;
 
       const onTouchStart = (e: TouchEvent) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
+        lastTouchY = e.touches[0].clientY;
         touchAccum = 0;
         didScroll = false;
+        swipeTriggered = false;
+        gestureAxis = "pending";
       };
 
       const onTouchMove = (e: TouchEvent) => {
-        const dy = touchStartY - e.touches[0].clientY;
-        touchStartY = e.touches[0].clientY;
+        if (e.touches.length !== 1) return;
+
+        const touch = e.touches[0];
+        const totalDx = touch.clientX - touchStartX;
+        const totalDy = touch.clientY - touchStartY;
+        const absDx = Math.abs(totalDx);
+        const absDy = Math.abs(totalDy);
+
+        if (
+          gestureAxis === "pending" &&
+          (absDx >= gestureLockThreshold || absDy >= gestureLockThreshold)
+        ) {
+          if (absDx > absDy * 1.25) {
+            gestureAxis = "horizontal";
+          } else if (absDy > absDx * 1.25) {
+            gestureAxis = "vertical";
+            touchAccum += touchStartY - touch.clientY;
+            lastTouchY = touch.clientY;
+          }
+        }
+
+        if (gestureAxis === "horizontal") {
+          if (
+            !swipeTriggered &&
+            absDx >= swipeTriggerThreshold &&
+            absDx > absDy * 1.25 &&
+            isMobileRef.current &&
+            isActiveRef.current
+          ) {
+            swipeTriggered = true;
+            onSwipeNavigateRef.current?.(totalDx < 0 ? 1 : -1);
+          }
+          e.preventDefault();
+          return;
+        }
+
+        if (gestureAxis !== "vertical") {
+          return;
+        }
+
+        const dy = lastTouchY - touch.clientY;
+        lastTouchY = touch.clientY;
         touchAccum += dy;
         didScroll = true;
 
@@ -352,7 +416,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onTouchEnd = (e: TouchEvent) => {
-        if (didScroll) {
+        if (swipeTriggered || didScroll) {
           e.preventDefault();
           e.stopPropagation();
           return;

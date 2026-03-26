@@ -77,12 +77,14 @@ function TerminalPanel({
   onSelect,
   onReconnect,
   onDelete,
+  onSwipeNavigate,
 }: {
   terminal: TerminalRecord;
   isSelected: boolean;
   onSelect: () => void;
   onReconnect: () => void;
   onDelete: () => void;
+  onSwipeNavigate?: (dir: -1 | 1) => void;
 }) {
   const providerLabel = getProviderLabel(terminal);
   const canReconnect =
@@ -177,7 +179,12 @@ function TerminalPanel({
       )}
 
       <div className="min-h-0 flex-1 bg-background">
-        <Terminal key={terminal.id} terminalId={terminal.id} isActive={isSelected} />
+        <Terminal
+          key={terminal.id}
+          terminalId={terminal.id}
+          isActive={isSelected}
+          onSwipeNavigate={onSwipeNavigate}
+        />
       </div>
     </section>
   );
@@ -440,6 +447,7 @@ function TerminalPagePanel() {
                 onSelect={() => selectTerminal(terminal.id)}
                 onReconnect={() => handleReconnectTerminal(terminal.id)}
                 onDelete={() => setPendingDeleteTerminal(terminal)}
+                onSwipeNavigate={isMobile ? navigateTerminal : undefined}
               />
             ))}
           </div>
