@@ -31,6 +31,7 @@ export interface TerminalRecord {
   status: "idle" | "running" | "waiting" | "completed" | "error";
   currentTask: string | null;
   error: string | null;
+  recentInputs: string[];
   lastActivity: string | null;
   skipPermissions: boolean;
   disableSandbox: boolean;
