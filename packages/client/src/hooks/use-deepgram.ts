@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 export type DeepgramStatus = "idle" | "connecting" | "listening" | "stopping" | "error";
+const WAVEFORM_BAR_COUNT = 12;
+const WAVEFORM_SAMPLE_INTERVAL_MS = 80;
 
 interface UseDeepgramOptions {
   onTranscript: (text: string) => void;
@@ -12,10 +14,15 @@ interface UseDeepgramOptions {
 
 export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
   const [status, setStatus] = useState<DeepgramStatus>("idle");
+  const [waveform, setWaveform] = useState<number[]>(() => Array(WAVEFORM_BAR_COUNT).fill(0));
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const waveformBufferRef = useRef<Uint8Array | null>(null);
   const finalizedSegmentsRef = useRef<string[]>([]);
   const interimTranscriptRef = useRef("");
   const stoppingRef = useRef(false);
@@ -31,6 +38,88 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
     finalizedSegmentsRef.current = [];
     interimTranscriptRef.current = "";
   }, []);
+
+  const stopWaveformCapture = useCallback(() => {
+    if (waveformTimerRef.current) {
+      clearInterval(waveformTimerRef.current);
+      waveformTimerRef.current = null;
+    }
+
+    const audioContext = audioContextRef.current;
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    waveformBufferRef.current = null;
+    setWaveform(Array(WAVEFORM_BAR_COUNT).fill(0));
+
+    if (audioContext) {
+      void audioContext.close().catch(() => {
+        // Ignore close errors from torn-down contexts.
+      });
+    }
+  }, []);
+
+  const startWaveformCapture = useCallback(
+    async (stream: MediaStream) => {
+      stopWaveformCapture();
+
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) {
+        return;
+      }
+
+      try {
+        const audioContext = new AudioContextClass();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.8;
+
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        audioContextRef.current = audioContext;
+        analyserRef.current = analyser;
+        waveformBufferRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+        const sampleWaveform = () => {
+          const currentAnalyser = analyserRef.current;
+          const currentBuffer = waveformBufferRef.current;
+          if (!currentAnalyser || !currentBuffer) {
+            return;
+          }
+
+          currentAnalyser.getByteFrequencyData(currentBuffer);
+          const nextWaveform = Array.from({ length: WAVEFORM_BAR_COUNT }, (_, index) => {
+            const start = Math.floor((index * currentBuffer.length) / WAVEFORM_BAR_COUNT);
+            const end = Math.max(
+              start + 1,
+              Math.floor(((index + 1) * currentBuffer.length) / WAVEFORM_BAR_COUNT)
+            );
+
+            let total = 0;
+            for (let cursor = start; cursor < end; cursor += 1) {
+              total += currentBuffer[cursor] ?? 0;
+            }
+
+            const average = total / (end - start) / 255;
+            return Math.min(1, average * 1.8);
+          });
+
+          setWaveform(nextWaveform);
+        };
+
+        await audioContext.resume().catch(() => {
+          // Ignore resume errors; sampling may still work on some browsers.
+        });
+        sampleWaveform();
+        waveformTimerRef.current = setInterval(sampleWaveform, WAVEFORM_SAMPLE_INTERVAL_MS);
+      } catch {
+        stopWaveformCapture();
+      }
+    },
+    [stopWaveformCapture]
+  );
 
   const flushTranscript = useCallback(() => {
     const text = [...finalizedSegmentsRef.current, interimTranscriptRef.current]
@@ -50,6 +139,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
     (nextStatus: DeepgramStatus = "idle") => {
       clearStopTimer();
       stoppingRef.current = false;
+      stopWaveformCapture();
 
       const recorder = mediaRef.current;
       mediaRef.current = null;
@@ -70,7 +160,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
 
       setStatus(nextStatus);
     },
-    [clearStopTimer]
+    [clearStopTimer, stopWaveformCapture]
   );
 
   const stop = useCallback(() => {
@@ -132,6 +222,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      void startWaveformCapture(stream);
     } catch {
       resetTranscriptBuffer();
       setStatus("error");
@@ -205,7 +296,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
       flushTranscript();
       teardown("idle");
     };
-  }, [clearStopTimer, flushTranscript, language, resetTranscriptBuffer, stop, teardown]);
+  }, [clearStopTimer, flushTranscript, language, resetTranscriptBuffer, startWaveformCapture, stop, teardown]);
 
   const toggle = useCallback(() => {
     if (wsRef.current) {
@@ -215,5 +306,11 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
     }
   }, [start, stop]);
 
-  return { status, toggle, stop };
+  useEffect(() => {
+    return () => {
+      teardown("idle");
+    };
+  }, [teardown]);
+
+  return { status, toggle, stop, waveform };
 }
