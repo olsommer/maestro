@@ -393,12 +393,14 @@ export function Terminal({
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldRestoreFocusRef = useRef(false);
+  const mobileCompositionActiveRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
   const [mobileComposingText, setMobileComposingText] = useState("");
   const [mobileInputPreview, setMobileInputPreview] = useState("");
 
   useLayoutEffect(() => {
     setTextOverlay(null);
+    mobileCompositionActiveRef.current = false;
     setMobileComposingText("");
     setMobileInputPreview("");
     attachedRef.current = false;
@@ -415,6 +417,7 @@ export function Terminal({
     isActiveRef.current = Boolean(isActive);
     if (!isActive) {
       shouldRestoreFocusRef.current = false;
+      mobileCompositionActiveRef.current = false;
       setMobileComposingText("");
       setMobileInputPreview("");
     }
@@ -724,7 +727,7 @@ export function Terminal({
         container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
 
       const syncComposingText = (value?: string | null) => {
-        if (!isMobileRef.current) return;
+        if (!isMobileRef.current || !mobileCompositionActiveRef.current) return;
         setMobileComposingText(value ?? helperTextarea?.value ?? "");
       };
 
@@ -736,6 +739,7 @@ export function Terminal({
         if (document.visibilityState === "hidden") {
           return;
         }
+        mobileCompositionActiveRef.current = false;
         setMobileComposingText("");
         if (!container.contains(document.activeElement)) {
           shouldRestoreFocusRef.current = false;
@@ -743,11 +747,15 @@ export function Terminal({
       };
 
       const onHelperInput = () => {
+        if (!mobileCompositionActiveRef.current) {
+          return;
+        }
         syncComposingText(helperTextarea?.value);
       };
 
       const onCompositionStart = () => {
-        syncComposingText(helperTextarea?.value);
+        mobileCompositionActiveRef.current = true;
+        setMobileComposingText("");
       };
 
       const onCompositionUpdate = (event: CompositionEvent) => {
@@ -755,6 +763,7 @@ export function Terminal({
       };
 
       const onCompositionEnd = () => {
+        mobileCompositionActiveRef.current = false;
         setMobileComposingText("");
       };
 
@@ -939,7 +948,9 @@ export function Terminal({
     handleShowText();
   }, [handleShowText, textOverlay]);
 
-  const mobilePreviewValue = mobileComposingText || mobileInputPreview;
+  const mobilePreviewValue = mobileComposingText
+    ? trimPreview(`${mobileInputPreview}${mobileComposingText}`)
+    : mobileInputPreview;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
