@@ -485,13 +485,9 @@ export async function startTerminal(
   rt.deleted = false;
   rt.intentionalStop = false;
   rt.lastStartedAt = Date.now();
-<<<<<<< HEAD
   resetOutputBuffer(rt);
   prepareExitWaiter(rt);
-=======
   rt.pendingInputLine = "";
-  rt.outputBuffer = [];
->>>>>>> 66f3ea0 (Add terminal command history popover)
 
   const ptyInstance = spawnPty({
     terminalId,
