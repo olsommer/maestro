@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider } from "@maestro/wire";
+import type { AgentStatus, AgentProvider, SandboxProvider } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -54,8 +54,8 @@ export interface TerminalRuntime {
 
 export interface StartTerminalOptions {
   mcpConfigPath?: string;
-  /** Enable nsjail sandbox for this agent (Linux only, graceful fallback) */
-  sandbox?: boolean;
+  /** Override the sandbox provider for this start */
+  sandboxProvider?: SandboxProvider;
 }
 
 const agentRuntimes = new Map<string, TerminalRuntime>();
@@ -83,6 +83,22 @@ function normalizeTerminalName(name?: string): string | null {
   const legacyGeneratedName = /^terminal ([0-9a-f]{6})$/i.exec(trimmed);
   if (legacyGeneratedName) {
     return legacyGeneratedName[1].toLowerCase();
+  }
+
+  return trimmed;
+}
+
+export function prepareShellCommand(
+  command: string,
+  kind: TerminalRecord["kind"]
+): string {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (kind === "kanban" || kind === "automation" || kind === "scheduler") {
+    return `${trimmed}; exit $?`;
   }
 
   return trimmed;
@@ -335,7 +351,9 @@ export async function startTerminal(
   };
 
   const settings = getSettings();
-  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
+  const sandboxProvider =
+    agent.disableSandbox ? "none" : (options?.sandboxProvider ?? settings.sandboxProvider);
+  const sandboxEnabled = sandboxProvider !== "none";
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -364,7 +382,7 @@ export async function startTerminal(
     terminalId,
     cwd,
     env: childEnv,
-    sandbox: sandboxEnabled,
+    sandboxProvider,
     readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
       if (!getTerminalRecord(terminalId)) {
@@ -528,8 +546,9 @@ export async function startTerminal(
     error: null,
   });
 
-  if (command.trim()) {
-    writeCommandToPty(ptyInstance.id, command);
+  const shellCommand = prepareShellCommand(command, agent.kind);
+  if (shellCommand) {
+    writeCommandToPty(ptyInstance.id, shellCommand);
   }
   return { ptyId: ptyInstance.id };
 }

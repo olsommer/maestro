@@ -3,10 +3,16 @@ import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
 import { createRequire } from "module";
+import type { SandboxProvider } from "@maestro/wire";
 import {
+  resolveSandboxProvider,
   isNsjailAvailable,
   getNsjailPath,
   buildNsjailArgs,
+  isDockerAvailable,
+  getDockerPath,
+  buildDockerRunArgs,
+  ensureDockerSandboxImage,
   ensureSandboxWritable,
   type SandboxConfig,
 } from "./sandbox.js";
@@ -87,6 +93,7 @@ export interface PtyInstance {
   process: pty.IPty;
   terminalId: string;
   sandboxed: boolean;
+  sandboxProvider: SandboxProvider;
 }
 
 const ptyProcesses = new Map<string, PtyInstance>();
@@ -105,8 +112,10 @@ export interface PtySpawnOptions {
   env?: Record<string, string>;
   onData: (data: string) => void;
   onExit: (exitCode: number) => void;
-  /** Enable nsjail sandbox (Linux only, falls back gracefully) */
+  /** Legacy sandbox toggle; maps to nsjail when true */
   sandbox?: boolean;
+  /** Requested sandbox provider */
+  sandboxProvider?: SandboxProvider;
   /** Additional read-only mount paths for sandbox */
   readonlyMounts?: string[];
   /** Additional read-write mount paths for sandbox */
@@ -120,16 +129,18 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
   const shell = getShellPath(options.env);
   const cwd = options.cwd || os.homedir();
-  const useSandbox = options.sandbox && isNsjailAvailable();
+  const requestedSandboxProvider =
+    options.sandboxProvider ?? (options.sandbox ? "nsjail" : "none");
+  const sandboxProvider = resolveSandboxProvider(requestedSandboxProvider);
+  let actualSandboxProvider = sandboxProvider;
   const fullEnv = buildChildEnv(options.env);
 
   let ptyProcess: pty.IPty;
 
-  if (useSandbox) {
+  if (sandboxProvider === "nsjail") {
     // Ensure project dir is writable by sandbox user (uid 1500)
     ensureSandboxWritable(cwd);
 
-    // Sandboxed spawn: run shell inside nsjail
     const sandboxConfig: SandboxConfig = {
       cwd,
       env: fullEnv,
@@ -154,15 +165,43 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     });
 
     console.log(`Spawned sandboxed PTY for terminal ${options.terminalId}`);
+  } else if (sandboxProvider === "docker") {
+    const sandboxConfig: SandboxConfig = {
+      cwd,
+      env: fullEnv,
+      readonlyMounts: options.readonlyMounts,
+      writableMounts: options.writableMounts,
+      memoryLimit: options.memoryLimit,
+    };
+
+    const dockerArgs = buildDockerRunArgs(
+      sandboxConfig,
+      ["/bin/bash", "-l"],
+      ensureDockerSandboxImage()
+    );
+
+    ptyProcess = pty.spawn(getDockerPath(), dockerArgs, {
+      name: "xterm-256color",
+      cols: options.cols ?? 120,
+      rows: options.rows ?? 30,
+      cwd,
+      env: { TERM: "xterm-256color" },
+    });
+
+    console.log(`Spawned docker-sandboxed PTY for terminal ${options.terminalId}`);
   } else {
-    if (options.sandbox && !isNsjailAvailable()) {
-      console.warn(
+    if (requestedSandboxProvider === "nsjail" && !isNsjailAvailable()) {
+      throw new Error(
         `Sandbox requested for terminal ${options.terminalId} but nsjail is not available ` +
-        `(platform: ${process.platform}). Running unsandboxed.`
+        `(platform: ${process.platform}).`
+      );
+    }
+    if (requestedSandboxProvider === "docker" && !isDockerAvailable()) {
+      throw new Error(
+        `Sandbox requested for terminal ${options.terminalId} but docker is not available.`
       );
     }
 
-    // Unsandboxed spawn (original behavior)
     ptyProcess = pty.spawn(shell, ["-l"], {
       name: "xterm-256color",
       cols: options.cols ?? 120,
@@ -177,7 +216,8 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     id,
     process: ptyProcess,
     terminalId: options.terminalId,
-    sandboxed: useSandbox ?? false,
+    sandboxed: actualSandboxProvider !== "none",
+    sandboxProvider: actualSandboxProvider,
   };
 
   ptyProcesses.set(id, instance);

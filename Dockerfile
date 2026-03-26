@@ -15,9 +15,22 @@ RUN git clone --depth 1 https://github.com/google/nsjail.git /nsjail \
 # Stage 2: Main image
 FROM node:22-slim AS base
 
+# Install Docker CLI + Compose plugin so the server can launch Docker sandboxes
+RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+ && chmod a+r /etc/apt/keyrings/docker.gpg \
+ && . /etc/os-release \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" \
+    > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y docker-ce-cli docker-compose-plugin \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install nsjail runtime dependencies + build tools
 RUN apt-get update && apt-get install -y \
-    git python3 make g++ curl bubblewrap \
+    git python3 make g++ bubblewrap \
     libprotobuf32 libnl-3-200 libnl-route-3-200 \
  && rm -rf /var/lib/apt/lists/*
 
@@ -60,6 +73,7 @@ COPY packages/pi/package.json packages/pi/
 RUN pnpm install --frozen-lockfile
 
 # Copy source
+COPY docker/ docker/
 COPY packages/wire/ packages/wire/
 COPY packages/mcp/ packages/mcp/
 COPY packages/pi/ packages/pi/

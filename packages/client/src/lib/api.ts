@@ -92,6 +92,7 @@ export interface Settings {
   piOllamaModel: string;
   telegramBotToken: string;
   sandboxEnabled: boolean;
+  sandboxProvider: "none" | "nsjail" | "docker";
   deepgramApiKey: string;
   agentDefaultProvider: "claude" | "codex";
   agentDefaultDisableSandbox: boolean;

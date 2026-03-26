@@ -1,4 +1,5 @@
 import type { Settings, SettingsUpdate } from "@maestro/wire";
+import { normalizeSandboxProvider } from "../agents/sandbox.js";
 import { getSetting, setSetting } from "./sqlite.js";
 
 const DEFAULTS: Settings = {
@@ -7,6 +8,7 @@ const DEFAULTS: Settings = {
   piOllamaModel: "",
   telegramBotToken: "",
   sandboxEnabled: false,
+  sandboxProvider: "none",
   deepgramApiKey: "",
   agentDefaultProvider: "claude",
   agentDefaultDisableSandbox: false,
@@ -21,18 +23,24 @@ export function getSettings(): Settings {
 
   const telegramToken = getSetting("telegramBotToken");
   const sandbox = getSetting("sandboxEnabled");
+  const sandboxProvider = getSetting("sandboxProvider");
   const deepgramKey = getSetting("deepgramApiKey");
   const agentDefaultProvider = getSetting("agentDefaultProvider");
   const agentDefaultDisableSandbox = getSetting("agentDefaultDisableSandbox");
   const agentDefaultSkipPermissions = getSetting("agentDefaultSkipPermissions");
   const agentDefaultWorktreeMode = getSetting("agentDefaultWorktreeMode");
+  const resolvedSandboxProvider = normalizeSandboxProvider(
+    sandboxProvider,
+    sandbox === "true"
+  );
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
     autoUpdateIntervalHours: interval !== null ? Number(interval) : DEFAULTS.autoUpdateIntervalHours,
     piOllamaModel: piModel !== null ? piModel : DEFAULTS.piOllamaModel,
     telegramBotToken: telegramToken !== null ? telegramToken : DEFAULTS.telegramBotToken,
-    sandboxEnabled: sandbox !== null ? sandbox === "true" : DEFAULTS.sandboxEnabled,
+    sandboxEnabled: resolvedSandboxProvider !== "none",
+    sandboxProvider: resolvedSandboxProvider,
     deepgramApiKey: deepgramKey !== null ? deepgramKey : DEFAULTS.deepgramApiKey,
     agentDefaultProvider:
       agentDefaultProvider === "codex" ? "codex" : DEFAULTS.agentDefaultProvider,
@@ -64,6 +72,13 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   }
   if (patch.sandboxEnabled !== undefined) {
     setSetting("sandboxEnabled", String(patch.sandboxEnabled));
+    if (patch.sandboxProvider === undefined) {
+      setSetting("sandboxProvider", patch.sandboxEnabled ? "nsjail" : "none");
+    }
+  }
+  if (patch.sandboxProvider !== undefined) {
+    setSetting("sandboxProvider", patch.sandboxProvider);
+    setSetting("sandboxEnabled", String(patch.sandboxProvider !== "none"));
   }
   if (patch.deepgramApiKey !== undefined) {
     setSetting("deepgramApiKey", patch.deepgramApiKey);

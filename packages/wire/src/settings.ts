@@ -6,13 +6,18 @@ export type AutoSpawnAgentProvider = z.infer<typeof AutoSpawnAgentProviderSchema
 export const AutoSpawnAgentWorktreeModeSchema = z.enum(["none", "new"]);
 export type AutoSpawnAgentWorktreeMode = z.infer<typeof AutoSpawnAgentWorktreeModeSchema>;
 
+export const SandboxProviderSchema = z.enum(["none", "nsjail", "docker"]);
+export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
+
 export const SettingsSchema = z.object({
   autoUpdateEnabled: z.boolean().default(false),
   autoUpdateIntervalHours: z.number().min(1).max(168).default(24),
   piOllamaModel: z.string().default(""),
   telegramBotToken: z.string().default(""),
-  /** Enable nsjail sandboxing for agents (Linux only, graceful fallback on other platforms) */
+  /** Legacy boolean retained for backwards compatibility with older clients */
   sandboxEnabled: z.boolean().default(false),
+  /** Sandbox runtime used when a terminal/agent enables sandboxing */
+  sandboxProvider: SandboxProviderSchema.default("none"),
   /** Deepgram API key for voice-to-text on mobile */
   deepgramApiKey: z.string().default(""),
   /** Default coding agent provider used for automatic spawns */
