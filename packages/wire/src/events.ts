@@ -32,6 +32,7 @@ export const ServerEvents = {
     terminalId: z.string(),
     status: AgentStatus,
     error: z.string().nullable().optional(),
+    recentInputs: z.array(z.string()).optional(),
   }),
   "kanban:updated": z.object({
     taskId: z.string(),

@@ -42,6 +42,7 @@ export interface Agent {
   status: string;
   currentTask: string | null;
   error: string | null;
+  recentInputs: string[];
   lastActivity: string | null;
   skipPermissions: boolean;
   disableSandbox: boolean;

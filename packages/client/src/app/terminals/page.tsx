@@ -24,6 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { api, type Agent as TerminalRecord } from "@/lib/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -34,6 +42,7 @@ import {
   BotIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  HistoryIcon,
   PlusIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
@@ -89,6 +98,7 @@ function TerminalPanel({
     terminal.status === "idle" ||
     terminal.status === "completed" ||
     terminal.status === "error";
+  const recentInputs = terminal.recentInputs ?? [];
 
   return (
     <section
@@ -147,6 +157,60 @@ function TerminalPanel({
               Reconnect
             </Button>
           )}
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="outline"
+                  onClick={(event) => event.stopPropagation()}
+                />
+              }
+            >
+              <HistoryIcon />
+              <span className="sr-only">Show recent terminal commands</span>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl p-0"
+            >
+              <div className="border-b px-3 py-2.5">
+                <PopoverTitle>Recent Commands</PopoverTitle>
+                <PopoverDescription className="mt-1">
+                  Last submitted inputs sent to this terminal.
+                </PopoverDescription>
+              </div>
+              <div className="px-3 py-2.5">
+                <div className="mb-2 flex items-center justify-between text-[10px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                  <span>Command history</span>
+                  <span>{recentInputs.length}/10</span>
+                </div>
+                {recentInputs.length > 0 ? (
+                  <ScrollArea className="max-h-52 pr-3">
+                    <div className="space-y-2">
+                      {[...recentInputs].reverse().map((input, index) => (
+                        <div
+                          key={`${index}-${input}`}
+                          className="rounded-lg border bg-muted/40 px-2.5 py-2"
+                        >
+                          <p className="mb-1 text-[10px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
+                            {index === 0 ? "Latest" : `Earlier ${index + 1}`}
+                          </p>
+                          <code className="block whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed">
+                            {input}
+                          </code>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No commands captured for this terminal yet.
+                  </p>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button
             size="icon-xs"
             variant="destructive"
