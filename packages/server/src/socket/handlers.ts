@@ -3,6 +3,7 @@ import { ClientEvents, TerminalAttachResponse } from "@maestro/wire";
 import {
   getTerminalAttachment,
   getBufferedTerminalOutputSince,
+  hasTerminal,
   sendTerminalInput,
   resizeTerminal,
 } from "../agents/terminal-manager.js";
@@ -15,6 +16,10 @@ export function registerSocketHandlers(io: SocketServer) {
     socket.on("terminal:attach", async (data, respond?: (payload: TerminalAttachResponse) => void) => {
       try {
         const { terminalId, cursor } = ClientEvents["terminal:attach"].parse(data);
+        if (!hasTerminal(terminalId)) {
+          socket.emit("error", { message: "Terminal not found" });
+          return;
+        }
         socket.join(`terminal:${terminalId}`);
         respond?.(TerminalAttachResponse.parse(await getTerminalAttachment(terminalId, cursor)));
         console.log(`Client ${socket.id} attached to terminal ${terminalId}`);
@@ -27,6 +32,10 @@ export function registerSocketHandlers(io: SocketServer) {
     socket.on("terminal:subscribe", (data) => {
       try {
         const { terminalId, sinceSeq } = ClientEvents["terminal:subscribe"].parse(data);
+        if (!hasTerminal(terminalId)) {
+          socket.emit("error", { message: "Terminal not found" });
+          return;
+        }
         socket.join(`terminal:${terminalId}`);
 
         if (sinceSeq !== undefined) {
@@ -60,6 +69,10 @@ export function registerSocketHandlers(io: SocketServer) {
       try {
         const { terminalId, data: inputData } =
           ClientEvents["terminal:input"].parse(data);
+        if (!hasTerminal(terminalId)) {
+          socket.emit("error", { message: "Terminal not found" });
+          return;
+        }
         sendTerminalInput(terminalId, inputData);
       } catch {
         socket.emit("error", { message: "Invalid input payload" });
@@ -71,6 +84,10 @@ export function registerSocketHandlers(io: SocketServer) {
       try {
         const { terminalId, cols, rows } =
           ClientEvents["terminal:resize"].parse(data);
+        if (!hasTerminal(terminalId)) {
+          socket.emit("error", { message: "Terminal not found" });
+          return;
+        }
         resizeTerminal(terminalId, cols, rows);
       } catch {
         socket.emit("error", { message: "Invalid resize payload" });
