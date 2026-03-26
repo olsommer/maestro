@@ -38,10 +38,12 @@ function SocketCore({ children }: { children: React.ReactNode }) {
       terminalId: string;
       status: string;
       error?: string | null;
+      recentInputs?: string[];
     }) => {
       updateAgent(data.terminalId, {
         status: data.status,
         error: data.error ?? null,
+        ...(data.recentInputs !== undefined ? { recentInputs: data.recentInputs } : {}),
       });
     };
 

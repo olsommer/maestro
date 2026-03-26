@@ -59,6 +59,7 @@ export const AgentInfo = z.object({
   status: AgentStatus,
   currentTask: z.string().nullable(),
   error: z.string().nullable(),
+  recentInputs: z.array(z.string()).default([]),
   lastActivity: z.string().nullable(),
   skills: z.array(z.string()),
   createdAt: z.string(),

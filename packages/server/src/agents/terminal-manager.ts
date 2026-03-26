@@ -14,6 +14,10 @@ import {
   buildTerminalAttachResponse,
   type TerminalAttachResponse,
 } from "./terminal-attach.js";
+import {
+  appendRecentTerminalInputs,
+  applyTerminalInputChunk,
+} from "./terminal-input-history.js";
 import { createTerminalReplica, type TerminalReplica } from "./terminal-replica.js";
 import { createTerminalWorktree, isGitRepo, removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
@@ -55,6 +59,7 @@ export interface TerminalRuntime {
   snapshotWritePromise: Promise<void>;
   exitPromise: Promise<void>;
   resolveExit: (() => void) | null;
+  pendingInputLine: string;
 }
 
 export interface StartTerminalOptions {
@@ -154,6 +159,7 @@ function getRuntime(terminalId: string): TerminalRuntime {
       snapshotWritePromise: Promise.resolve(),
       exitPromise: Promise.resolve(),
       resolveExit: null,
+      pendingInputLine: "",
     };
     agentRuntimes.set(terminalId, rt);
   }
@@ -307,6 +313,17 @@ type TerminalWithProject = TerminalRecord & {
   project: { id: string; name: string } | null;
 };
 
+function getRecentInputs(terminal: TerminalRecord): string[] {
+  const recentInputs = (terminal as { recentInputs?: unknown }).recentInputs;
+  if (!Array.isArray(recentInputs)) {
+    return [];
+  }
+
+  return recentInputs
+    .filter((input): input is string => typeof input === "string")
+    .slice(-10);
+}
+
 function hydrateTerminal(terminal: TerminalRecord | null): TerminalWithProject | null {
   if (!terminal) {
     return null;
@@ -315,6 +332,7 @@ function hydrateTerminal(terminal: TerminalRecord | null): TerminalWithProject |
   const project = terminal.projectId ? getProjectRecordById(terminal.projectId) : null;
   return {
     ...terminal,
+    recentInputs: getRecentInputs(terminal),
     project: project ? { id: project.id, name: project.name } : null,
   };
 }
@@ -351,6 +369,7 @@ export async function createTerminal(options: {
     status: "idle",
     currentTask: null,
     error: null,
+    recentInputs: [],
     lastActivity: null,
     skipPermissions: options.skipPermissions ?? false,
     disableSandbox: options.disableSandbox ?? false,
@@ -466,8 +485,13 @@ export async function startTerminal(
   rt.deleted = false;
   rt.intentionalStop = false;
   rt.lastStartedAt = Date.now();
+<<<<<<< HEAD
   resetOutputBuffer(rt);
   prepareExitWaiter(rt);
+=======
+  rt.pendingInputLine = "";
+  rt.outputBuffer = [];
+>>>>>>> 66f3ea0 (Add terminal command history popover)
 
   const ptyInstance = spawnPty({
     terminalId,
@@ -739,10 +763,34 @@ export async function deleteTerminal(terminalId: string) {
 }
 
 export function sendTerminalInput(terminalId: string, data: string): boolean {
-  if (!getTerminalRecord(terminalId)) return false;
+  const terminal = getTerminalRecord(terminalId);
+  if (!terminal) return false;
   const rt = agentRuntimes.get(terminalId);
   if (!rt?.ptyId) return false;
-  return writeToPty(rt.ptyId, data);
+
+  const { currentLine, committedInputs } = applyTerminalInputChunk(
+    rt.pendingInputLine,
+    data
+  );
+  const ok = writeToPty(rt.ptyId, data);
+  if (!ok) return false;
+
+  rt.pendingInputLine = currentLine;
+  if (committedInputs.length > 0) {
+    const recentInputs = appendRecentTerminalInputs(getRecentInputs(terminal), committedInputs);
+    updateTerminalRecord(terminalId, {
+      recentInputs,
+      lastActivity: new Date().toISOString(),
+    });
+    deps.io.emit("terminal:status", {
+      terminalId,
+      status: terminal.status,
+      error: terminal.error,
+      recentInputs,
+    });
+  }
+
+  return true;
 }
 
 export function hasTerminal(terminalId: string): boolean {
