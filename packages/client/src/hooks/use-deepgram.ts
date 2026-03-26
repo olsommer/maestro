@@ -22,7 +22,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
   const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const waveformBufferRef = useRef<Uint8Array | null>(null);
+  const waveformBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const finalizedSegmentsRef = useRef<string[]>([]);
   const interimTranscriptRef = useRef("");
   const stoppingRef = useRef(false);
@@ -80,7 +80,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
 
         audioContextRef.current = audioContext;
         analyserRef.current = analyser;
-        waveformBufferRef.current = new Uint8Array(analyser.frequencyBinCount);
+        waveformBufferRef.current = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
 
         const sampleWaveform = () => {
           const currentAnalyser = analyserRef.current;
