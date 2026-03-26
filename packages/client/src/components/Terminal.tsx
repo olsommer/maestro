@@ -120,8 +120,17 @@ function MobileTerminalControls({
 
   if (!isMobile) return null;
 
-  const isListening = voiceStatus === "listening";
+  const isListening = voiceStatus === "listening" || voiceStatus === "stopping";
+  const isVoiceBusy = voiceStatus === "connecting" || voiceStatus === "stopping";
   const toolbarButtonClassName = "min-w-0 px-0";
+  const voiceHint =
+    voiceStatus === "connecting"
+      ? "Preparing mic..."
+      : voiceStatus === "listening"
+        ? "Recording... tap again to send"
+        : voiceStatus === "stopping"
+          ? "Sending..."
+          : null;
 
   return (
     <div
@@ -130,6 +139,23 @@ function MobileTerminalControls({
       onTouchMove={(event) => event.stopPropagation()}
       style={keyboardOpen ? { visibility: "hidden" } : undefined}
     >
+      {voiceHint && (
+        <div className="flex items-center justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-card/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+            <span
+              className={`size-2 rounded-full ${
+                voiceStatus === "listening"
+                  ? "bg-red-500 animate-pulse"
+                  : voiceStatus === "stopping"
+                    ? "bg-emerald-500 animate-pulse"
+                    : "bg-amber-500 animate-pulse"
+              }`}
+            />
+            <span>{voiceHint}</span>
+          </div>
+        </div>
+      )}
+
       {moreOpen && (
         <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
           <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
@@ -189,9 +215,20 @@ function MobileTerminalControls({
           variant={isListening ? "destructive" : "secondary"}
           className={toolbarButtonClassName}
           onClick={toggleVoice}
-          aria-label={isListening ? "Stop voice input" : "Start voice input"}
+          disabled={isVoiceBusy}
+          aria-label={
+            voiceStatus === "stopping"
+              ? "Finishing voice input"
+              : isListening
+                ? "Stop voice input"
+                : "Start voice input"
+          }
         >
-          {isListening ? <MicOffIcon className="size-3.5" /> : <MicIcon className="size-3.5" />}
+          {isListening ? (
+            <MicOffIcon className={voiceStatus === "stopping" ? "size-3.5 animate-pulse" : "size-3.5"} />
+          ) : (
+            <MicIcon className={voiceStatus === "connecting" ? "size-3.5 animate-pulse" : "size-3.5"} />
+          )}
         </Button>
         <Button
           size="xs"
@@ -273,7 +310,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
   const handleVoiceTranscript = useCallback(
     (text: string) => {
-      sendToTerminal(text);
+      const transcript = text.trim();
+      if (!transcript) return;
+      sendToTerminal(`${transcript}\r`);
     },
     [sendToTerminal]
   );
