@@ -62,36 +62,19 @@ function resolvePreset(terminalCount: number, preset: GridPreset) {
   return GRID_PRESETS["3x3"];
 }
 
-function getProviderLabel(terminal: TerminalRecord) {
-  if (terminal.provider === "none") {
-    return "None";
-  }
-  return terminal.provider === "custom"
-    ? terminal.customDisplayName || "Custom CLI"
-    : terminal.provider;
-}
-
 function TerminalPanel({
   terminal,
   isSelected,
   onSelect,
-  onReconnect,
   onDelete,
   onSwipeNavigate,
 }: {
   terminal: TerminalRecord;
   isSelected: boolean;
   onSelect: () => void;
-  onReconnect: () => void;
   onDelete: () => void;
   onSwipeNavigate?: (dir: -1 | 1) => void;
 }) {
-  const providerLabel = getProviderLabel(terminal);
-  const canReconnect =
-    terminal.status === "idle" ||
-    terminal.status === "completed" ||
-    terminal.status === "error";
-
   return (
     <section
       onClick={onSelect}
@@ -101,54 +84,22 @@ function TerminalPanel({
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b bg-card px-2 py-1.5 md:px-3 md:py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 md:block">
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <span className="truncate text-xs font-medium md:text-sm">
-              {terminal.name || `Terminal ${terminal.id.slice(0, 8)}`}
-            </span>
-            <StatusDot status={terminal.status} className="md:hidden" />
-            <span className="hidden md:inline-flex">
-              <StatusBadge status={terminal.status} />
-            </span>
-          </div>
-          <div className="hidden flex-wrap items-center gap-1.5 md:mt-1 md:flex">
-            <Badge variant="secondary" className="text-[10px]">
-              {providerLabel}
-            </Badge>
-            {terminal.model && (
-              <Badge variant="outline" className="text-[10px]">
-                {terminal.model}
-              </Badge>
-            )}
-            <Badge variant="outline" className="max-w-full truncate text-[10px]">
-              {terminal.project?.name || terminal.projectPath}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-1 md:hidden">
-            {terminal.model && (
-              <Badge variant="outline" className="px-1 py-0 text-[9px]">
-                {terminal.model}
-              </Badge>
-            )}
-            <Badge variant="outline" className="max-w-[120px] truncate px-1 py-0 text-[9px]">
-              {terminal.project?.name || terminal.projectPath}
-            </Badge>
-          </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-2">
+          <span className="truncate text-xs font-medium md:text-sm">
+            #{terminal.id.slice(0, 8)}
+          </span>
+          <StatusDot status={terminal.status} className="md:hidden" />
+          <span className="hidden md:inline-flex">
+            <StatusBadge status={terminal.status} />
+          </span>
+          <Badge
+            variant="outline"
+            className="max-w-[120px] truncate px-1 py-0 text-[9px] md:max-w-[220px] md:px-2 md:py-0.5 md:text-[10px]"
+          >
+            {terminal.project?.name || terminal.projectPath}
+          </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {canReconnect && (
-            <Button
-              size="xs"
-              variant="default"
-              onClick={(event) => {
-                event.stopPropagation();
-                onReconnect();
-              }}
-            >
-              <RotateCcwIcon data-icon="inline-start" />
-              Reconnect
-            </Button>
-          )}
           <Button
             size="icon-xs"
             variant="destructive"
@@ -253,22 +204,6 @@ function TerminalPagePanel() {
       selectTerminal(visibleTerminals[0].id);
     }
   }, [visibleTerminals, selectedTerminalId, selectTerminal]);
-
-  const handleReconnectTerminal = useCallback(
-    async (terminalId: string) => {
-      try {
-        await api.startTerminal(terminalId);
-        updateTerminal(terminalId, {
-          status: "running",
-          currentTask: null,
-          error: null,
-        });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to reconnect terminal");
-      }
-    },
-    [updateTerminal]
-  );
 
   const handleDeleteTerminal = useCallback(async () => {
     if (!pendingDeleteTerminal) return;
@@ -445,7 +380,6 @@ function TerminalPagePanel() {
                 terminal={terminal}
                 isSelected={selectedTerminalId === terminal.id}
                 onSelect={() => selectTerminal(terminal.id)}
-                onReconnect={() => handleReconnectTerminal(terminal.id)}
                 onDelete={() => setPendingDeleteTerminal(terminal)}
                 onSwipeNavigate={isMobile ? navigateTerminal : undefined}
               />
