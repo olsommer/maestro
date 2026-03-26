@@ -227,7 +227,7 @@ function MobileTerminalControls({
   const isMobile = useIsMobile();
   const { keyboardOpen } = useMobileKeyboard();
   const [moreOpen, setMoreOpen] = useState(false);
-  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
+  const { status: voiceStatus, toggle: toggleVoice, waveform } = useDeepgram({
     onTranscript,
   });
 
@@ -244,17 +244,23 @@ function MobileTerminalControls({
         : voiceStatus === "stopping"
           ? "Sending..."
           : null;
+  const voiceStatusOffset = moreOpen
+    ? "calc(env(safe-area-inset-bottom) + 6.5rem)"
+    : "calc(env(safe-area-inset-bottom) + 3.4rem)";
 
   return (
     <div
-      className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-[105] px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
       aria-hidden={keyboardOpen}
       onTouchMove={(event) => event.stopPropagation()}
       style={keyboardOpen ? { visibility: "hidden" } : undefined}
     >
       {voiceHint && (
-        <div className="flex items-center justify-center">
-          <div className="inline-flex items-center gap-2 rounded-full border bg-card/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+        <div
+          className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-2"
+          style={{ bottom: voiceStatusOffset }}
+        >
+          <div className="inline-flex max-w-full items-center gap-2 rounded-full border bg-card/95 px-3 py-1.5 text-[11px] text-muted-foreground shadow-lg backdrop-blur-md">
             <span
               className={`size-2 rounded-full ${
                 voiceStatus === "listening"
@@ -265,93 +271,109 @@ function MobileTerminalControls({
               }`}
             />
             <span>{voiceHint}</span>
+            <div className="flex h-4 items-end gap-0.5" aria-hidden="true">
+              {waveform.map((level, index) => (
+                <span
+                  key={index}
+                  className={`w-1 rounded-full transition-[height,opacity] duration-75 ${
+                    voiceStatus === "stopping" ? "bg-emerald-500/70" : "bg-red-500/80"
+                  }`}
+                  style={{
+                    height: `${Math.max(4, Math.round(level * 16))}px`,
+                    opacity: voiceStatus === "listening" ? 0.45 + level * 0.55 : 0.55,
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {moreOpen && (
-        <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
-            <ChevronUpIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
-            <ChevronLeftIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
-            <ChevronDownIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
-            <ChevronRightIcon className="size-3.5" />
+      <div className="flex flex-col gap-2">
+        {moreOpen && (
+          <div className="pointer-events-auto grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
+              <ChevronUpIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
+              <ChevronLeftIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
+              <ChevronDownIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
+              <ChevronRightIcon className="size-3.5" />
+            </Button>
+            <Button
+              size="xs"
+              variant={textOverlayOpen ? "default" : "secondary"}
+              className={toolbarButtonClassName}
+              onClick={onToggleTextOverlay}
+              aria-label="Show terminal text"
+            >
+              <TextIcon className="size-3.5" />
+            </Button>
+          </div>
+        )}
+
+        <div className="pointer-events-auto grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={() => send("\x1b")}
+            aria-label="Escape"
+          >
+            <XIcon className="size-3.5" />
           </Button>
           <Button
             size="xs"
-            variant={textOverlayOpen ? "default" : "secondary"}
+            variant="secondary"
             className={toolbarButtonClassName}
-            onClick={onToggleTextOverlay}
-            aria-label="Show terminal text"
+            onClick={() => send("\t")}
+            aria-label="Tab"
           >
-            <TextIcon className="size-3.5" />
+            <ArrowRightToLineIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={() => send("\r")}
+            aria-label="Enter"
+          >
+            <CornerDownLeftIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant={isListening ? "destructive" : "secondary"}
+            className={toolbarButtonClassName}
+            onClick={toggleVoice}
+            disabled={isVoiceBusy}
+            aria-label={
+              voiceStatus === "stopping"
+                ? "Finishing voice input"
+                : isListening
+                  ? "Stop voice input"
+                  : "Start voice input"
+            }
+          >
+            {isListening ? (
+              <MicOffIcon className={voiceStatus === "stopping" ? "size-3.5 animate-pulse" : "size-3.5"} />
+            ) : (
+              <MicIcon className={voiceStatus === "connecting" ? "size-3.5 animate-pulse" : "size-3.5"} />
+            )}
+          </Button>
+          <Button
+            size="xs"
+            variant={moreOpen ? "default" : "secondary"}
+            className={toolbarButtonClassName}
+            onClick={() => setMoreOpen((current) => !current)}
+            aria-label="More controls"
+          >
+            <EllipsisIcon className="size-3.5" />
           </Button>
         </div>
-      )}
-
-      <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\x1b")}
-          aria-label="Escape"
-        >
-          <XIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\t")}
-          aria-label="Tab"
-        >
-          <ArrowRightToLineIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\r")}
-          aria-label="Enter"
-        >
-          <CornerDownLeftIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant={isListening ? "destructive" : "secondary"}
-          className={toolbarButtonClassName}
-          onClick={toggleVoice}
-          disabled={isVoiceBusy}
-          aria-label={
-            voiceStatus === "stopping"
-              ? "Finishing voice input"
-              : isListening
-                ? "Stop voice input"
-                : "Start voice input"
-          }
-        >
-          {isListening ? (
-            <MicOffIcon className={voiceStatus === "stopping" ? "size-3.5 animate-pulse" : "size-3.5"} />
-          ) : (
-            <MicIcon className={voiceStatus === "connecting" ? "size-3.5 animate-pulse" : "size-3.5"} />
-          )}
-        </Button>
-        <Button
-          size="xs"
-          variant={moreOpen ? "default" : "secondary"}
-          className={toolbarButtonClassName}
-          onClick={() => setMoreOpen((current) => !current)}
-          aria-label="More controls"
-        >
-          <EllipsisIcon className="size-3.5" />
-        </Button>
       </div>
     </div>
   );
