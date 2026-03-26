@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
-export type DeepgramStatus = "idle" | "connecting" | "listening" | "error";
+export type DeepgramStatus = "idle" | "connecting" | "listening" | "stopping" | "error";
 
 interface UseDeepgramOptions {
   onTranscript: (text: string) => void;
@@ -15,18 +15,97 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finalizedSegmentsRef = useRef<string[]>([]);
+  const interimTranscriptRef = useRef("");
+  const stoppingRef = useRef(false);
+
+  const clearStopTimer = useCallback(() => {
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  }, []);
+
+  const resetTranscriptBuffer = useCallback(() => {
+    finalizedSegmentsRef.current = [];
+    interimTranscriptRef.current = "";
+  }, []);
+
+  const flushTranscript = useCallback(() => {
+    const text = [...finalizedSegmentsRef.current, interimTranscriptRef.current]
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    resetTranscriptBuffer();
+    if (text) {
+      onTranscript(text);
+    }
+  }, [onTranscript, resetTranscriptBuffer]);
+
+  const teardown = useCallback(
+    (nextStatus: DeepgramStatus = "idle") => {
+      clearStopTimer();
+      stoppingRef.current = false;
+
+      const recorder = mediaRef.current;
+      mediaRef.current = null;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws && ws.readyState < WebSocket.CLOSING) {
+        ws.close();
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+
+      setStatus(nextStatus);
+    },
+    [clearStopTimer]
+  );
 
   const stop = useCallback(() => {
-    mediaRef.current?.stop();
-    mediaRef.current = null;
-    wsRef.current?.close();
-    wsRef.current = null;
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+    const ws = wsRef.current;
+    if (!ws) {
+      teardown("idle");
+      return;
     }
-    setStatus("idle");
-  }, []);
+
+    if (stoppingRef.current) {
+      return;
+    }
+
+    stoppingRef.current = true;
+    setStatus("stopping");
+
+    if (mediaRef.current && mediaRef.current.state !== "inactive") {
+      mediaRef.current.stop();
+    }
+    mediaRef.current = null;
+
+    clearStopTimer();
+    stopTimerRef.current = setTimeout(() => {
+      flushTranscript();
+      teardown("idle");
+    }, 1500);
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "CloseStream" }));
+      return;
+    }
+
+    flushTranscript();
+    teardown("idle");
+  }, [clearStopTimer, flushTranscript, teardown]);
 
   const start = useCallback(async () => {
     if (wsRef.current) {
@@ -34,6 +113,9 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
       return;
     }
 
+    clearStopTimer();
+    resetTranscriptBuffer();
+    stoppingRef.current = false;
     setStatus("connecting");
 
     let apiKey: string;
@@ -41,6 +123,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
       const res = await api.getDeepgramKey();
       apiKey = res.apiKey;
     } catch {
+      resetTranscriptBuffer();
       setStatus("error");
       return;
     }
@@ -50,6 +133,7 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
     } catch {
+      resetTranscriptBuffer();
       setStatus("error");
       return;
     }
@@ -92,39 +176,39 @@ export function useDeepgram({ onTranscript, language }: UseDeepgramOptions) {
       try {
         const data = JSON.parse(event.data);
         const transcript = data.channel?.alternatives?.[0]?.transcript;
-        if (transcript && data.is_final) {
-          onTranscript(transcript);
+        if (typeof transcript !== "string") {
+          return;
         }
+
+        const normalizedTranscript = transcript.trim();
+        if (data.is_final) {
+          if (normalizedTranscript) {
+            finalizedSegmentsRef.current.push(normalizedTranscript);
+          }
+          interimTranscriptRef.current = "";
+          return;
+        }
+
+        interimTranscriptRef.current = normalizedTranscript;
       } catch {
         // Ignore parse errors
       }
     };
 
     ws.onerror = () => {
-      stop();
-      setStatus("error");
+      if (!stoppingRef.current) {
+        setStatus("error");
+      }
     };
 
     ws.onclose = () => {
-      if (mediaRef.current) {
-        mediaRef.current.stop();
-        mediaRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-      wsRef.current = null;
-      setStatus("idle");
+      flushTranscript();
+      teardown("idle");
     };
-  }, [onTranscript, language, stop]);
+  }, [clearStopTimer, flushTranscript, language, resetTranscriptBuffer, stop, teardown]);
 
   const toggle = useCallback(() => {
     if (wsRef.current) {
-      // Send close signal to Deepgram to get final transcript
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: "CloseStream" }));
-      }
       stop();
     } else {
       void start();
