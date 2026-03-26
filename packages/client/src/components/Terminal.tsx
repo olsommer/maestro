@@ -81,23 +81,136 @@ function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): vo
 }
 
 function useMobileKeyboard() {
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardState, setKeyboardState] = useState({
+    keyboardInset: 0,
+    keyboardOpen: false,
+  });
 
   useEffect(() => {
+    let layoutViewportWidth = window.innerWidth;
+    let layoutViewportHeight = window.innerHeight;
     const vv = window.visualViewport;
     if (!vv) return;
 
     const threshold = 100;
     const check = () => {
-      setKeyboardOpen(window.innerHeight - vv.height > threshold);
+      const nextWidth = window.innerWidth;
+      const nextHeight = window.innerHeight;
+      const keyboardLikeResize =
+        nextWidth === layoutViewportWidth &&
+        nextHeight < layoutViewportHeight &&
+        isEditableElement(document.activeElement);
+
+      if (!keyboardLikeResize) {
+        layoutViewportWidth = nextWidth;
+        layoutViewportHeight = nextHeight;
+      }
+
+      const keyboardInset = Math.max(
+        0,
+        Math.round(layoutViewportHeight - (vv.height + vv.offsetTop))
+      );
+      setKeyboardState({
+        keyboardInset,
+        keyboardOpen: layoutViewportHeight - vv.height > threshold,
+      });
     };
 
     check();
     vv.addEventListener("resize", check);
-    return () => vv.removeEventListener("resize", check);
+    vv.addEventListener("scroll", check);
+    window.addEventListener("resize", check);
+    return () => {
+      vv.removeEventListener("resize", check);
+      vv.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
   }, []);
 
-  return keyboardOpen;
+  return keyboardState;
+}
+
+function removeLastCharacter(value: string): string {
+  const chars = Array.from(value);
+  chars.pop();
+  return chars.join("");
+}
+
+function removeLastWord(value: string): string {
+  const chars = Array.from(value);
+  while (chars.length > 0 && /\s/.test(chars[chars.length - 1] ?? "")) {
+    chars.pop();
+  }
+  while (chars.length > 0 && !/\s/.test(chars[chars.length - 1] ?? "")) {
+    chars.pop();
+  }
+  return chars.join("");
+}
+
+function trimPreview(value: string, maxLength = 240): string {
+  const chars = Array.from(value);
+  if (chars.length <= maxLength) return value;
+  return chars.slice(chars.length - maxLength).join("");
+}
+
+function applyMobilePreviewInput(currentPreview: string, data: string): string {
+  let nextPreview = currentPreview;
+
+  for (let index = 0; index < data.length; index += 1) {
+    const char = data[index];
+
+    if (!char) continue;
+
+    if (char === "\x1b") {
+      while (index + 1 < data.length) {
+        const nextChar = data[index + 1];
+        if (!nextChar) break;
+        if (/[A-Za-z~]/.test(nextChar)) {
+          index += 1;
+          break;
+        }
+        if (nextChar === "[" || nextChar === "]" || /[0-9;?]/.test(nextChar)) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+
+    if (char === "\r" || char === "\n" || char === "\u0003" || char === "\u0004") {
+      nextPreview = "";
+      continue;
+    }
+
+    if (char === "\u0008" || char === "\u007f") {
+      nextPreview = removeLastCharacter(nextPreview);
+      continue;
+    }
+
+    if (char === "\u0015") {
+      nextPreview = "";
+      continue;
+    }
+
+    if (char === "\u0017") {
+      nextPreview = removeLastWord(nextPreview);
+      continue;
+    }
+
+    if (char === "\t") {
+      nextPreview = trimPreview(`${nextPreview}  `);
+      continue;
+    }
+
+    if (char < " ") {
+      continue;
+    }
+
+    nextPreview = trimPreview(`${nextPreview}${char}`);
+  }
+
+  return nextPreview;
 }
 
 function MobileTerminalControls({
@@ -112,7 +225,7 @@ function MobileTerminalControls({
   textOverlayOpen: boolean;
 }) {
   const isMobile = useIsMobile();
-  const keyboardOpen = useMobileKeyboard();
+  const { keyboardOpen } = useMobileKeyboard();
   const [moreOpen, setMoreOpen] = useState(false);
   const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
     onTranscript,
@@ -222,6 +335,7 @@ function extractBufferText(term: XtermTerminal): string {
 
 export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
   const isMobile = useIsMobile();
+  const { keyboardInset, keyboardOpen } = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
@@ -234,9 +348,13 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldRestoreFocusRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
+  const [mobileComposingText, setMobileComposingText] = useState("");
+  const [mobileInputPreview, setMobileInputPreview] = useState("");
 
   useLayoutEffect(() => {
     setTextOverlay(null);
+    setMobileComposingText("");
+    setMobileInputPreview("");
     attachedRef.current = false;
     lastSeqRef.current = 0;
     pendingChunksRef.current.clear();
@@ -251,6 +369,8 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     isActiveRef.current = Boolean(isActive);
     if (!isActive) {
       shouldRestoreFocusRef.current = false;
+      setMobileComposingText("");
+      setMobileInputPreview("");
     }
   }, [isActive]);
 
@@ -266,6 +386,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
   const sendToTerminal = useCallback(
     (data: string) => {
+      if (isMobileRef.current) {
+        setMobileInputPreview((current) => applyMobilePreviewInput(current, data));
+      }
       socketRef.current?.emit("terminal:input", { terminalId, data });
     },
     [terminalId]
@@ -467,6 +590,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       // Send keystrokes to server
       term.onData((data: string) => {
+        if (isMobileRef.current) {
+          setMobileInputPreview((current) => applyMobilePreviewInput(current, data));
+        }
         socket.emit("terminal:input", { terminalId, data });
       });
 
@@ -494,6 +620,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         term.textarea ??
         container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
 
+      const syncComposingText = (value?: string | null) => {
+        if (!isMobileRef.current) return;
+        setMobileComposingText(value ?? helperTextarea?.value ?? "");
+      };
+
       const onTerminalFocus = () => {
         shouldRestoreFocusRef.current = isActiveRef.current;
       };
@@ -502,13 +633,34 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (document.visibilityState === "hidden") {
           return;
         }
+        setMobileComposingText("");
         if (!container.contains(document.activeElement)) {
           shouldRestoreFocusRef.current = false;
         }
       };
 
+      const onHelperInput = () => {
+        syncComposingText(helperTextarea?.value);
+      };
+
+      const onCompositionStart = () => {
+        syncComposingText(helperTextarea?.value);
+      };
+
+      const onCompositionUpdate = (event: CompositionEvent) => {
+        syncComposingText(event.data);
+      };
+
+      const onCompositionEnd = () => {
+        setMobileComposingText("");
+      };
+
       helperTextarea?.addEventListener("focus", onTerminalFocus);
       helperTextarea?.addEventListener("blur", onTerminalBlur);
+      helperTextarea?.addEventListener("input", onHelperInput);
+      helperTextarea?.addEventListener("compositionstart", onCompositionStart);
+      helperTextarea?.addEventListener("compositionupdate", onCompositionUpdate);
+      helperTextarea?.addEventListener("compositionend", onCompositionEnd);
 
       const attachTerminal = async () => {
         const requestedCursor = lastSeqRef.current;
@@ -622,6 +774,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         container.removeEventListener("pointerdown", onPointerDown);
         helperTextarea?.removeEventListener("focus", onTerminalFocus);
         helperTextarea?.removeEventListener("blur", onTerminalBlur);
+        helperTextarea?.removeEventListener("input", onHelperInput);
+        helperTextarea?.removeEventListener("compositionstart", onCompositionStart);
+        helperTextarea?.removeEventListener("compositionupdate", onCompositionUpdate);
+        helperTextarea?.removeEventListener("compositionend", onCompositionEnd);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
@@ -680,9 +836,26 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     handleShowText();
   }, [handleShowText, textOverlay]);
 
+  const mobilePreviewValue = mobileComposingText || mobileInputPreview;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
+
+      {isActive && isMobile && keyboardOpen && (
+        <div
+          className="pointer-events-none absolute inset-x-0 z-[100] px-2"
+          style={{ bottom: `${keyboardInset + 8}px` }}
+        >
+          <textarea
+            readOnly
+            value={mobilePreviewValue}
+            placeholder="Typing preview"
+            aria-label="Typing preview"
+            className="h-14 w-full resize-none rounded-lg border border-border bg-card/95 px-3 py-2 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+          />
+        </div>
+      )}
 
       {textOverlay !== null && (
         <div className="absolute inset-0 z-[110] flex flex-col bg-background">
