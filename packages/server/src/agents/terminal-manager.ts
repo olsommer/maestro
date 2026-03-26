@@ -32,7 +32,10 @@ import {
 import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
-import { syncProjectRepoBeforeSpawn } from "../projects/repo-sync.js";
+import {
+  resolveAutoWorktreeStartPoint,
+  syncProjectRepoBeforeSpawn,
+} from "../projects/repo-sync.js";
 import { getSettings } from "../state/settings.js";
 import type { TerminalRecord } from "../state/types.js";
 
@@ -333,23 +336,31 @@ export async function startTerminal(
     throw new Error(`Agent ${terminalId} is already running`);
   }
 
-  await syncProjectRepoBeforeSpawn({
-    projectId: agent.projectId,
-    projectPath: agent.worktreePath || agent.projectPath,
-  });
-
   let cwd = agent.worktreePath || agent.projectPath;
   if (agent.autoWorktree && !agent.worktreePath) {
     if (!isGitRepo(agent.projectPath)) {
       throw new Error("Auto-worktree requires the project to be a git repository");
     }
 
-    const worktreePath = createTerminalWorktree(agent.projectPath, terminalId);
+    const project = agent.projectId ? getProjectRecordById(agent.projectId) : null;
+    const startPoint = (
+      await resolveAutoWorktreeStartPoint({
+        projectId: agent.projectId,
+        projectPath: agent.projectPath,
+        preferredBranch: project?.defaultBranch ?? null,
+      })
+    ).ref;
+    const worktreePath = createTerminalWorktree(agent.projectPath, terminalId, startPoint);
     updateTerminalRecord(terminalId, {
       worktreePath,
       lastActivity: new Date().toISOString(),
     });
     cwd = worktreePath;
+  } else {
+    await syncProjectRepoBeforeSpawn({
+      projectId: agent.projectId,
+      projectPath: cwd,
+    });
   }
 
   if (!fs.existsSync(cwd)) {

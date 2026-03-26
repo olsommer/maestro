@@ -674,7 +674,7 @@ function ProjectsView(props: Props) {
                   {selectedProject.lastSyncError && (
                     <Alert variant="destructive">
                       <TriangleAlertIcon />
-                      <AlertTitle>Issue sync failed</AlertTitle>
+                      <AlertTitle>Project sync issue</AlertTitle>
                       <AlertDescription>{selectedProject.lastSyncError}</AlertDescription>
                     </Alert>
                   )}

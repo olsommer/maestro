@@ -20,6 +20,19 @@ export interface RepoSyncDecision {
   reason: string;
 }
 
+export interface AutoWorktreeStartPointInput {
+  currentBranch: string;
+  upstreamRef: string | null;
+  preferredBranch: string | null;
+  preferredBranchExists: boolean;
+}
+
+export interface AutoWorktreeStartPoint {
+  ref: string;
+  usedRemote: boolean;
+  reason: string;
+}
+
 function readCommandError(error: unknown, fallback: string): string {
   if (error instanceof Error && "stderr" in error && typeof error.stderr === "string") {
     const stderr = error.stderr.trim();
@@ -145,6 +158,41 @@ export function decideRepoSyncAction(input: RepoSyncDecisionInput): RepoSyncDeci
   };
 }
 
+export function decideAutoWorktreeStartPoint(
+  input: AutoWorktreeStartPointInput
+): AutoWorktreeStartPoint {
+  const preferredBranch = input.preferredBranch?.trim() || null;
+  if (preferredBranch && input.preferredBranchExists) {
+    return {
+      ref: `origin/${preferredBranch}`,
+      usedRemote: true,
+      reason: `Using latest origin/${preferredBranch} in a fresh worktree.`,
+    };
+  }
+
+  if (input.upstreamRef) {
+    return {
+      ref: input.upstreamRef,
+      usedRemote: true,
+      reason: `Using latest ${input.upstreamRef} in a fresh worktree.`,
+    };
+  }
+
+  if (input.currentBranch !== "HEAD") {
+    return {
+      ref: input.currentBranch,
+      usedRemote: false,
+      reason: `Using local ${input.currentBranch} in a fresh worktree because no remote tracking branch was available.`,
+    };
+  }
+
+  return {
+    ref: "HEAD",
+    usedRemote: false,
+    reason: "Using local HEAD in a fresh worktree because no remote tracking branch was available.",
+  };
+}
+
 function resolveUpstreamRef(path: string, currentBranch: string): string | null {
   const upstream = tryRunGit(path, ["rev-parse", "--abbrev-ref", "@{upstream}"]);
   if (upstream.ok && upstream.output) {
@@ -158,6 +206,61 @@ function resolveUpstreamRef(path: string, currentBranch: string): string | null 
   }
 
   return null;
+}
+
+function hasGitRef(path: string, ref: string): boolean {
+  return tryRunGit(path, ["show-ref", "--verify", "--quiet", ref]).ok;
+}
+
+export async function resolveAutoWorktreeStartPoint(input: {
+  projectId?: string | null;
+  projectPath: string;
+  preferredBranch?: string | null;
+}): Promise<AutoWorktreeStartPoint> {
+  const project = resolveProjectRecord(input);
+  const insideWorkTree = tryRunGit(input.projectPath, ["rev-parse", "--is-inside-work-tree"]);
+  if (!insideWorkTree.ok) {
+    const reason = "Auto-worktree requires the project path to be a git repository.";
+    persistSyncError(project, reason);
+    throw new Error(reason);
+  }
+
+  const currentBranch = tryRunGit(input.projectPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!currentBranch.ok) {
+    const reason = `Pre-spawn sync failed while resolving the current branch: ${currentBranch.error}`;
+    persistSyncError(project, reason);
+    throw new Error(reason);
+  }
+
+  const origin = tryRunGit(input.projectPath, ["remote", "get-url", "origin"]);
+  if (origin.ok && origin.output) {
+    const fetch = tryRunGit(input.projectPath, ["fetch", "--prune", "origin"]);
+    if (!fetch.ok) {
+      const reason = `Pre-spawn sync failed during fetch: ${fetch.error}`;
+      persistSyncError(project, reason);
+      throw new Error(reason);
+    }
+  }
+
+  const preferredBranch = input.preferredBranch?.trim() || project?.defaultBranch?.trim() || null;
+  const preferredBranchExists = Boolean(
+    preferredBranch && hasGitRef(input.projectPath, `refs/remotes/origin/${preferredBranch}`)
+  );
+  const upstreamRef = resolveUpstreamRef(input.projectPath, currentBranch.output);
+  const decision = decideAutoWorktreeStartPoint({
+    currentBranch: currentBranch.output,
+    upstreamRef,
+    preferredBranch,
+    preferredBranchExists,
+  });
+
+  if (decision.usedRemote) {
+    persistSyncSuccess(project);
+  } else {
+    persistSyncError(project, decision.reason);
+  }
+
+  return decision;
 }
 
 export async function syncProjectRepoBeforeSpawn(input: {
