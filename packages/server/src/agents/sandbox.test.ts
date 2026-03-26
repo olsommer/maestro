@@ -3,119 +3,69 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { buildNsjailArgs } from "./sandbox.js";
+import {
+  buildDockerRunArgs,
+  normalizeSandboxProvider,
+  resolveSandboxProviderAvailability,
+  type SandboxConfig,
+} from "./sandbox.js";
 
-function withEnv(
-  overrides: Record<string, string | undefined>,
-  fn: () => void
-): void {
-  const previous = new Map<string, string | undefined>();
-
-  for (const [key, value] of Object.entries(overrides)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-
-  try {
-    fn();
-  } finally {
-    for (const [key, value] of previous) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  }
-}
-
-function getEnvArg(args: string[], key: string): string {
-  for (let index = 0; index < args.length - 1; index++) {
-    if (args[index] === "--env" && args[index + 1].startsWith(`${key}=`)) {
-      return args[index + 1].slice(key.length + 1);
-    }
-  }
-
-  throw new Error(`Missing ${key} env arg`);
-}
-
-function hasReadonlyMount(args: string[], targetPath: string): boolean {
-  for (let index = 0; index < args.length - 1; index++) {
-    if (args[index] === "--bindmount_ro" && args[index + 1] === `${targetPath}:${targetPath}`) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function createFakeCodexInstall(baseDir: string, globalBinDir: string): string {
-  const companionDir = path.join(baseDir, "lib", "node_modules", "@openai", "codex", "bin");
-  const entrypoint = path.join(companionDir, "codex.js");
-  const symlinkPath = path.join(globalBinDir, "codex");
-
-  fs.mkdirSync(companionDir, { recursive: true });
-  fs.mkdirSync(globalBinDir, { recursive: true });
-  fs.writeFileSync(entrypoint, "#!/bin/sh\nexit 0\n");
-  fs.chmodSync(entrypoint, 0o755);
-  fs.symlinkSync(entrypoint, symlinkPath);
-
-  return companionDir;
-}
-
-test("adds Codex companion bin dir to sandbox PATH", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-path-"));
-  const projectDir = path.join(tempDir, "project");
-  const npmPrefix = path.join(tempDir, "npm-global");
-  const globalBinDir = path.join(npmPrefix, "bin");
-  const companionDir = createFakeCodexInstall(npmPrefix, globalBinDir);
-
-  fs.mkdirSync(projectDir, { recursive: true });
-
-  withEnv(
-    {
-      PATH: `${globalBinDir}:${process.env.PATH ?? ""}`,
-      npm_config_prefix: npmPrefix,
-    },
-    () => {
-      const args = buildNsjailArgs({ cwd: projectDir, env: {} });
-      const sandboxPath = getEnvArg(args, "PATH").split(":");
-
-      assert.ok(sandboxPath.includes(globalBinDir));
-      assert.ok(sandboxPath.includes(companionDir));
-      assert.ok(hasReadonlyMount(args, npmPrefix));
-    }
-  );
-
-  fs.rmSync(tempDir, { recursive: true, force: true });
+test("normalizes sandbox providers and legacy booleans", () => {
+  assert.equal(normalizeSandboxProvider("docker"), "docker");
+  assert.equal(normalizeSandboxProvider("nsjail"), "nsjail");
+  assert.equal(normalizeSandboxProvider("bogus"), "none");
+  assert.equal(normalizeSandboxProvider(undefined, true), "nsjail");
 });
 
-test("mounts the Codex companion dir when it lives outside the global prefix", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-mount-"));
-  const projectDir = path.join(tempDir, "project");
-  const launcherBinDir = path.join(tempDir, "launcher-bin");
-  const companionRoot = path.join(tempDir, "standalone-codex");
-  const companionDir = createFakeCodexInstall(companionRoot, launcherBinDir);
-
-  fs.mkdirSync(projectDir, { recursive: true });
-
-  withEnv(
-    {
-      PATH: `${launcherBinDir}:${process.env.PATH ?? ""}`,
-      npm_config_prefix: undefined,
-    },
-    () => {
-      const args = buildNsjailArgs({ cwd: projectDir, env: {} });
-      const sandboxPath = getEnvArg(args, "PATH").split(":");
-
-      assert.ok(sandboxPath.includes(companionDir));
-      assert.ok(hasReadonlyMount(args, companionDir));
-    }
+test("falls back to none when requested sandbox is unavailable", () => {
+  assert.equal(
+    resolveSandboxProviderAvailability("docker", {
+      dockerAvailable: false,
+      nsjailAvailable: true,
+    }),
+    "none"
   );
+  assert.equal(
+    resolveSandboxProviderAvailability("nsjail", {
+      dockerAvailable: true,
+      nsjailAvailable: false,
+    }),
+    "none"
+  );
+  assert.equal(
+    resolveSandboxProviderAvailability("docker", {
+      dockerAvailable: true,
+      nsjailAvailable: false,
+    }),
+    "docker"
+  );
+});
 
-  fs.rmSync(tempDir, { recursive: true, force: true });
+test("builds docker run args with mounts, env, and command", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-"));
+  const readonlyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-ro-"));
+
+  const config: SandboxConfig = {
+    cwd,
+    env: { FOO: "bar" },
+    readonlyMounts: [readonlyDir],
+    memoryLimit: 128 * 1024 * 1024,
+    maxProcesses: 16,
+  };
+
+  const args = buildDockerRunArgs(config, ["/bin/bash", "-l"], "example-sandbox:latest");
+
+  assert.equal(args[0], "run");
+  assert.ok(args.includes("--workdir"));
+  assert.ok(args.includes(cwd));
+  assert.ok(args.includes("example-sandbox:latest"));
+  assert.ok(args.includes("/bin/bash"));
+  assert.ok(args.includes("-l"));
+  assert.ok(args.includes("--env"));
+  assert.ok(args.includes("FOO=bar"));
+
+  const mountArgs = args.filter((value) => value.startsWith("type=bind,"));
+  assert.ok(mountArgs.some((value) => value.includes(`src=${cwd}`)));
+  assert.ok(mountArgs.some((value) => value.includes(`src=${readonlyDir}`)));
+  assert.ok(mountArgs.some((value) => value.includes(`dst=${readonlyDir}`) && value.includes("readonly")));
 });

@@ -506,6 +506,7 @@ function AgentDefaultsCard({
   refreshKey: number;
 }) {
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "nsjail" | "docker">("none");
   const [disableSandbox, setDisableSandbox] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
@@ -517,6 +518,7 @@ function AgentDefaultsCard({
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
+    setSandboxProvider(settings.sandboxProvider);
     setDisableSandbox(settings.agentDefaultDisableSandbox);
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);
@@ -542,6 +544,7 @@ function AgentDefaultsCard({
   const hasAvailableProvider = claudeAvailable || codexAvailable;
   const isDirty =
     provider !== (settings?.agentDefaultProvider ?? "claude") ||
+    sandboxProvider !== (settings?.sandboxProvider ?? "none") ||
     disableSandbox !== (settings?.agentDefaultDisableSandbox ?? false) ||
     skipPermissions !== (settings?.agentDefaultSkipPermissions ?? true) ||
     worktreeMode !== (settings?.agentDefaultWorktreeMode ?? "none");
@@ -551,6 +554,7 @@ function AgentDefaultsCard({
     try {
       const updated = await api.updateSettings({
         agentDefaultProvider: provider,
+        sandboxProvider,
         agentDefaultDisableSandbox: disableSandbox,
         agentDefaultSkipPermissions: skipPermissions,
         agentDefaultWorktreeMode: worktreeMode,
@@ -589,6 +593,33 @@ function AgentDefaultsCard({
 
         <FieldGroup>
           <Field>
+            <FieldLabel htmlFor="sandbox-provider">Sandbox runner</FieldLabel>
+            <Select
+              value={sandboxProvider}
+              onValueChange={(value) =>
+                setSandboxProvider((value as "none" | "nsjail" | "docker") ?? "none")
+              }
+            >
+              <SelectTrigger id="sandbox-provider" className="w-full">
+                <SelectValue placeholder="Select a sandbox runner" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="docker">Docker</SelectItem>
+                  <SelectItem value="nsjail">nsjail</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Docker uses an isolated container with Node, Python, and Docker Compose tooling.
+              It does not expose the host Docker socket inside the sandbox. nsjail keeps the
+              existing Linux namespace sandbox. This runner is used whenever a terminal or
+              auto-spawned agent has sandboxing enabled.
+            </FieldDescription>
+          </Field>
+
+          <Field>
             <FieldLabel htmlFor="agent-default-provider">Coding agent</FieldLabel>
             <Select
               value={provider}
@@ -617,7 +648,9 @@ function AgentDefaultsCard({
             <FieldContent>
               <FieldLabel htmlFor="agent-default-sandbox">Sandbox</FieldLabel>
               <FieldDescription>
-                Run automatically spawned agents inside nsjail when available.
+                {sandboxProvider === "none"
+                  ? "No sandbox runner is configured. Auto-spawned agents will run unsandboxed."
+                  : `Run automatically spawned agents inside the configured ${sandboxProvider} sandbox.`}
               </FieldDescription>
             </FieldContent>
             <Switch

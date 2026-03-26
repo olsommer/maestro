@@ -168,7 +168,8 @@ export function NewTerminalDialog({ open, onClose }: Props) {
               <FieldContent>
                 <FieldLabel htmlFor="sandbox-enabled">Sandbox</FieldLabel>
                 <FieldDescription>
-                  Run inside nsjail when available. Turn this off to launch the terminal unsandboxed.
+                  Run inside the configured sandbox runner. If no runner is configured, the
+                  terminal launches unsandboxed.
                 </FieldDescription>
               </FieldContent>
               <Switch

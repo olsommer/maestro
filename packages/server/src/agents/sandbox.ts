@@ -1,12 +1,14 @@
-import * as os from "os";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
+import { fileURLToPath } from "url";
+import type { SandboxProvider } from "@maestro/wire";
 
 export interface SandboxConfig {
   /** Working directory (read-write) */
   cwd: string;
-  /** Environment variables to pass into the jail */
+  /** Environment variables to pass into the sandbox */
   env: Record<string, string>;
   /** Additional read-only mount paths (e.g. secondary project dirs) */
   readonlyMounts?: string[];
@@ -18,31 +20,19 @@ export interface SandboxConfig {
   maxProcesses?: number;
 }
 
-let nsjailPath: string | null | undefined; // undefined = not checked yet
-
-/**
- * Check if nsjail is available on the system.
- */
-export function isNsjailAvailable(): boolean {
-  if (process.platform !== "linux") return false;
-
-  if (nsjailPath === undefined) {
-    try {
-      nsjailPath = execSync("which nsjail", { encoding: "utf-8" }).trim();
-    } catch {
-      nsjailPath = null;
-    }
-  }
-
-  return nsjailPath !== null;
+interface DockerInspectMount {
+  Type?: string;
+  Source?: string;
+  Name?: string;
+  Destination?: string;
+  RW?: boolean;
 }
 
-/**
- * Get the resolved nsjail binary path.
- */
-export function getNsjailPath(): string {
-  if (!nsjailPath) throw new Error("nsjail is not available");
-  return nsjailPath;
+interface DockerMountSpec {
+  type: "bind" | "volume";
+  source: string;
+  target: string;
+  readonly: boolean;
 }
 
 const SANDBOX_UID = 1500;
@@ -56,6 +46,108 @@ const BASE_PATH_DIRS = [
   "/sbin",
   "/bin",
 ];
+const DEFAULT_DOCKER_IMAGE = process.env.MAESTRO_DOCKER_SANDBOX_IMAGE || "maestro-sandbox:latest";
+const DEFAULT_MEMORY_LIMIT = 512 * 1024 * 1024;
+const DEFAULT_MAX_PROCESSES = 64;
+
+let nsjailPath: string | null | undefined; // undefined = not checked yet
+let dockerPath: string | null | undefined; // undefined = not checked yet
+let dockerServerReachable: boolean | undefined;
+let dockerImageReadyFor: string | null = null;
+let cachedSelfMounts: DockerInspectMount[] | undefined;
+
+function resolveBinaryPath(binary: "docker" | "nsjail"): string | null {
+  try {
+    return execSync(`which ${binary}`, { encoding: "utf-8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if nsjail is available on the system.
+ */
+export function isNsjailAvailable(): boolean {
+  if (process.platform !== "linux") return false;
+
+  if (nsjailPath === undefined) {
+    nsjailPath = resolveBinaryPath("nsjail");
+  }
+
+  return nsjailPath !== null;
+}
+
+/**
+ * Get the resolved nsjail binary path.
+ */
+export function getNsjailPath(): string {
+  if (!nsjailPath) throw new Error("nsjail is not available");
+  return nsjailPath;
+}
+
+/**
+ * Check if Docker CLI access is available and can reach a daemon.
+ */
+export function isDockerAvailable(): boolean {
+  if (dockerPath === undefined) {
+    dockerPath = resolveBinaryPath("docker");
+  }
+
+  if (!dockerPath) {
+    dockerServerReachable = false;
+    return false;
+  }
+
+  if (dockerServerReachable === undefined) {
+    try {
+      execFileSync(
+        dockerPath,
+        ["version", "--format", "{{.Server.Version}}"],
+        { stdio: ["ignore", "ignore", "ignore"] }
+      );
+      dockerServerReachable = true;
+    } catch {
+      dockerServerReachable = false;
+    }
+  }
+
+  return dockerServerReachable;
+}
+
+export function getDockerPath(): string {
+  if (!dockerPath) throw new Error("docker is not available");
+  return dockerPath;
+}
+
+export function normalizeSandboxProvider(
+  value: string | null | undefined,
+  legacyEnabled = false
+): SandboxProvider {
+  if (value === "none" || value === "nsjail" || value === "docker") {
+    return value;
+  }
+  return legacyEnabled ? "nsjail" : "none";
+}
+
+export function resolveSandboxProviderAvailability(
+  requested: SandboxProvider,
+  availability: { nsjailAvailable: boolean; dockerAvailable: boolean }
+): SandboxProvider {
+  if (requested === "docker") {
+    return availability.dockerAvailable ? "docker" : "none";
+  }
+  if (requested === "nsjail") {
+    return availability.nsjailAvailable ? "nsjail" : "none";
+  }
+  return "none";
+}
+
+export function resolveSandboxProvider(requested: SandboxProvider): SandboxProvider {
+  return resolveSandboxProviderAvailability(requested, {
+    nsjailAvailable: isNsjailAvailable(),
+    dockerAvailable: isDockerAvailable(),
+  });
+}
 
 /**
  * Ensure a directory is writable by the sandbox user.
@@ -83,144 +175,66 @@ export function ensureSandboxWritable(dirPath: string): void {
  */
 export function buildNsjailArgs(config: SandboxConfig): string[] {
   const home = os.homedir();
+  const sandboxHome = "/home/sandbox";
   const mountedReadonlyRoots = [...BASE_READONLY_MOUNTS];
   const nodeBin = getNodeBinaryDir();
   const npmGlobalPrefix = getNpmGlobalPrefix();
   const codexCompanionBinDir = getCliCompanionBinDir("codex");
 
   const args: string[] = [
-    // One-shot mode (run command once, exit)
     "--mode", "o",
-
-    // Use host root as base
     "--chroot", "/",
-
-    // Run jailed process as non-root sandbox user
     "--user", `${SANDBOX_UID}`,
     "--group", `${SANDBOX_GID}`,
-
-    // We're already root in Docker, don't try to create a user namespace
     "--disable_clone_newuser",
-
-    // Keep network access (agents need LLM API calls)
     "--disable_clone_newnet",
-
-    // Kill jailed process if maestro dies
     "--forward_signals",
-
-    // Set working directory inside the jail
     "--cwd", config.cwd,
-
-    // Auto-detect cgroup v2 for resource limits
     "--detect_cgroupv2",
-
-    // cgroup memory limit
-    "--cgroup_mem_max", String(config.memoryLimit ?? 512 * 1024 * 1024),
-
-    // cgroup PID limit
-    "--cgroup_pids_max", String(config.maxProcesses ?? 64),
-
-    // rlimit-based resource limits (always work)
+    "--cgroup_mem_max", String(config.memoryLimit ?? DEFAULT_MEMORY_LIMIT),
+    "--cgroup_pids_max", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
     "--rlimit_cpu", "soft",
-    "--rlimit_fsize", "1024", // max file size in MB
-    "--rlimit_nproc", String(config.maxProcesses ?? 64),
+    "--rlimit_fsize", "1024",
+    "--rlimit_nproc", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
     "--rlimit_nofile", "1024",
-
-    // Reduce log noise
     "--really_quiet",
   ];
 
-  // -- Read-only system mounts --
   for (const dir of BASE_READONLY_MOUNTS) {
     if (fs.existsSync(dir)) {
       args.push("--bindmount_ro", `${dir}:${dir}`);
     }
   }
 
-  // /lib64 exists on some distros
   if (fs.existsSync("/lib64")) {
     args.push("--bindmount_ro", "/lib64:/lib64");
   }
 
-  // Device access (needed for PTY) + proc
   args.push("--bindmount", "/dev:/dev");
-  // proc is mounted by nsjail by default, no need to add it
-
-  // Temp directory (isolated per-agent via tmpfs)
   args.push("--tmpfsmount", "/tmp");
-
-  // Project working directory (read-write)
   args.push("--bindmount", `${config.cwd}:${config.cwd}`);
 
-  // nix store if present
   if (fs.existsSync("/nix")) {
     args.push("--bindmount_ro", "/nix:/nix");
   }
 
-  // Node.js binary + npm global modules (read-only)
-  // In Docker these are typically under /usr/local which is already mounted,
-  // but on custom setups (nvm, volta) they may be elsewhere.
   if (nodeBin && !isAlreadyMounted(nodeBin, mountedReadonlyRoots)) {
     args.push("--bindmount_ro", `${nodeBin}:${nodeBin}`);
     mountedReadonlyRoots.push(nodeBin);
   }
 
-  // npm global prefix (for globally installed CLIs like claude, codex)
   if (npmGlobalPrefix && !isAlreadyMounted(npmGlobalPrefix, mountedReadonlyRoots)) {
     args.push("--bindmount_ro", `${npmGlobalPrefix}:${npmGlobalPrefix}`);
     mountedReadonlyRoots.push(npmGlobalPrefix);
   }
 
-  // Codex ships an `rg` wrapper next to its real CLI entrypoint. When that
-  // directory sits outside the usual mounted roots, expose it explicitly.
   if (codexCompanionBinDir && !isAlreadyMounted(codexCompanionBinDir, mountedReadonlyRoots)) {
     args.push("--bindmount_ro", `${codexCompanionBinDir}:${codexCompanionBinDir}`);
     mountedReadonlyRoots.push(codexCompanionBinDir);
   }
 
-  // Maestro data directory (read-write for agent state)
-  const maestroDir = path.join(home, ".maestro");
-  if (fs.existsSync(maestroDir)) {
-    args.push("--bindmount", `${maestroDir}:${maestroDir}`);
-  }
+  mountSharedAgentPaths(args, home);
 
-  // Codex credentials + config (read-only for auth)
-  const codexDir = path.join(home, ".codex");
-  if (fs.existsSync(codexDir)) {
-    args.push("--bindmount_ro", `${codexDir}:${codexDir}`);
-  }
-
-  // Claude Code credentials - mount read-only for auth
-  const claudeDir = path.join(home, ".claude");
-  if (fs.existsSync(claudeDir)) {
-    args.push("--bindmount_ro", `${claudeDir}:${claudeDir}`);
-
-    // Allow writes to projects subdir (conversation state)
-    const claudeProjectsDir = path.join(claudeDir, "projects");
-    if (fs.existsSync(claudeProjectsDir)) {
-      args.push("--bindmount", `${claudeProjectsDir}:${claudeProjectsDir}`);
-    }
-  }
-
-  // .claude.json (onboarding flag)
-  const claudeJson = path.join(home, ".claude.json");
-  if (fs.existsSync(claudeJson)) {
-    args.push("--bindmount_ro", `${claudeJson}:${claudeJson}`);
-  }
-
-  // Git config (read-only)
-  const gitconfig = path.join(home, ".gitconfig");
-  if (fs.existsSync(gitconfig)) {
-    args.push("--bindmount_ro", `${gitconfig}:${gitconfig}`);
-  }
-
-  // GitHub CLI config (read-only)
-  const ghConfigDir = path.join(home, ".config", "gh");
-  if (fs.existsSync(ghConfigDir)) {
-    args.push("--bindmount_ro", `${ghConfigDir}:${ghConfigDir}`);
-  }
-
-  // Additional read-only mounts (secondary project paths, etc.)
   if (config.readonlyMounts) {
     for (const mountPath of config.readonlyMounts) {
       if (fs.existsSync(mountPath)) {
@@ -229,7 +243,6 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
     }
   }
 
-  // Additional read-write mounts
   if (config.writableMounts) {
     for (const mountPath of config.writableMounts) {
       if (fs.existsSync(mountPath)) {
@@ -238,17 +251,12 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
     }
   }
 
-  // Home directory for sandbox user (writable via tmpfs)
-  const sandboxHome = "/home/sandbox";
   args.push("--bindmount", `${sandboxHome}:${sandboxHome}`);
 
-  // Pass environment variables
   for (const [key, value] of Object.entries(config.env)) {
     args.push("--env", `${key}=${value}`);
   }
 
-  // PATH must include Codex companion dirs so bundled helpers like `rg`
-  // remain available inside the jail.
   const sandboxPath = buildSandboxPath({
     nodeBin,
     npmGlobalPrefix,
@@ -262,58 +270,307 @@ export function buildNsjailArgs(config: SandboxConfig): string[] {
   return args;
 }
 
-/**
- * Check if a path is already covered by one of the base mounts.
- */
-function isAlreadyMounted(targetPath: string, baseMounts: string[]): boolean {
-  return baseMounts.some((base) => targetPath.startsWith(base + "/") || targetPath === base);
+export function buildDockerRunArgs(
+  config: SandboxConfig,
+  command: string[],
+  image = DEFAULT_DOCKER_IMAGE
+): string[] {
+  const args: string[] = [
+    "run",
+    "--rm",
+    "--interactive",
+    "--tty",
+    "--init",
+    "--workdir", config.cwd,
+    "--hostname", "maestro-sandbox",
+    "--tmpfs", "/tmp:exec,mode=1777",
+    "--security-opt", "no-new-privileges",
+    "--memory", String(config.memoryLimit ?? DEFAULT_MEMORY_LIMIT),
+    "--pids-limit", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
+    "--name", `maestro-sandbox-${process.pid}-${Date.now()}`,
+  ];
+
+  const mounts = collectDockerMounts(config);
+  for (const mount of mounts) {
+    if (mount.type === "bind") {
+      args.push(
+        "--mount",
+        `type=bind,src=${mount.source},dst=${mount.target}${mount.readonly ? ",readonly" : ""}`
+      );
+    } else {
+      args.push(
+        "--mount",
+        `type=volume,src=${mount.source},dst=${mount.target}${mount.readonly ? ",readonly" : ""}`
+      );
+    }
+  }
+
+  const env = {
+    ...config.env,
+    HOME: "/root",
+    USER: "root",
+    TERM: "xterm-256color",
+  };
+  for (const [key, value] of Object.entries(env)) {
+    args.push("--env", `${key}=${value}`);
+  }
+
+  args.push(image, ...command);
+  return args;
 }
 
-/**
- * Get the directory containing the Node.js binary.
- */
-function getNodeBinaryDir(): string | null {
+export function ensureDockerSandboxImage(): string {
+  if (!isDockerAvailable()) {
+    throw new Error("docker is not available");
+  }
+
+  const image = DEFAULT_DOCKER_IMAGE;
+  if (dockerImageReadyFor === image) {
+    return image;
+  }
+
   try {
-    const nodePath = execSync("which node", { encoding: "utf-8" }).trim();
-    const realPath = fs.realpathSync(nodePath);
-    return path.dirname(realPath);
+    execFileSync(getDockerPath(), ["image", "inspect", image], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    dockerImageReadyFor = image;
+    return image;
   } catch {
-    return null;
+    const dockerfilePath = resolveDockerSandboxDockerfile();
+    const repoRoot = path.resolve(dockerfilePath, "../../..");
+    console.log(`Building Docker sandbox image ${image} from ${dockerfilePath}`);
+    execFileSync(
+      getDockerPath(),
+      ["build", "-t", image, "-f", dockerfilePath, repoRoot],
+      { stdio: "inherit" }
+    );
+    dockerImageReadyFor = image;
+    return image;
   }
 }
 
+function collectDockerMounts(config: SandboxConfig): DockerMountSpec[] {
+  const home = os.homedir();
+  const requested = new Map<string, DockerMountSpec>();
+
+  const addMount = (requestedPath: string, readonly: boolean) => {
+    const mount = resolveDockerMount(requestedPath, readonly);
+    if (!mount) return;
+
+    const key = `${mount.type}:${mount.source}:${mount.target}`;
+    const existing = requested.get(key);
+    if (existing) {
+      existing.readonly = existing.readonly && mount.readonly;
+      return;
+    }
+    requested.set(key, mount);
+  };
+
+  addMount(config.cwd, false);
+  for (const mountPath of config.readonlyMounts ?? []) {
+    addMount(mountPath, true);
+  }
+  for (const mountPath of config.writableMounts ?? []) {
+    addMount(mountPath, false);
+  }
+
+  const sharedPaths = getSharedAgentPaths(home);
+  for (const sharedPath of sharedPaths.readwrite) {
+    addMount(sharedPath, false);
+  }
+  for (const sharedPath of sharedPaths.readonly) {
+    addMount(sharedPath, true);
+  }
+
+  return Array.from(requested.values());
+}
+
+function resolveDockerMount(
+  requestedPath: string,
+  readonly: boolean
+): DockerMountSpec | null {
+  if (!path.isAbsolute(requestedPath) || !fs.existsSync(requestedPath)) {
+    return null;
+  }
+
+  const selfMount = findCoveringSelfMount(requestedPath);
+  if (selfMount?.Destination && selfMount.Type === "volume" && selfMount.Name) {
+    return {
+      type: "volume",
+      source: selfMount.Name,
+      target: selfMount.Destination,
+      readonly,
+    };
+  }
+  if (selfMount?.Destination && selfMount.Type === "bind" && selfMount.Source) {
+    return {
+      type: "bind",
+      source: selfMount.Source,
+      target: selfMount.Destination,
+      readonly,
+    };
+  }
+
+  return {
+    type: "bind",
+    source: requestedPath,
+    target: requestedPath,
+    readonly,
+  };
+}
+
+function getSelfContainerMounts(): DockerInspectMount[] {
+  if (cachedSelfMounts !== undefined) {
+    return cachedSelfMounts;
+  }
+
+  if (!isDockerAvailable()) {
+    cachedSelfMounts = [];
+    return cachedSelfMounts;
+  }
+
+  try {
+    const containerId = os.hostname();
+    const raw = execFileSync(
+      getDockerPath(),
+      ["inspect", containerId, "--format", "{{json .Mounts}}"],
+      { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }
+    ).trim();
+    const parsed = JSON.parse(raw) as DockerInspectMount[];
+    cachedSelfMounts = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    cachedSelfMounts = [];
+  }
+
+  return cachedSelfMounts;
+}
+
+function findCoveringSelfMount(requestedPath: string): DockerInspectMount | null {
+  const mounts = getSelfContainerMounts();
+  let best: DockerInspectMount | null = null;
+
+  for (const mount of mounts) {
+    const destination = mount.Destination;
+    if (!destination) continue;
+    if (!isPathWithin(requestedPath, destination)) continue;
+    if (!best || destination.length > String(best.Destination).length) {
+      best = mount;
+    }
+  }
+
+  return best;
+}
+
+function getSharedAgentPaths(home: string): {
+  readonly: string[];
+  readwrite: string[];
+} {
+  const maestroDir = path.join(home, ".maestro");
+  const codexDir = path.join(home, ".codex");
+  const claudeDir = path.join(home, ".claude");
+  const claudeProjectsDir = path.join(claudeDir, "projects");
+  const claudeJson = path.join(home, ".claude.json");
+  const gitconfig = path.join(home, ".gitconfig");
+  const ghConfigDir = path.join(home, ".config", "gh");
+
+  return {
+    readwrite: [maestroDir, claudeProjectsDir].filter(fs.existsSync),
+    readonly: [codexDir, claudeDir, claudeJson, gitconfig, ghConfigDir].filter(fs.existsSync),
+  };
+}
+
+function mountSharedAgentPaths(args: string[], home: string): void {
+  const sharedPaths = getSharedAgentPaths(home);
+
+  for (const dir of sharedPaths.readwrite) {
+    args.push("--bindmount", `${dir}:${dir}`);
+  }
+  for (const dir of sharedPaths.readonly) {
+    args.push("--bindmount_ro", `${dir}:${dir}`);
+  }
+}
+
+function resolveDockerSandboxDockerfile(): string {
+  const localDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(process.cwd(), "docker/sandbox/Dockerfile"),
+    path.resolve(localDir, "../../../../docker/sandbox/Dockerfile"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error("Docker sandbox Dockerfile not found");
+}
+
+function isPathWithin(requestedPath: string, basePath: string): boolean {
+  if (requestedPath === basePath) return true;
+  if (!requestedPath.startsWith(basePath)) return false;
+  return requestedPath.charAt(basePath.length) === path.sep;
+}
+
 /**
- * Get the npm global prefix directory.
+ * Build the PATH for inside the sandbox, including any companion bin dirs
+ * from globally installed CLIs.
  */
-function getNpmGlobalPrefix(): string | null {
-  try {
-    return execSync("npm prefix -g", { encoding: "utf-8" }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function getCliCompanionBinDir(binaryName: string): string | null {
-  try {
-    const binaryPath = execSync(`which ${binaryName}`, { encoding: "utf-8" }).trim();
-    const realPath = fs.realpathSync(binaryPath);
-    const companionDir = path.dirname(realPath);
-    return fs.existsSync(companionDir) ? companionDir : null;
-  } catch {
-    return null;
-  }
-}
-
 function buildSandboxPath(options: {
   nodeBin: string | null;
   npmGlobalPrefix: string | null;
   companionBinDirs: Array<string | null>;
 }): string {
-  const extraPathDirs = [
-    options.nodeBin,
-    options.npmGlobalPrefix ? path.join(options.npmGlobalPrefix, "bin") : null,
-    ...options.companionBinDirs,
-  ].filter((dir): dir is string => typeof dir === "string" && fs.existsSync(dir));
+  const pathParts = [...BASE_PATH_DIRS];
 
-  return Array.from(new Set([...BASE_PATH_DIRS, ...extraPathDirs])).join(":");
+  if (options.nodeBin && !pathParts.includes(options.nodeBin)) {
+    pathParts.unshift(options.nodeBin);
+  }
+
+  const globalBin = options.npmGlobalPrefix
+    ? path.join(options.npmGlobalPrefix, "bin")
+    : null;
+  if (globalBin && !pathParts.includes(globalBin)) {
+    pathParts.unshift(globalBin);
+  }
+
+  for (const dir of options.companionBinDirs) {
+    if (dir && !pathParts.includes(dir)) {
+      pathParts.unshift(dir);
+    }
+  }
+
+  return pathParts.join(":");
+}
+
+function getNodeBinaryDir(): string | null {
+  try {
+    const nodePath = execSync("which node", { encoding: "utf-8" }).trim();
+    return nodePath ? path.dirname(nodePath) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getNpmGlobalPrefix(): string | null {
+  try {
+    const prefix = execSync("npm prefix -g", { encoding: "utf-8" }).trim();
+    return prefix || null;
+  } catch {
+    return null;
+  }
+}
+
+function getCliCompanionBinDir(cliName: string): string | null {
+  try {
+    const cliPath = execSync(`which ${cliName}`, { encoding: "utf-8" }).trim();
+    if (!cliPath) return null;
+    return path.dirname(fs.realpathSync(cliPath));
+  } catch {
+    return null;
+  }
+}
+
+function isAlreadyMounted(targetPath: string, mountRoots: string[]): boolean {
+  return mountRoots.some((root) => isPathWithin(targetPath, root));
 }
