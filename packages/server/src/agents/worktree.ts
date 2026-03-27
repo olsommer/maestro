@@ -1,8 +1,14 @@
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { execSync } from "child_process";
 
-const WORKTREE_BASE = "/tmp/maestro-worktrees";
+const DEFAULT_WORKTREE_BASE = path.join(os.homedir(), ".maestro", "worktrees");
+const WORKTREE_BASE = process.env.MAESTRO_WORKTREE_BASE?.trim() || DEFAULT_WORKTREE_BASE;
+
+export function getWorktreeBasePath(): string {
+  return WORKTREE_BASE;
+}
 
 /**
  * Create a git worktree for a terminal.
@@ -19,6 +25,13 @@ export function createTerminalWorktree(
 
   // Ensure base directory exists
   fs.mkdirSync(WORKTREE_BASE, { recursive: true });
+
+  // Drop stale worktree metadata first so missing /tmp directories don't block recovery.
+  try {
+    execSync("git worktree prune", { cwd: projectPath, stdio: "ignore" });
+  } catch {
+    // Best effort
+  }
 
   // Clean up stale worktree at this path if it exists
   if (fs.existsSync(worktreeDir)) {

@@ -19,7 +19,19 @@ import {
   applyTerminalInputChunk,
 } from "./terminal-input-history.js";
 import { createTerminalReplica, type TerminalReplica } from "./terminal-replica.js";
-import { createTerminalWorktree, isGitRepo, removeTerminalWorktree } from "./worktree.js";
+import {
+  createTerminalWorktree,
+  isGitRepo,
+  removeTerminalWorktree,
+} from "./worktree.js";
+import {
+  ensureTerminalIsolationHome,
+  removeTerminalIsolationState,
+} from "./terminal-isolation.js";
+import {
+  cleanupTerminalDockerRuntime,
+  ensureTerminalDockerRuntime,
+} from "./dind.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
   appendTerminalHistoryBatch,
@@ -116,6 +128,12 @@ export function prepareShellCommand(
   }
 
   return trimmed;
+}
+
+export function shouldDeleteTerminalDuringRestore(terminal: TerminalRecord): boolean {
+  return Boolean(
+    terminal.autoWorktree && terminal.worktreePath && !fs.existsSync(terminal.worktreePath)
+  );
 }
 
 function createExitWaiter(): {
@@ -484,6 +502,19 @@ export async function startTerminal(
       ? "none"
       : (options?.sandboxProvider ?? agent.sandboxProvider ?? settings.sandboxProvider);
   const sandboxEnabled = sandboxProvider !== "none";
+  const isolatedHome =
+    sandboxProvider === "docker" ? ensureTerminalIsolationHome(terminalId) : null;
+  const dockerRuntime =
+    sandboxProvider === "docker" ? ensureTerminalDockerRuntime(terminalId) : null;
+  const runtimeEnv = dockerRuntime
+    ? {
+        DOCKER_HOST: dockerRuntime.dockerHost,
+        DOCKER_BUILDKIT: "1",
+        COMPOSE_DOCKER_CLI_BUILD: "1",
+        COMPOSE_PROJECT_NAME: dockerRuntime.composeProjectName,
+      }
+    : {};
+  Object.assign(childEnv, runtimeEnv);
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -513,8 +544,10 @@ export async function startTerminal(
     terminalId,
     cwd,
     env: childEnv,
+    homeDir: isolatedHome?.homeDir,
     sandboxProvider,
     readonlyMounts: agent.secondaryProjectPaths,
+    dockerExtraMounts: dockerRuntime ? [dockerRuntime.socketMount] : undefined,
     onData: (data) => {
       if (!terminalCanUseRuntime(terminalId, rt)) {
         return;
@@ -752,6 +785,18 @@ export async function deleteTerminal(terminalId: string) {
     }
   }
 
+  try {
+    cleanupTerminalDockerRuntime(terminalId);
+  } catch (err) {
+    console.warn(`Failed to clean up Docker runtime for terminal ${terminalId}:`, err);
+  }
+
+  try {
+    removeTerminalIsolationState(terminalId);
+  } catch (err) {
+    console.warn(`Failed to remove isolated home for terminal ${terminalId}:`, err);
+  }
+
   deleteTerminalRecord(terminalId);
   deleteTerminalState(terminalId);
 
@@ -830,6 +875,14 @@ export async function restorePersistentTerminals() {
       const terminal = terminals[nextIndex++];
 
       try {
+        if (shouldDeleteTerminalDuringRestore(terminal)) {
+          console.warn(
+            `Deleting terminal ${terminal.id} during restore because its auto-worktree path is missing: ${terminal.worktreePath}`
+          );
+          await deleteTerminal(terminal.id);
+          continue;
+        }
+
         await startTerminal(terminal.id, "", { syncRepo: false });
       } catch (error) {
         console.error(`Failed to restore terminal ${terminal.id}:`, error);

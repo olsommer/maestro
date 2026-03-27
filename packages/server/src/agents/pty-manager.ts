@@ -8,12 +8,14 @@ import {
   resolveSandboxProvider,
   isNsjailAvailable,
   getNsjailPath,
+  getNsjailUnavailableReason,
   buildNsjailArgs,
   isDockerAvailable,
   getDockerPath,
   buildDockerRunArgs,
   ensureDockerSandboxImage,
   ensureSandboxWritable,
+  type DockerMountSpec,
   type SandboxConfig,
 } from "./sandbox.js";
 
@@ -107,6 +109,7 @@ function generateId(): string {
 export interface PtySpawnOptions {
   terminalId: string;
   cwd: string;
+  homeDir?: string;
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
@@ -120,6 +123,8 @@ export interface PtySpawnOptions {
   readonlyMounts?: string[];
   /** Additional read-write mount paths for sandbox */
   writableMounts?: string[];
+  /** Additional Docker-only mounts */
+  dockerExtraMounts?: DockerMountSpec[];
   /** Memory limit in bytes for sandbox (default: 512MB) */
   memoryLimit?: number;
 }
@@ -143,6 +148,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
     const sandboxConfig: SandboxConfig = {
       cwd,
+      homeDir: options.homeDir,
       env: fullEnv,
       readonlyMounts: options.readonlyMounts,
       writableMounts: options.writableMounts,
@@ -168,9 +174,11 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   } else if (sandboxProvider === "docker") {
     const sandboxConfig: SandboxConfig = {
       cwd,
+      homeDir: options.homeDir,
       env: fullEnv,
       readonlyMounts: options.readonlyMounts,
       writableMounts: options.writableMounts,
+      dockerExtraMounts: options.dockerExtraMounts,
       memoryLimit: options.memoryLimit,
     };
 
@@ -191,9 +199,10 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     console.log(`Spawned docker-sandboxed PTY for terminal ${options.terminalId}`);
   } else {
     if (requestedSandboxProvider === "nsjail" && !isNsjailAvailable()) {
+      const reason = getNsjailUnavailableReason();
       throw new Error(
         `Sandbox requested for terminal ${options.terminalId} but nsjail is not available ` +
-        `(platform: ${process.platform}).`
+        `(platform: ${process.platform}${reason ? `, reason: ${reason}` : ""}).`
       );
     }
     if (requestedSandboxProvider === "docker" && !isDockerAvailable()) {

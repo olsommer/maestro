@@ -8,12 +8,16 @@ import type { SandboxProvider } from "@maestro/wire";
 export interface SandboxConfig {
   /** Working directory (read-write) */
   cwd: string;
+  /** Optional isolated HOME directory for the sandbox process */
+  homeDir?: string;
   /** Environment variables to pass into the sandbox */
   env: Record<string, string>;
   /** Additional read-only mount paths (e.g. secondary project dirs) */
   readonlyMounts?: string[];
   /** Additional read-write mount paths */
   writableMounts?: string[];
+  /** Additional Docker-only mounts (e.g. named volumes) */
+  dockerExtraMounts?: DockerMountSpec[];
   /** Memory limit in bytes (default: 512MB) */
   memoryLimit?: number;
   /** Max number of child processes (default: 64) */
@@ -28,7 +32,7 @@ interface DockerInspectMount {
   RW?: boolean;
 }
 
-interface DockerMountSpec {
+export interface DockerMountSpec {
   type: "bind" | "volume";
   source: string;
   target: string;
@@ -51,6 +55,8 @@ const DEFAULT_MEMORY_LIMIT = 512 * 1024 * 1024;
 const DEFAULT_MAX_PROCESSES = 64;
 
 let nsjailPath: string | null | undefined; // undefined = not checked yet
+let nsjailRuntimeAvailable: boolean | undefined;
+let nsjailUnavailableReason: string | null | undefined;
 let dockerPath: string | null | undefined; // undefined = not checked yet
 let dockerServerReachable: boolean | undefined;
 let dockerImageReadyFor: string | null = null;
@@ -65,25 +71,142 @@ function resolveBinaryPath(binary: "docker" | "nsjail"): string | null {
   }
 }
 
+function runNsjailSelfTest(
+  binaryPath: string
+): { ok: true; reason: null } | { ok: false; reason: string } {
+  const args = [
+    "--mode", "o",
+    "--chroot", "/",
+    "--user", "0",
+    "--group", "0",
+    "--disable_clone_newuser",
+    "--disable_clone_newnet",
+    "--cwd", "/",
+    "--bindmount_ro", "/usr:/usr",
+    "--bindmount_ro", "/bin:/bin",
+    "--bindmount_ro", "/lib:/lib",
+    "--bindmount_ro", "/sbin:/sbin",
+    "--bindmount_ro", "/etc:/etc",
+    "--bindmount", "/dev:/dev",
+    "--tmpfsmount", "/tmp",
+  ];
+
+  if (fs.existsSync("/lib64")) {
+    args.push("--bindmount_ro", "/lib64:/lib64");
+  }
+
+  args.push("--", "/bin/true");
+
+  try {
+    execFileSync(binaryPath, args, {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    return { ok: true, reason: null };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: formatNsjailSelfTestError(error),
+    };
+  }
+}
+
+function formatNsjailSelfTestError(error: unknown): string {
+  const appArmorProfile = getCurrentAppArmorProfile();
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "stderr" in error &&
+    (typeof error.stderr === "string" || Buffer.isBuffer(error.stderr))
+  ) {
+    const stderr = String(error.stderr)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const detail =
+      stderr.find((line) => line.includes("Permission denied")) ||
+      stderr.find((line) => line.includes("buildMountTree()")) ||
+      stderr.find((line) => line.includes("runChild()")) ||
+      stderr.at(-1);
+
+    if (detail) {
+      return buildNsjailUnavailableReason(detail, appArmorProfile);
+    }
+  }
+
+  return buildNsjailUnavailableReason("nsjail runtime self-test failed", appArmorProfile);
+}
+
+function buildNsjailUnavailableReason(detail: string, appArmorProfile: string | null): string {
+  if (detail.includes("Permission denied")) {
+    if (appArmorProfile && appArmorProfile !== "unconfined") {
+      return (
+        `${detail}. Active AppArmor profile '${appArmorProfile}' is likely blocking mount namespace setup; ` +
+        "when running Maestro in Docker, add `security_opt: [\"seccomp=unconfined\", \"apparmor=unconfined\"]` " +
+        "to the server container or run it with `--privileged`."
+      );
+    }
+
+    return (
+      `${detail}. The runtime is blocking mount namespace setup required by nsjail; ` +
+      "when running in Docker, allow unconfined AppArmor/seccomp or run with `--privileged`."
+    );
+  }
+
+  return detail;
+}
+
+function getCurrentAppArmorProfile(): string | null {
+  try {
+    const profile = fs.readFileSync("/proc/self/attr/current", "utf-8").trim();
+    return profile || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check if nsjail is available on the system.
  */
 export function isNsjailAvailable(): boolean {
-  if (process.platform !== "linux") return false;
+  if (process.platform !== "linux") {
+    nsjailUnavailableReason =
+      `nsjail is only supported on Linux (current platform: ${process.platform})`;
+    return false;
+  }
 
   if (nsjailPath === undefined) {
     nsjailPath = resolveBinaryPath("nsjail");
   }
 
-  return nsjailPath !== null;
+  if (!nsjailPath) {
+    nsjailUnavailableReason = "nsjail binary was not found in PATH";
+    return false;
+  }
+
+  if (nsjailRuntimeAvailable === undefined) {
+    const result = runNsjailSelfTest(nsjailPath);
+    nsjailRuntimeAvailable = result.ok;
+    nsjailUnavailableReason = result.reason;
+  }
+
+  return nsjailRuntimeAvailable;
 }
 
 /**
  * Get the resolved nsjail binary path.
  */
 export function getNsjailPath(): string {
-  if (!nsjailPath) throw new Error("nsjail is not available");
+  if (!isNsjailAvailable() || !nsjailPath) {
+    const reason = nsjailUnavailableReason ? `: ${nsjailUnavailableReason}` : "";
+    throw new Error(`nsjail is not available${reason}`);
+  }
   return nsjailPath;
+}
+
+export function getNsjailUnavailableReason(): string | null {
+  return isNsjailAvailable() ? null : (nsjailUnavailableReason ?? null);
 }
 
 /**
@@ -308,7 +431,7 @@ export function buildDockerRunArgs(
 
   const env = {
     ...config.env,
-    HOME: "/root",
+    HOME: config.homeDir ?? "/root",
     USER: "root",
     TERM: "xterm-256color",
   };
@@ -351,11 +474,9 @@ export function ensureDockerSandboxImage(): string {
 }
 
 function collectDockerMounts(config: SandboxConfig): DockerMountSpec[] {
-  const home = os.homedir();
   const requested = new Map<string, DockerMountSpec>();
 
-  const addMount = (requestedPath: string, readonly: boolean) => {
-    const mount = resolveDockerMount(requestedPath, readonly);
+  const addResolvedMount = (mount: DockerMountSpec | null) => {
     if (!mount) return;
 
     const key = `${mount.type}:${mount.source}:${mount.target}`;
@@ -364,10 +485,17 @@ function collectDockerMounts(config: SandboxConfig): DockerMountSpec[] {
       existing.readonly = existing.readonly && mount.readonly;
       return;
     }
-    requested.set(key, mount);
+    requested.set(key, { ...mount });
+  };
+
+  const addMount = (requestedPath: string, readonly: boolean) => {
+    addResolvedMount(resolveDockerMount(requestedPath, readonly));
   };
 
   addMount(config.cwd, false);
+  if (config.homeDir) {
+    addMount(config.homeDir, false);
+  }
   for (const mountPath of config.readonlyMounts ?? []) {
     addMount(mountPath, true);
   }
@@ -375,12 +503,18 @@ function collectDockerMounts(config: SandboxConfig): DockerMountSpec[] {
     addMount(mountPath, false);
   }
 
-  const sharedPaths = getSharedAgentPaths(home);
-  for (const sharedPath of sharedPaths.readwrite) {
-    addMount(sharedPath, false);
+  if (!config.homeDir) {
+    const sharedPaths = getSharedAgentPaths(os.homedir());
+    for (const sharedPath of sharedPaths.readwrite) {
+      addMount(sharedPath, false);
+    }
+    for (const sharedPath of sharedPaths.readonly) {
+      addMount(sharedPath, true);
+    }
   }
-  for (const sharedPath of sharedPaths.readonly) {
-    addMount(sharedPath, true);
+
+  for (const mount of config.dockerExtraMounts ?? []) {
+    addResolvedMount(mount);
   }
 
   return Array.from(requested.values());
@@ -425,6 +559,13 @@ function resolveDockerMount(
     target: requestedPath,
     readonly,
   };
+}
+
+export function resolveDockerMountForPath(
+  requestedPath: string,
+  readonly = false
+): DockerMountSpec | null {
+  return resolveDockerMount(requestedPath, readonly);
 }
 
 function getSelfContainerMounts(): DockerInspectMount[] {
