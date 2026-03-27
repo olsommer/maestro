@@ -10,7 +10,8 @@ const MAESTRO_DIR = path.join(os.homedir(), ".maestro");
 const PID_PATH = path.join(MAESTRO_DIR, "server.pid");
 const META_PATH = path.join(MAESTRO_DIR, "server-meta.json");
 const LOG_PATH = path.join(MAESTRO_DIR, "server.log");
-const TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
+const TOKEN_PATH = path.join(MAESTRO_DIR, "token");
+const LEGACY_TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
 const DEFAULT_HOST = process.env.HOST || "0.0.0.0";
 const DEFAULT_PORT = process.env.PORT || "4800";
 
@@ -89,6 +90,16 @@ function cleanupState() {
   try {
     fs.unlinkSync(META_PATH);
   } catch {}
+}
+
+function resolveTokenPath() {
+  if (fs.existsSync(TOKEN_PATH)) {
+    return TOKEN_PATH;
+  }
+  if (fs.existsSync(LEGACY_TOKEN_PATH)) {
+    return LEGACY_TOKEN_PATH;
+  }
+  return null;
 }
 
 function displayHost(host) {
@@ -206,18 +217,19 @@ function status() {
 }
 
 function auth() {
-  if (!fs.existsSync(TOKEN_PATH)) {
+  const tokenPath = resolveTokenPath();
+  if (!tokenPath) {
     fail(`Maestro API token not found at ${TOKEN_PATH}. Start Maestro first.`);
   }
 
-  const token = fs.readFileSync(TOKEN_PATH, "utf8").trim();
+  const token = fs.readFileSync(tokenPath, "utf8").trim();
   const current = getStatus();
   const host = displayHost(current.meta?.host || DEFAULT_HOST);
   const port = current.meta?.port || DEFAULT_PORT;
 
   console.log(`Server URL: http://${host}:${port}`);
   console.log(`API token: ${token}`);
-  console.log(`Token path: ${TOKEN_PATH}`);
+  console.log(`Token path: ${tokenPath}`);
 }
 
 function help() {

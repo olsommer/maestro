@@ -7,9 +7,24 @@ import { MAESTRO_DATA_DIR, ensureDataDir } from "../state/files.js";
 
 const MAESTRO_DIR = MAESTRO_DATA_DIR;
 const SECRET_PATH = path.join(MAESTRO_DIR, "jwt-secret");
-const TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
+const TOKEN_PATH = path.join(MAESTRO_DIR, "token");
+const LEGACY_TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
 
 let jwtSecret: string;
+
+function resolveTokenPath(): string {
+  if (fs.existsSync(TOKEN_PATH)) {
+    return TOKEN_PATH;
+  }
+
+  if (fs.existsSync(LEGACY_TOKEN_PATH)) {
+    fs.renameSync(LEGACY_TOKEN_PATH, TOKEN_PATH);
+    console.log(`Migrated API token path from ${LEGACY_TOKEN_PATH} to ${TOKEN_PATH}`);
+    return TOKEN_PATH;
+  }
+
+  return TOKEN_PATH;
+}
 
 /**
  * Initialize auth — generate or load JWT secret and initial API token.
@@ -28,13 +43,14 @@ export function initAuth(): { apiToken: string } {
 
   // API token (static bearer token for simple auth)
   let apiToken: string;
-  if (fs.existsSync(TOKEN_PATH)) {
-    apiToken = fs.readFileSync(TOKEN_PATH, "utf-8").trim();
+  const tokenPath = resolveTokenPath();
+  if (fs.existsSync(tokenPath)) {
+    apiToken = fs.readFileSync(tokenPath, "utf-8").trim();
   } else {
     apiToken = `sym_${crypto.randomBytes(32).toString("hex")}`;
-    fs.writeFileSync(TOKEN_PATH, apiToken, { mode: 0o600 });
+    fs.writeFileSync(tokenPath, apiToken, { mode: 0o600 });
     console.log(`\nAPI token generated: ${apiToken}`);
-    console.log(`Stored at: ${TOKEN_PATH}\n`);
+    console.log(`Stored at: ${tokenPath}\n`);
   }
 
   return { apiToken };
@@ -67,8 +83,9 @@ export function verifySessionToken(
  * Get the stored API token.
  */
 export function getApiToken(): string {
-  if (fs.existsSync(TOKEN_PATH)) {
-    return fs.readFileSync(TOKEN_PATH, "utf-8").trim();
+  const tokenPath = resolveTokenPath();
+  if (fs.existsSync(tokenPath)) {
+    return fs.readFileSync(tokenPath, "utf-8").trim();
   }
   return "";
 }
