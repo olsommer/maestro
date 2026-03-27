@@ -50,28 +50,24 @@ export class TerminalReplica {
     };
 
     if (options.snapshot?.data) {
-      void this.replaceSnapshot(
-        {
-          data: options.snapshot.data,
-          cols,
-          rows,
-        },
-        0
-      );
+      void this.replaceSnapshot({
+        data: options.snapshot.data,
+        cols,
+        rows,
+      }, 0);
     } else {
       this.refreshSnapshot(0);
     }
   }
 
   write(data: string, cursor: number): Promise<void> {
-    return this.enqueue(
-      () =>
-        new Promise<void>((resolve) => {
-          this.terminal.write(data, () => {
-            this.refreshSnapshot(cursor);
-            resolve();
-          });
-        })
+    return this.enqueue(() =>
+      new Promise<void>((resolve) => {
+        this.terminal.write(data, () => {
+          this.refreshSnapshot(cursor);
+          resolve();
+        });
+      })
     );
   }
 

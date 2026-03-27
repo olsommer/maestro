@@ -55,6 +55,7 @@ let dockerPath: string | null | undefined; // undefined = not checked yet
 let dockerServerReachable: boolean | undefined;
 let dockerImageReadyFor: string | null = null;
 let cachedSelfMounts: DockerInspectMount[] | undefined;
+let runningInsideContainer: boolean | undefined;
 
 function resolveBinaryPath(binary: "docker" | "nsjail"): string | null {
   try {
@@ -411,6 +412,13 @@ function resolveDockerMount(
     };
   }
 
+  // When Maestro itself runs in Docker, only paths backed by a bind/volume
+  // mount are visible to sibling `docker run` containers. Image-layer files
+  // like `/root/.claude.json` exist here but not on the Docker host.
+  if (isRunningInsideContainer()) {
+    return null;
+  }
+
   return {
     type: "bind",
     source: requestedPath,
@@ -443,6 +451,13 @@ function getSelfContainerMounts(): DockerInspectMount[] {
   }
 
   return cachedSelfMounts;
+}
+
+function isRunningInsideContainer(): boolean {
+  if (runningInsideContainer === undefined) {
+    runningInsideContainer = fs.existsSync("/.dockerenv");
+  }
+  return runningInsideContainer;
 }
 
 function findCoveringSelfMount(requestedPath: string): DockerInspectMount | null {
@@ -573,4 +588,12 @@ function getCliCompanionBinDir(cliName: string): string | null {
 
 function isAlreadyMounted(targetPath: string, mountRoots: string[]): boolean {
   return mountRoots.some((root) => isPathWithin(targetPath, root));
+}
+
+export function __setSelfContainerMountsForTests(mounts: DockerInspectMount[] | undefined): void {
+  cachedSelfMounts = mounts;
+}
+
+export function __setRunningInsideContainerForTests(value: boolean | undefined): void {
+  runningInsideContainer = value;
 }

@@ -85,6 +85,7 @@ function TerminalPanel({
   onSwipeNavigate?: (dir: -1 | 1) => void;
 }) {
   const recentInputs = terminal.recentInputs ?? [];
+
   return (
     <section
       onClick={onSelect}

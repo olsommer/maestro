@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SandboxProviderSchema } from "./settings.js";
+import { SandboxProviderSchema } from "./settings";
 
 export const AgentProvider = z.enum(["none", "claude", "codex", "custom"]);
 export type AgentProvider = z.infer<typeof AgentProvider>;

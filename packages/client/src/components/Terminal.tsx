@@ -37,6 +37,7 @@ interface LocalTerminalSnapshot {
   data: string;
   savedAt: number;
 }
+
 const SNAPSHOT_PERSIST_DELAY_MS = 400;
 function isEditableElement(element: Element | null): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
