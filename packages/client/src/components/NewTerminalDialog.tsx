@@ -53,7 +53,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   const [autoWorktree, setAutoWorktree] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker">("docker");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -65,7 +64,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
     setAutoWorktree(false);
     setSkipPermissions(true);
     setDisableSandbox(false);
-    setSandboxProvider("docker");
     setError("");
   }, [open]);
 
@@ -93,7 +91,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
         autoWorktree: !isRoot && autoWorktree ? true : undefined,
         skipPermissions: hasCodingAgent && !disableSandbox ? skipPermissions : false,
         disableSandbox,
-        sandboxProvider: !disableSandbox ? sandboxProvider : undefined,
+        sandboxProvider: !disableSandbox ? "docker" : undefined,
       });
       addTerminal(terminal);
       selectTerminal(terminal.id);
@@ -104,7 +102,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       setAutoWorktree(false);
       setSkipPermissions(true);
       setDisableSandbox(false);
-      setSandboxProvider("docker");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create terminal");
     } finally {
@@ -200,7 +197,9 @@ export function NewTerminalDialog({ open, onClose }: Props) {
               <FieldContent>
                 <FieldLabel htmlFor="sandbox-enabled">Sandbox</FieldLabel>
                 <FieldDescription>
-                  Run inside a sandbox runner. Choose the runner below when sandboxing is on.
+                  {disableSandbox
+                    ? "Run this terminal without sandboxing."
+                    : "Run this terminal inside the Docker sandbox."}
                 </FieldDescription>
               </FieldContent>
               <Switch
@@ -214,34 +213,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 }}
               />
             </Field>
-
-            {!disableSandbox && (
-              <Field>
-                <FieldLabel htmlFor="sandbox-provider">Sandbox runner</FieldLabel>
-                <Select
-                  value={sandboxProvider}
-                  onValueChange={(value) =>
-                    setSandboxProvider(
-                      (value as "none" | "docker") ?? "docker"
-                    )
-                  }
-                >
-                  <SelectTrigger id="sandbox-provider" className="w-full">
-                    <SelectValue placeholder="Select a sandbox runner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="docker">Docker</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  Docker uses an isolated container with Node, Python, and Docker Compose
-                  tooling.
-                </FieldDescription>
-              </Field>
-            )}
 
             <Field>
               <FieldLabel htmlFor="provider">Spawn Coding Agent</FieldLabel>

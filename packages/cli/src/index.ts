@@ -10,6 +10,7 @@ const MAESTRO_DIR = path.join(os.homedir(), ".maestro");
 const PID_PATH = path.join(MAESTRO_DIR, "server.pid");
 const META_PATH = path.join(MAESTRO_DIR, "server-meta.json");
 const LOG_PATH = path.join(MAESTRO_DIR, "server.log");
+const UPDATE_STATE_PATH = path.join(MAESTRO_DIR, "maestro-update-state.json");
 const TOKEN_PATH = path.join(MAESTRO_DIR, "token");
 const LEGACY_TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
 const SERVER_PATH = path.join(PACKAGE_ROOT, "dist", "server.js");
@@ -28,6 +29,14 @@ interface ServerMeta {
 interface PackageMeta {
   name: string;
   version: string;
+}
+
+interface MaestroUpdateState {
+  updating: boolean;
+  lastCheckedAt: string | null;
+  lastUpdatedAt: string | null;
+  latestVersion: string | null;
+  lastError: string | null;
 }
 
 function ensureMaestroDir(): void {
@@ -100,6 +109,26 @@ function readMeta(): ServerMeta | null {
 function writeMeta(meta: ServerMeta): void {
   ensureMaestroDir();
   fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2) + "\n", "utf8");
+}
+
+function readUpdateState(): MaestroUpdateState {
+  try {
+    return JSON.parse(fs.readFileSync(UPDATE_STATE_PATH, "utf8")) as MaestroUpdateState;
+  } catch {
+    return {
+      updating: false,
+      lastCheckedAt: null,
+      lastUpdatedAt: null,
+      latestVersion: null,
+      lastError: null,
+    };
+  }
+}
+
+function writeUpdateState(patch: Partial<MaestroUpdateState>): void {
+  ensureMaestroDir();
+  const next = { ...readUpdateState(), ...patch };
+  fs.writeFileSync(UPDATE_STATE_PATH, JSON.stringify(next, null, 2) + "\n", "utf8");
 }
 
 function cleanupState(): void {
@@ -382,6 +411,11 @@ async function update(args: string[]): Promise<void> {
     fail("maestro update is only supported for bare-metal npm installs. Redeploy the container image instead.");
   }
 
+  const delayMs = Number(process.env.MAESTRO_SELF_UPDATE_DELAY_MS || "0");
+  if (Number.isFinite(delayMs) && delayMs > 0) {
+    await sleep(delayMs);
+  }
+
   const meta = readPackageMeta();
   const npmCommand = getNpmCommand();
   ensureGlobalNpmInstall(npmCommand, meta.name);
@@ -415,12 +449,23 @@ async function update(args: string[]): Promise<void> {
   try {
     runNpmInstallGlobal(npmCommand, meta.name, "latest");
   } catch (error) {
+    writeUpdateState({
+      updating: false,
+      lastError: error instanceof Error ? error.message : "Maestro update failed.",
+    });
     if (wasRunning) {
       console.log("Update failed; attempting to restart the previous Maestro process...");
       start();
     }
     fail(error instanceof Error ? error.message : "Maestro update failed.");
   }
+
+  writeUpdateState({
+    updating: false,
+    lastUpdatedAt: new Date().toISOString(),
+    latestVersion,
+    lastError: null,
+  });
 
   if (wasRunning) {
     console.log("Starting Maestro after update...");
