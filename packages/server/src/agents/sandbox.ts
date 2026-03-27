@@ -489,8 +489,12 @@ function getSharedAgentPaths(home: string): {
   const ghConfigDir = path.join(home, ".config", "gh");
 
   return {
-    readwrite: [maestroDir, claudeProjectsDir].filter(fs.existsSync),
-    readonly: [codexDir, claudeDir, claudeJson, gitconfig, ghConfigDir].filter(fs.existsSync),
+    // Codex, Claude, and gh may all persist runtime/session state under their
+    // home config paths when started inside a sandbox. Keep those writable so
+    // the CLIs can boot and authenticate normally while leaving gitconfig
+    // itself read-only.
+    readwrite: [maestroDir, codexDir, claudeDir, claudeProjectsDir, claudeJson, ghConfigDir].filter(fs.existsSync),
+    readonly: [gitconfig].filter(fs.existsSync),
   };
 }
 

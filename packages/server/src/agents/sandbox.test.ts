@@ -46,6 +46,17 @@ test("falls back to none when requested sandbox is unavailable", () => {
 test("builds docker run args with mounts, env, and command", () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-"));
   const readonlyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-ro-"));
+  const previousHome = process.env.HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-home-"));
+  const codexDir = path.join(home, ".codex");
+  const claudeDir = path.join(home, ".claude");
+  const claudeJson = path.join(home, ".claude.json");
+  const ghConfigDir = path.join(home, ".config", "gh");
+  fs.mkdirSync(codexDir, { recursive: true });
+  fs.mkdirSync(claudeDir, { recursive: true });
+  fs.mkdirSync(ghConfigDir, { recursive: true });
+  fs.writeFileSync(claudeJson, '{"hasCompletedOnboarding":true}');
+  process.env.HOME = home;
   __setRunningInsideContainerForTests(false);
   __setSelfContainerMountsForTests([]);
 
@@ -73,9 +84,22 @@ test("builds docker run args with mounts, env, and command", () => {
     assert.ok(mountArgs.some((value) => value.includes(`src=${cwd}`)));
     assert.ok(mountArgs.some((value) => value.includes(`src=${readonlyDir}`)));
     assert.ok(mountArgs.some((value) => value.includes(`dst=${readonlyDir}`) && value.includes("readonly")));
+    assert.ok(mountArgs.some((value) => value.includes(`dst=${codexDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${codexDir}`) && value.includes("readonly")));
+    assert.ok(mountArgs.some((value) => value.includes(`dst=${claudeDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeDir}`) && value.includes("readonly")));
+    assert.ok(mountArgs.some((value) => value.includes(`dst=${claudeJson}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeJson}`) && value.includes("readonly")));
+    assert.ok(mountArgs.some((value) => value.includes(`dst=${ghConfigDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${ghConfigDir}`) && value.includes("readonly")));
   } finally {
     __setSelfContainerMountsForTests(undefined);
     __setRunningInsideContainerForTests(undefined);
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
   }
 });
 
