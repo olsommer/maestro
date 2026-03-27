@@ -12,6 +12,70 @@ importers:
         specifier: ^4.21.0
         version: 4.21.0
 
+  packages/cli:
+    dependencies:
+      '@fastify/cors':
+        specifier: ^10.0.0
+        version: 10.1.0
+      '@fastify/websocket':
+        specifier: ^11.0.0
+        version: 11.2.0
+      '@hapi/boom':
+        specifier: ^10.0.1
+        version: 10.0.1
+      '@mariozechner/pi-coding-agent':
+        specifier: ^0.58.3
+        version: 0.58.3(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ws@8.19.0)(zod@3.25.76)
+      '@whiskeysockets/baileys':
+        specifier: 7.0.0-rc.9
+        version: 7.0.0-rc.9(sharp@0.34.5)
+      '@xterm/addon-serialize':
+        specifier: 0.13.0
+        version: 0.13.0(@xterm/xterm@6.0.0)
+      '@xterm/headless':
+        specifier: 6.0.0
+        version: 6.0.0
+      fastify:
+        specifier: ^5.0.0
+        version: 5.8.2
+      jsonwebtoken:
+        specifier: ^9.0.3
+        version: 9.0.3
+      nanoid:
+        specifier: ^5.0.0
+        version: 5.1.6
+      node-cron:
+        specifier: ^4.2.1
+        version: 4.2.1
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
+      socket.io:
+        specifier: ^4.8.0
+        version: 4.8.3
+      tweetnacl:
+        specifier: ^1.0.3
+        version: 1.0.3
+      tweetnacl-util:
+        specifier: ^0.15.1
+        version: 0.15.1
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      esbuild:
+        specifier: ^0.27.0
+        version: 0.27.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/client:
     dependencies:
       '@base-ui/react':
