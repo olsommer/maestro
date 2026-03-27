@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
  && apt-get update && apt-get install -y \
     bash \
     build-essential \
+    bubblewrap \
     docker-ce-cli \
     docker-compose-plugin \
     git \
@@ -18,6 +19,7 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
     python3 \
     python3-pip \
     python3-venv \
+    ripgrep \
  && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable pnpm
