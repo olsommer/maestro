@@ -13,7 +13,6 @@
   "dependencies": {
     "@fastify/cors": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
-    "@maestro/pi": "workspace:*",
     "@maestro/wire": "workspace:*",
     "@xterm/addon-serialize": "0.13.0",
     "@xterm/headless": "6.0.0",

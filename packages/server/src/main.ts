@@ -26,11 +26,9 @@ import { startAutoUpdater, stopAutoUpdater } from "./services/auto-updater.js";
 import { startAuthStatusChecker, stopAuthStatusChecker } from "./services/auth-status-checker.js";
 import { registerSetupRoutes } from "./routes/setup-routes.js";
 import { registerMaestroUpdateRoutes } from "./routes/maestro-update-routes.js";
-import { registerOllamaRoutes } from "./routes/ollama-routes.js";
-import { registerWhatsAppRoutes, startWhatsApp, stopWhatsApp, startWhatsAppQueue, stopWhatsAppQueue } from "@maestro/pi";
-import { registerTelegramRoutes, startTelegram, stopTelegram, startTelegramQueue, stopTelegramQueue } from "@maestro/pi";
+import { registerTelegramRoutes } from "./routes/telegram-routes.js";
+import { startTelegram, stopTelegram } from "./services/telegram.js";
 import { getSettings as getSettingsState } from "./state/settings.js";
-import { writePiModelsConfig } from "./services/ollama.js";
 
 const PORT = parseInt(process.env.PORT || "4800", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -96,9 +94,7 @@ async function main() {
   await registerSettingsRoutes(app);
   await registerMaestroUpdateRoutes(app);
   await registerSetupRoutes(app);
-  await registerWhatsAppRoutes(app, io);
-  await registerTelegramRoutes(app, io, () => getSettingsState().telegramBotToken);
-  await registerOllamaRoutes(app);
+  await registerTelegramRoutes(app);
 
   // 8. Register socket handlers
   registerSocketHandlers(io);
@@ -110,25 +106,9 @@ async function main() {
   startAutoUpdater();
   startAuthStatusChecker();
 
-  // Ensure Pi models.json is written if a model is configured
-  const savedPiModel = getSettingsState().piOllamaModel;
-  if (savedPiModel) {
-    writePiModelsConfig(savedPiModel);
-    console.log(`[startup] Pi models.json written for model: ${savedPiModel}`);
-  }
-
-  // Start WhatsApp if enabled
-  if (process.env.WHATSAPP_ENABLED === "1") {
-    await startWhatsApp(io);
-    startWhatsAppQueue();
-    console.log("[startup] WhatsApp integration enabled");
-  }
-
-  // Start Telegram if enabled (via env var or saved token in settings)
   const savedTelegramToken = getSettingsState().telegramBotToken;
   if (process.env.TELEGRAM_ENABLED === "1" || savedTelegramToken) {
-    await startTelegram(io, savedTelegramToken || undefined);
-    startTelegramQueue();
+    await startTelegram(savedTelegramToken || undefined);
     console.log("[startup] Telegram integration enabled");
   }
 
@@ -157,9 +137,6 @@ async function main() {
     stopAutomationRunner();
     stopAutoUpdater();
     stopAuthStatusChecker();
-    stopWhatsAppQueue();
-    await stopWhatsApp();
-    stopTelegramQueue();
     await stopTelegram();
     await shutdownTerminalManager();
     io.close();
