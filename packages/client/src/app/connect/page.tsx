@@ -122,9 +122,9 @@ export default function ConnectPage() {
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="api-token">API Token</FieldLabel>
+                <FieldLabel htmlFor="token">API Token</FieldLabel>
                 <Input
-                  id="api-token"
+                  id="token"
                   type="password"
                   value={apiToken}
                   onChange={(e) => setApiToken(e.target.value)}

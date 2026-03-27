@@ -15,30 +15,20 @@ import {
 
 test("normalizes sandbox providers and legacy booleans", () => {
   assert.equal(normalizeSandboxProvider("docker"), "docker");
-  assert.equal(normalizeSandboxProvider("nsjail"), "nsjail");
   assert.equal(normalizeSandboxProvider("bogus"), "none");
-  assert.equal(normalizeSandboxProvider(undefined, true), "nsjail");
+  assert.equal(normalizeSandboxProvider(undefined, true), "docker");
 });
 
 test("falls back to none when requested sandbox is unavailable", () => {
   assert.equal(
     resolveSandboxProviderAvailability("docker", {
       dockerAvailable: false,
-      nsjailAvailable: true,
-    }),
-    "none"
-  );
-  assert.equal(
-    resolveSandboxProviderAvailability("nsjail", {
-      dockerAvailable: true,
-      nsjailAvailable: false,
     }),
     "none"
   );
   assert.equal(
     resolveSandboxProviderAvailability("docker", {
       dockerAvailable: true,
-      nsjailAvailable: false,
     }),
     "docker"
   );

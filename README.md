@@ -162,30 +162,12 @@ NODE_ENV=production pnpm dev:server
 
 The API token is printed on first run and stored at `~/.maestro/token`.
 
-For a simple local process manager, you can also use the repo CLI:
-
-```bash
-# from the repo
-pnpm maestro start
-pnpm maestro status
-pnpm maestro auth
-pnpm maestro stop
-```
-
-If you want the plain `maestro ...` command, link the repo globally once:
-
-```bash
-pnpm link --global
-maestro start
-maestro auth
-maestro stop
-```
-
 If you want a globally installed package instead of a repo checkout:
 
 ```bash
 npm i -g @isarai/maestro
 maestro start
+maestro status
 maestro auth
 maestro stop
 ```

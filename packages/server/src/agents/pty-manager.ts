@@ -6,15 +6,10 @@ import { createRequire } from "module";
 import type { SandboxProvider } from "@maestro/wire";
 import {
   resolveSandboxProvider,
-  isNsjailAvailable,
-  getNsjailPath,
-  getNsjailUnavailableReason,
-  buildNsjailArgs,
   isDockerAvailable,
   getDockerPath,
   buildDockerRunArgs,
   ensureDockerSandboxImage,
-  ensureSandboxWritable,
   type DockerMountSpec,
   type SandboxConfig,
 } from "./sandbox.js";
@@ -115,7 +110,7 @@ export interface PtySpawnOptions {
   env?: Record<string, string>;
   onData: (data: string) => void;
   onExit: (exitCode: number) => void;
-  /** Legacy sandbox toggle; maps to nsjail when true */
+  /** Legacy sandbox toggle; maps to docker when true */
   sandbox?: boolean;
   /** Requested sandbox provider */
   sandboxProvider?: SandboxProvider;
@@ -135,43 +130,14 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   const shell = getShellPath(options.env);
   const cwd = options.cwd || os.homedir();
   const requestedSandboxProvider =
-    options.sandboxProvider ?? (options.sandbox ? "nsjail" : "none");
+    options.sandboxProvider ?? (options.sandbox ? "docker" : "none");
   const sandboxProvider = resolveSandboxProvider(requestedSandboxProvider);
   let actualSandboxProvider = sandboxProvider;
   const fullEnv = buildChildEnv(options.env);
 
   let ptyProcess: pty.IPty;
 
-  if (sandboxProvider === "nsjail") {
-    // Ensure project dir is writable by sandbox user (uid 1500)
-    ensureSandboxWritable(cwd);
-
-    const sandboxConfig: SandboxConfig = {
-      cwd,
-      homeDir: options.homeDir,
-      env: fullEnv,
-      readonlyMounts: options.readonlyMounts,
-      writableMounts: options.writableMounts,
-      memoryLimit: options.memoryLimit,
-    };
-
-    const nsjailArgs = [
-      ...buildNsjailArgs(sandboxConfig),
-      "--", shell, "-l",
-    ];
-
-    ptyProcess = pty.spawn(getNsjailPath(), nsjailArgs, {
-      name: "xterm-256color",
-      cols: options.cols ?? 120,
-      rows: options.rows ?? 30,
-      cwd,
-      // nsjail manages env vars via --env flags, but node-pty still needs
-      // a minimal env for the PTY master side
-      env: { TERM: "xterm-256color" },
-    });
-
-    console.log(`Spawned sandboxed PTY for terminal ${options.terminalId}`);
-  } else if (sandboxProvider === "docker") {
+  if (sandboxProvider === "docker") {
     const sandboxConfig: SandboxConfig = {
       cwd,
       homeDir: options.homeDir,
@@ -198,13 +164,6 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
     console.log(`Spawned docker-sandboxed PTY for terminal ${options.terminalId}`);
   } else {
-    if (requestedSandboxProvider === "nsjail" && !isNsjailAvailable()) {
-      const reason = getNsjailUnavailableReason();
-      throw new Error(
-        `Sandbox requested for terminal ${options.terminalId} but nsjail is not available ` +
-        `(platform: ${process.platform}${reason ? `, reason: ${reason}` : ""}).`
-      );
-    }
     if (requestedSandboxProvider === "docker" && !isDockerAvailable()) {
       throw new Error(
         `Sandbox requested for terminal ${options.terminalId} but docker is not available.`
