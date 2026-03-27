@@ -251,7 +251,7 @@ function MobileTerminalControls({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-[105] px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.1rem)] pt-2"
       aria-hidden={keyboardOpen}
       onTouchMove={(event) => event.stopPropagation()}
       style={keyboardOpen ? { visibility: "hidden" } : undefined}
