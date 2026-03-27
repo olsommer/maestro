@@ -506,7 +506,7 @@ function AgentDefaultsCard({
   refreshKey: number;
 }) {
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "nsjail" | "docker">("none");
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker">("none");
   const [disableSandbox, setDisableSandbox] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
@@ -518,7 +518,7 @@ function AgentDefaultsCard({
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
-    setSandboxProvider(settings.sandboxProvider);
+    setSandboxProvider(settings.sandboxProvider === "nsjail" ? "docker" : settings.sandboxProvider);
     setDisableSandbox(settings.agentDefaultDisableSandbox);
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);
@@ -597,7 +597,7 @@ function AgentDefaultsCard({
             <Select
               value={sandboxProvider}
               onValueChange={(value) =>
-                setSandboxProvider((value as "none" | "nsjail" | "docker") ?? "none")
+                setSandboxProvider((value as "none" | "docker") ?? "none")
               }
             >
               <SelectTrigger id="sandbox-provider" className="w-full">
@@ -607,15 +607,13 @@ function AgentDefaultsCard({
                 <SelectGroup>
                   <SelectItem value="none">None</SelectItem>
                   <SelectItem value="docker">Docker</SelectItem>
-                  <SelectItem value="nsjail">nsjail</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
             <FieldDescription>
               Docker uses an isolated container with Node, Python, and Docker Compose tooling.
-              It does not expose the host Docker socket inside the sandbox. nsjail keeps the
-              existing Linux namespace sandbox. This runner is used whenever a terminal or
-              auto-spawned agent has sandboxing enabled.
+              It does not expose the host Docker socket inside the sandbox. This runner is
+              used whenever a terminal or auto-spawned agent has sandboxing enabled.
             </FieldDescription>
           </Field>
 

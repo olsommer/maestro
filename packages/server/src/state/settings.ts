@@ -29,10 +29,12 @@ export function getSettings(): Settings {
   const agentDefaultDisableSandbox = getSetting("agentDefaultDisableSandbox");
   const agentDefaultSkipPermissions = getSetting("agentDefaultSkipPermissions");
   const agentDefaultWorktreeMode = getSetting("agentDefaultWorktreeMode");
-  const resolvedSandboxProvider = normalizeSandboxProvider(
+  const storedSandboxProvider = normalizeSandboxProvider(
     sandboxProvider,
     sandbox === "true"
   );
+  const resolvedSandboxProvider =
+    storedSandboxProvider === "nsjail" ? "docker" : storedSandboxProvider;
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
@@ -73,12 +75,13 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   if (patch.sandboxEnabled !== undefined) {
     setSetting("sandboxEnabled", String(patch.sandboxEnabled));
     if (patch.sandboxProvider === undefined) {
-      setSetting("sandboxProvider", patch.sandboxEnabled ? "nsjail" : "none");
+      setSetting("sandboxProvider", patch.sandboxEnabled ? "docker" : "none");
     }
   }
   if (patch.sandboxProvider !== undefined) {
-    setSetting("sandboxProvider", patch.sandboxProvider);
-    setSetting("sandboxEnabled", String(patch.sandboxProvider !== "none"));
+    const provider = patch.sandboxProvider === "nsjail" ? "docker" : patch.sandboxProvider;
+    setSetting("sandboxProvider", provider);
+    setSetting("sandboxEnabled", String(provider !== "none"));
   }
   if (patch.deepgramApiKey !== undefined) {
     setSetting("deepgramApiKey", patch.deepgramApiKey);
