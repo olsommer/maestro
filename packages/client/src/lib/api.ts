@@ -33,7 +33,7 @@ export interface Agent {
   customEnv?: Record<string, string> | null;
   worktreePath?: string | null;
   autoWorktree?: boolean;
-  sandboxProvider?: "none" | "nsjail" | "docker" | null;
+  sandboxProvider?: "none" | "docker" | null;
   project?: {
     id: string;
     name: string;
@@ -94,7 +94,7 @@ export interface Settings {
   piOllamaModel: string;
   telegramBotToken: string;
   sandboxEnabled: boolean;
-  sandboxProvider: "none" | "nsjail" | "docker";
+  sandboxProvider: "none" | "docker";
   deepgramApiKey: string;
   agentDefaultProvider: "claude" | "codex";
   agentDefaultDisableSandbox: boolean;
@@ -294,7 +294,7 @@ export const api = {
     skills?: string[];
     skipPermissions?: boolean;
     disableSandbox?: boolean;
-    sandboxProvider?: "none" | "nsjail" | "docker";
+    sandboxProvider?: "none" | "docker";
     useWorktree?: boolean;
     worktreePath?: string;
     autoWorktree?: boolean;

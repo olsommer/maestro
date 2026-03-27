@@ -518,7 +518,7 @@ function AgentDefaultsCard({
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
-    setSandboxProvider(settings.sandboxProvider === "nsjail" ? "docker" : settings.sandboxProvider);
+    setSandboxProvider(settings.sandboxProvider);
     setDisableSandbox(settings.agentDefaultDisableSandbox);
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);

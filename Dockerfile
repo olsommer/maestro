@@ -1,18 +1,3 @@
-# Stage 1: Build nsjail from source
-FROM debian:bookworm-slim AS nsjail-builder
-
-RUN apt-get update && apt-get install -y \
-    git make pkg-config flex bison \
-    gcc g++ \
-    libprotobuf-dev protobuf-compiler \
-    libnl-3-dev libnl-route-3-dev \
- && rm -rf /var/lib/apt/lists/*
-
-RUN git clone --depth 1 https://github.com/google/nsjail.git /nsjail \
- && cd /nsjail && make -j$(nproc) \
- && cp /nsjail/nsjail /usr/local/bin/nsjail
-
-# Stage 2: Main image
 FROM node:22-slim AS base
 
 # Install Docker CLI + Compose plugin so the server can launch Docker sandboxes
@@ -28,14 +13,9 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
  && apt-get install -y docker-ce-cli docker-compose-plugin \
  && rm -rf /var/lib/apt/lists/*
 
-# Install nsjail runtime dependencies + build tools
 RUN apt-get update && apt-get install -y \
-    git python3 make g++ bubblewrap \
-    libprotobuf32 libnl-3-200 libnl-route-3-200 \
+    git python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
-
-# Copy nsjail binary from builder
-COPY --from=nsjail-builder /usr/local/bin/nsjail /usr/local/bin/nsjail
 
 RUN corepack enable pnpm
 RUN npm install -g @anthropic-ai/claude-code @openai/codex

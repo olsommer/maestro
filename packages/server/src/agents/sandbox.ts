@@ -39,8 +39,6 @@ export interface DockerMountSpec {
   readonly: boolean;
 }
 
-const SANDBOX_UID = 1500;
-const SANDBOX_GID = 1500;
 const BASE_READONLY_MOUNTS = ["/usr", "/bin", "/lib", "/sbin", "/etc"];
 const BASE_PATH_DIRS = [
   "/usr/local/sbin",
@@ -54,159 +52,18 @@ const DEFAULT_DOCKER_IMAGE = process.env.MAESTRO_DOCKER_SANDBOX_IMAGE || "maestr
 const DEFAULT_MEMORY_LIMIT = 512 * 1024 * 1024;
 const DEFAULT_MAX_PROCESSES = 64;
 
-let nsjailPath: string | null | undefined; // undefined = not checked yet
-let nsjailRuntimeAvailable: boolean | undefined;
-let nsjailUnavailableReason: string | null | undefined;
 let dockerPath: string | null | undefined; // undefined = not checked yet
 let dockerServerReachable: boolean | undefined;
 let dockerImageReadyFor: string | null = null;
 let cachedSelfMounts: DockerInspectMount[] | undefined;
 let runningInsideContainer: boolean | undefined;
 
-function resolveBinaryPath(binary: "docker" | "nsjail"): string | null {
+function resolveBinaryPath(binary: "docker"): string | null {
   try {
     return execSync(`which ${binary}`, { encoding: "utf-8" }).trim() || null;
   } catch {
     return null;
   }
-}
-
-function runNsjailSelfTest(
-  binaryPath: string
-): { ok: true; reason: null } | { ok: false; reason: string } {
-  const args = [
-    "--mode", "o",
-    "--chroot", "/",
-    "--user", "0",
-    "--group", "0",
-    "--disable_clone_newuser",
-    "--disable_clone_newnet",
-    "--cwd", "/",
-    "--bindmount_ro", "/usr:/usr",
-    "--bindmount_ro", "/bin:/bin",
-    "--bindmount_ro", "/lib:/lib",
-    "--bindmount_ro", "/sbin:/sbin",
-    "--bindmount_ro", "/etc:/etc",
-    "--bindmount", "/dev:/dev",
-    "--tmpfsmount", "/tmp",
-  ];
-
-  if (fs.existsSync("/lib64")) {
-    args.push("--bindmount_ro", "/lib64:/lib64");
-  }
-
-  args.push("--", "/bin/true");
-
-  try {
-    execFileSync(binaryPath, args, {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    return { ok: true, reason: null };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: formatNsjailSelfTestError(error),
-    };
-  }
-}
-
-function formatNsjailSelfTestError(error: unknown): string {
-  const appArmorProfile = getCurrentAppArmorProfile();
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "stderr" in error &&
-    (typeof error.stderr === "string" || Buffer.isBuffer(error.stderr))
-  ) {
-    const stderr = String(error.stderr)
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    const detail =
-      stderr.find((line) => line.includes("Permission denied")) ||
-      stderr.find((line) => line.includes("buildMountTree()")) ||
-      stderr.find((line) => line.includes("runChild()")) ||
-      stderr.at(-1);
-
-    if (detail) {
-      return buildNsjailUnavailableReason(detail, appArmorProfile);
-    }
-  }
-
-  return buildNsjailUnavailableReason("nsjail runtime self-test failed", appArmorProfile);
-}
-
-function buildNsjailUnavailableReason(detail: string, appArmorProfile: string | null): string {
-  if (detail.includes("Permission denied")) {
-    if (appArmorProfile && appArmorProfile !== "unconfined") {
-      return (
-        `${detail}. Active AppArmor profile '${appArmorProfile}' is likely blocking mount namespace setup; ` +
-        "when running Maestro in Docker, add `security_opt: [\"seccomp=unconfined\", \"apparmor=unconfined\"]` " +
-        "to the server container or run it with `--privileged`."
-      );
-    }
-
-    return (
-      `${detail}. The runtime is blocking mount namespace setup required by nsjail; ` +
-      "when running in Docker, allow unconfined AppArmor/seccomp or run with `--privileged`."
-    );
-  }
-
-  return detail;
-}
-
-function getCurrentAppArmorProfile(): string | null {
-  try {
-    const profile = fs.readFileSync("/proc/self/attr/current", "utf-8").trim();
-    return profile || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Check if nsjail is available on the system.
- */
-export function isNsjailAvailable(): boolean {
-  if (process.platform !== "linux") {
-    nsjailUnavailableReason =
-      `nsjail is only supported on Linux (current platform: ${process.platform})`;
-    return false;
-  }
-
-  if (nsjailPath === undefined) {
-    nsjailPath = resolveBinaryPath("nsjail");
-  }
-
-  if (!nsjailPath) {
-    nsjailUnavailableReason = "nsjail binary was not found in PATH";
-    return false;
-  }
-
-  if (nsjailRuntimeAvailable === undefined) {
-    const result = runNsjailSelfTest(nsjailPath);
-    nsjailRuntimeAvailable = result.ok;
-    nsjailUnavailableReason = result.reason;
-  }
-
-  return nsjailRuntimeAvailable;
-}
-
-/**
- * Get the resolved nsjail binary path.
- */
-export function getNsjailPath(): string {
-  if (!isNsjailAvailable() || !nsjailPath) {
-    const reason = nsjailUnavailableReason ? `: ${nsjailUnavailableReason}` : "";
-    throw new Error(`nsjail is not available${reason}`);
-  }
-  return nsjailPath;
-}
-
-export function getNsjailUnavailableReason(): string | null {
-  return isNsjailAvailable() ? null : (nsjailUnavailableReason ?? null);
 }
 
 /**
@@ -247,151 +104,26 @@ export function normalizeSandboxProvider(
   value: string | null | undefined,
   legacyEnabled = false
 ): SandboxProvider {
-  if (value === "none" || value === "nsjail" || value === "docker") {
+  if (value === "none" || value === "docker") {
     return value;
   }
-  return legacyEnabled ? "nsjail" : "none";
+  return legacyEnabled ? "docker" : "none";
 }
 
 export function resolveSandboxProviderAvailability(
   requested: SandboxProvider,
-  availability: { nsjailAvailable: boolean; dockerAvailable: boolean }
+  availability: { dockerAvailable: boolean }
 ): SandboxProvider {
   if (requested === "docker") {
     return availability.dockerAvailable ? "docker" : "none";
-  }
-  if (requested === "nsjail") {
-    return availability.nsjailAvailable ? "nsjail" : "none";
   }
   return "none";
 }
 
 export function resolveSandboxProvider(requested: SandboxProvider): SandboxProvider {
   return resolveSandboxProviderAvailability(requested, {
-    nsjailAvailable: isNsjailAvailable(),
     dockerAvailable: isDockerAvailable(),
   });
-}
-
-/**
- * Ensure a directory is writable by the sandbox user.
- * Called by Maestro (running as root) before spawning the jailed process.
- */
-export function ensureSandboxWritable(dirPath: string): void {
-  try {
-    execSync(`chown -R ${SANDBOX_UID}:${SANDBOX_GID} ${JSON.stringify(dirPath)}`, {
-      stdio: "ignore",
-    });
-  } catch {
-    // Best-effort; may fail for read-only mounts (which is fine)
-  }
-}
-
-/**
- * Build nsjail arguments for sandboxed agent execution.
- *
- * The sandbox provides:
- * - Filesystem isolation: only explicit mounts are visible
- * - PID namespace: agent can't see other processes
- * - Resource limits: memory, process count (when cgroups available)
- * - No network isolation (agents need API access)
- * - Non-root execution (uid 1500 / sandbox user)
- */
-export function buildNsjailArgs(config: SandboxConfig): string[] {
-  const home = os.homedir();
-  const sandboxHome = "/home/sandbox";
-  const mountedReadonlyRoots = [...BASE_READONLY_MOUNTS];
-  const nodeBin = getNodeBinaryDir();
-  const npmGlobalPrefix = getNpmGlobalPrefix();
-  const codexCompanionBinDir = getCliCompanionBinDir("codex");
-
-  const args: string[] = [
-    "--mode", "o",
-    "--chroot", "/",
-    "--user", `${SANDBOX_UID}`,
-    "--group", `${SANDBOX_GID}`,
-    "--disable_clone_newuser",
-    "--disable_clone_newnet",
-    "--forward_signals",
-    "--cwd", config.cwd,
-    "--detect_cgroupv2",
-    "--cgroup_mem_max", String(config.memoryLimit ?? DEFAULT_MEMORY_LIMIT),
-    "--cgroup_pids_max", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
-    "--rlimit_cpu", "soft",
-    "--rlimit_fsize", "1024",
-    "--rlimit_nproc", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
-    "--rlimit_nofile", "1024",
-    "--really_quiet",
-  ];
-
-  for (const dir of BASE_READONLY_MOUNTS) {
-    if (fs.existsSync(dir)) {
-      args.push("--bindmount_ro", `${dir}:${dir}`);
-    }
-  }
-
-  if (fs.existsSync("/lib64")) {
-    args.push("--bindmount_ro", "/lib64:/lib64");
-  }
-
-  args.push("--bindmount", "/dev:/dev");
-  args.push("--tmpfsmount", "/tmp");
-  args.push("--bindmount", `${config.cwd}:${config.cwd}`);
-
-  if (fs.existsSync("/nix")) {
-    args.push("--bindmount_ro", "/nix:/nix");
-  }
-
-  if (nodeBin && !isAlreadyMounted(nodeBin, mountedReadonlyRoots)) {
-    args.push("--bindmount_ro", `${nodeBin}:${nodeBin}`);
-    mountedReadonlyRoots.push(nodeBin);
-  }
-
-  if (npmGlobalPrefix && !isAlreadyMounted(npmGlobalPrefix, mountedReadonlyRoots)) {
-    args.push("--bindmount_ro", `${npmGlobalPrefix}:${npmGlobalPrefix}`);
-    mountedReadonlyRoots.push(npmGlobalPrefix);
-  }
-
-  if (codexCompanionBinDir && !isAlreadyMounted(codexCompanionBinDir, mountedReadonlyRoots)) {
-    args.push("--bindmount_ro", `${codexCompanionBinDir}:${codexCompanionBinDir}`);
-    mountedReadonlyRoots.push(codexCompanionBinDir);
-  }
-
-  mountSharedAgentPaths(args, home);
-
-  if (config.readonlyMounts) {
-    for (const mountPath of config.readonlyMounts) {
-      if (fs.existsSync(mountPath)) {
-        args.push("--bindmount_ro", `${mountPath}:${mountPath}`);
-      }
-    }
-  }
-
-  if (config.writableMounts) {
-    for (const mountPath of config.writableMounts) {
-      if (fs.existsSync(mountPath)) {
-        args.push("--bindmount", `${mountPath}:${mountPath}`);
-      }
-    }
-  }
-
-  args.push("--bindmount", `${sandboxHome}:${sandboxHome}`);
-
-  for (const [key, value] of Object.entries(config.env)) {
-    args.push("--env", `${key}=${value}`);
-  }
-
-  const sandboxPath = buildSandboxPath({
-    nodeBin,
-    npmGlobalPrefix,
-    companionBinDirs: [codexCompanionBinDir],
-  });
-  args.push("--env", `PATH=${sandboxPath}`);
-  args.push("--env", `HOME=${sandboxHome}`);
-  args.push("--env", "USER=sandbox");
-  args.push("--env", "TERM=xterm-256color");
-
-  return args;
 }
 
 export function buildDockerRunArgs(
