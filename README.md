@@ -97,9 +97,8 @@ Data persists in Docker volumes:
 - `maestro_codex` — Codex auth state (`~/.codex/`)
 - `ollama_data` — Ollama models and runtime state
 
-The bundled stack now supports two sandbox runners:
-- `nsjail` for the existing Linux namespace isolation
-- `docker` for container sandboxes with Node, Python, Docker CLI, and Docker Compose tooling
+The bundled stack uses the `docker` sandbox runner for agent and terminal isolation, with Node, Python, Docker CLI,
+and Docker Compose tooling inside the sandbox container.
 
 The `server` service mounts the Docker socket so it can launch ephemeral Docker sandboxes for agents and terminals. The sandbox containers themselves do not inherit that socket, so code running inside a sandbox cannot control the host Docker daemon unless you explicitly provide a remote Docker endpoint through environment configuration.
 

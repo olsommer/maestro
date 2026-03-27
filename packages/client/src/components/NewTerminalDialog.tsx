@@ -53,9 +53,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   const [autoWorktree, setAutoWorktree] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "nsjail" | "docker">(
-    "docker"
-  );
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker">("docker");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -224,7 +222,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                   value={sandboxProvider}
                   onValueChange={(value) =>
                     setSandboxProvider(
-                      (value as "none" | "nsjail" | "docker") ?? "docker"
+                      (value as "none" | "docker") ?? "docker"
                     )
                   }
                 >
@@ -234,14 +232,13 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="docker">Docker</SelectItem>
-                      <SelectItem value="nsjail">nsjail</SelectItem>
                       <SelectItem value="none">None</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
                 <FieldDescription>
                   Docker uses an isolated container with Node, Python, and Docker Compose
-                  tooling. nsjail uses the existing Linux namespace sandbox.
+                  tooling.
                 </FieldDescription>
               </Field>
             )}
