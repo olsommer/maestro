@@ -88,7 +88,7 @@ export function Sidebar() {
   }
 
   return (
-    <SidebarRoot collapsible="icon" className="md:[--sidebar-width:14rem]">
+    <SidebarRoot collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

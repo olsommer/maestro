@@ -330,7 +330,7 @@ function TerminalPagePanel() {
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
       <div className="sticky top-0 flex h-auto shrink-0 items-center gap-2 border-b bg-background px-2 py-2 md:h-auto md:px-3 md:py-3">
         <div className="flex flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-between">
-          <SidebarTrigger className="-ml-1 md:hidden" />
+          <SidebarTrigger className="-ml-1" />
           <div className="hidden md:contents">
             <Select
               value={gridPreset}
