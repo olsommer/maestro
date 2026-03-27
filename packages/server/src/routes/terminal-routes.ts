@@ -17,7 +17,7 @@ import {
 } from "../agents/terminal-manager.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { updateTerminalRecord } from "../state/terminals.js";
-import { createTerminalWorktree, isGitRepo } from "../agents/worktree.js";
+import { isGitRepo } from "../agents/worktree.js";
 
 export async function registerTerminalRoutes(app: FastifyInstance) {
   // List all terminals
@@ -95,25 +95,12 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
         customDisplayName: options.customDisplayName,
         customCommandTemplate: options.customCommandTemplate,
         customEnv: options.customEnv,
+        sandboxProvider: options.sandboxProvider ?? null,
         secondaryProjectPaths: options.secondaryProjectPaths,
         skills: options.skills,
         skipPermissions: options.skipPermissions,
         disableSandbox: options.disableSandbox,
       });
-
-      // Auto-create a new worktree using the real agent ID
-      if (wantsAutoWorktree && !worktreePath) {
-        try {
-          const autoPath = createTerminalWorktree(projectPath, createdAgent.id);
-          updateTerminalRecord(createdAgent.id, { worktreePath: autoPath });
-        } catch (err) {
-          // Clean up the agent if worktree creation fails
-          await deleteTerminal(createdAgent.id);
-          return reply.status(500).send({
-            error: `Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`,
-          });
-        }
-      }
 
       try {
         await startTerminal(createdAgent.id, options.prompt ?? "");

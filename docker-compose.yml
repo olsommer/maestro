@@ -27,6 +27,7 @@ services:
       - maestro_gh:/root/.config/gh
       - maestro_claude:/root/.claude
       - maestro_codex:/root/.codex
+      - /var/run/docker.sock:/var/run/docker.sock
       # cgroup v2 mount needed for nsjail memory/CPU limits
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
 

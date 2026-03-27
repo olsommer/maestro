@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SandboxProviderSchema } from "./settings";
 
 export const AgentProvider = z.enum(["none", "claude", "codex", "custom"]);
 export type AgentProvider = z.infer<typeof AgentProvider>;
@@ -25,6 +26,7 @@ export const AgentSpawnOptions = z
     skills: z.array(z.string()).optional(),
     skipPermissions: z.boolean().default(false),
     disableSandbox: z.boolean().default(false),
+    sandboxProvider: SandboxProviderSchema.optional(),
     useWorktree: z.boolean().optional(),
     worktree: z.boolean().optional(),
     worktreePath: z.string().optional(),
@@ -56,6 +58,7 @@ export const AgentInfo = z.object({
   customDisplayName: z.string().nullable().optional(),
   customCommandTemplate: z.string().nullable().optional(),
   customEnv: z.record(z.string()).nullable().optional(),
+  sandboxProvider: SandboxProviderSchema.nullable().optional(),
   status: AgentStatus,
   currentTask: z.string().nullable(),
   error: z.string().nullable(),

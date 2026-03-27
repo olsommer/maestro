@@ -82,23 +82,136 @@ function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): vo
 }
 
 function useMobileKeyboard() {
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardState, setKeyboardState] = useState({
+    keyboardInset: 0,
+    keyboardOpen: false,
+  });
 
   useEffect(() => {
+    let layoutViewportWidth = window.innerWidth;
+    let layoutViewportHeight = window.innerHeight;
     const vv = window.visualViewport;
     if (!vv) return;
 
     const threshold = 100;
     const check = () => {
-      setKeyboardOpen(window.innerHeight - vv.height > threshold);
+      const nextWidth = window.innerWidth;
+      const nextHeight = window.innerHeight;
+      const keyboardLikeResize =
+        nextWidth === layoutViewportWidth &&
+        nextHeight < layoutViewportHeight &&
+        isEditableElement(document.activeElement);
+
+      if (!keyboardLikeResize) {
+        layoutViewportWidth = nextWidth;
+        layoutViewportHeight = nextHeight;
+      }
+
+      const keyboardInset = Math.max(
+        0,
+        Math.round(layoutViewportHeight - (vv.height + vv.offsetTop))
+      );
+      setKeyboardState({
+        keyboardInset,
+        keyboardOpen: layoutViewportHeight - vv.height > threshold,
+      });
     };
 
     check();
     vv.addEventListener("resize", check);
-    return () => vv.removeEventListener("resize", check);
+    vv.addEventListener("scroll", check);
+    window.addEventListener("resize", check);
+    return () => {
+      vv.removeEventListener("resize", check);
+      vv.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
   }, []);
 
-  return keyboardOpen;
+  return keyboardState;
+}
+
+function removeLastCharacter(value: string): string {
+  const chars = Array.from(value);
+  chars.pop();
+  return chars.join("");
+}
+
+function removeLastWord(value: string): string {
+  const chars = Array.from(value);
+  while (chars.length > 0 && /\s/.test(chars[chars.length - 1] ?? "")) {
+    chars.pop();
+  }
+  while (chars.length > 0 && !/\s/.test(chars[chars.length - 1] ?? "")) {
+    chars.pop();
+  }
+  return chars.join("");
+}
+
+function trimPreview(value: string, maxLength = 240): string {
+  const chars = Array.from(value);
+  if (chars.length <= maxLength) return value;
+  return chars.slice(chars.length - maxLength).join("");
+}
+
+function applyMobilePreviewInput(currentPreview: string, data: string): string {
+  let nextPreview = currentPreview;
+
+  for (let index = 0; index < data.length; index += 1) {
+    const char = data[index];
+
+    if (!char) continue;
+
+    if (char === "\x1b") {
+      while (index + 1 < data.length) {
+        const nextChar = data[index + 1];
+        if (!nextChar) break;
+        if (/[A-Za-z~]/.test(nextChar)) {
+          index += 1;
+          break;
+        }
+        if (nextChar === "[" || nextChar === "]" || /[0-9;?]/.test(nextChar)) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+
+    if (char === "\r" || char === "\n" || char === "\u0003" || char === "\u0004") {
+      nextPreview = "";
+      continue;
+    }
+
+    if (char === "\u0008" || char === "\u007f") {
+      nextPreview = removeLastCharacter(nextPreview);
+      continue;
+    }
+
+    if (char === "\u0015") {
+      nextPreview = "";
+      continue;
+    }
+
+    if (char === "\u0017") {
+      nextPreview = removeLastWord(nextPreview);
+      continue;
+    }
+
+    if (char === "\t") {
+      nextPreview = trimPreview(`${nextPreview}  `);
+      continue;
+    }
+
+    if (char < " ") {
+      continue;
+    }
+
+    nextPreview = trimPreview(`${nextPreview}${char}`);
+  }
+
+  return nextPreview;
 }
 
 function MobileTerminalControls({
@@ -113,96 +226,155 @@ function MobileTerminalControls({
   textOverlayOpen: boolean;
 }) {
   const isMobile = useIsMobile();
-  const keyboardOpen = useMobileKeyboard();
+  const { keyboardOpen } = useMobileKeyboard();
   const [moreOpen, setMoreOpen] = useState(false);
-  const { status: voiceStatus, toggle: toggleVoice } = useDeepgram({
+  const { status: voiceStatus, toggle: toggleVoice, waveform } = useDeepgram({
     onTranscript,
   });
 
   if (!isMobile) return null;
 
-  const isListening = voiceStatus === "listening";
+  const isListening = voiceStatus === "listening" || voiceStatus === "stopping";
+  const isVoiceBusy = voiceStatus === "connecting" || voiceStatus === "stopping";
   const toolbarButtonClassName = "min-w-0 px-0";
+  const voiceHint =
+    voiceStatus === "connecting"
+      ? "Preparing mic..."
+      : voiceStatus === "listening"
+        ? "Recording... tap again to send"
+        : voiceStatus === "stopping"
+          ? "Sending..."
+          : null;
+  const voiceStatusOffset = moreOpen
+    ? "calc(env(safe-area-inset-bottom) + 6.5rem)"
+    : "calc(env(safe-area-inset-bottom) + 3.4rem)";
 
   return (
     <div
-      className="shrink-0 flex flex-col gap-2 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-[105] px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2"
       aria-hidden={keyboardOpen}
       onTouchMove={(event) => event.stopPropagation()}
       style={keyboardOpen ? { visibility: "hidden" } : undefined}
     >
-      {moreOpen && (
-        <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
-            <ChevronUpIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
-            <ChevronLeftIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
-            <ChevronDownIcon className="size-3.5" />
-          </Button>
-          <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
-            <ChevronRightIcon className="size-3.5" />
-          </Button>
-          <Button
-            size="xs"
-            variant={textOverlayOpen ? "default" : "secondary"}
-            className={toolbarButtonClassName}
-            onClick={onToggleTextOverlay}
-            aria-label="Show terminal text"
-          >
-            <TextIcon className="size-3.5" />
-          </Button>
+      {voiceHint && (
+        <div
+          className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-2"
+          style={{ bottom: voiceStatusOffset }}
+        >
+          <div className="inline-flex max-w-full items-center gap-2 rounded-full border bg-card/95 px-3 py-1.5 text-[11px] text-muted-foreground shadow-lg backdrop-blur-md">
+            <span
+              className={`size-2 rounded-full ${
+                voiceStatus === "listening"
+                  ? "bg-red-500 animate-pulse"
+                  : voiceStatus === "stopping"
+                    ? "bg-emerald-500 animate-pulse"
+                    : "bg-amber-500 animate-pulse"
+              }`}
+            />
+            <span>{voiceHint}</span>
+            <div className="flex h-4 items-end gap-0.5" aria-hidden="true">
+              {waveform.map((level, index) => (
+                <span
+                  key={index}
+                  className={`w-1 rounded-full transition-[height,opacity] duration-75 ${
+                    voiceStatus === "stopping" ? "bg-emerald-500/70" : "bg-red-500/80"
+                  }`}
+                  style={{
+                    height: `${Math.max(4, Math.round(level * 16))}px`,
+                    opacity: voiceStatus === "listening" ? 0.45 + level * 0.55 : 0.55,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 backdrop-blur-sm">
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\x1b")}
-          aria-label="Escape"
-        >
-          <XIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\t")}
-          aria-label="Tab"
-        >
-          <ArrowRightToLineIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant="secondary"
-          className={toolbarButtonClassName}
-          onClick={() => send("\r")}
-          aria-label="Enter"
-        >
-          <CornerDownLeftIcon className="size-3.5" />
-        </Button>
-        <Button
-          size="xs"
-          variant={isListening ? "destructive" : "secondary"}
-          className={toolbarButtonClassName}
-          onClick={toggleVoice}
-          aria-label={isListening ? "Stop voice input" : "Start voice input"}
-        >
-          {isListening ? <MicOffIcon className="size-3.5" /> : <MicIcon className="size-3.5" />}
-        </Button>
-        <Button
-          size="xs"
-          variant={moreOpen ? "default" : "secondary"}
-          className={toolbarButtonClassName}
-          onClick={() => setMoreOpen((current) => !current)}
-          aria-label="More controls"
-        >
-          <EllipsisIcon className="size-3.5" />
-        </Button>
+      <div className="flex flex-col gap-2">
+        {moreOpen && (
+          <div className="pointer-events-auto grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[A")}>
+              <ChevronUpIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[D")}>
+              <ChevronLeftIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[B")}>
+              <ChevronDownIcon className="size-3.5" />
+            </Button>
+            <Button size="xs" variant="secondary" className={toolbarButtonClassName} onClick={() => send("\x1b[C")}>
+              <ChevronRightIcon className="size-3.5" />
+            </Button>
+            <Button
+              size="xs"
+              variant={textOverlayOpen ? "default" : "secondary"}
+              className={toolbarButtonClassName}
+              onClick={onToggleTextOverlay}
+              aria-label="Show terminal text"
+            >
+              <TextIcon className="size-3.5" />
+            </Button>
+          </div>
+        )}
+
+        <div className="pointer-events-auto grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={() => send("\x1b")}
+            aria-label="Escape"
+          >
+            <XIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={() => send("\t")}
+            aria-label="Tab"
+          >
+            <ArrowRightToLineIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={() => send("\r")}
+            aria-label="Enter"
+          >
+            <CornerDownLeftIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant={isListening ? "destructive" : "secondary"}
+            className={toolbarButtonClassName}
+            onClick={toggleVoice}
+            disabled={isVoiceBusy}
+            aria-label={
+              voiceStatus === "stopping"
+                ? "Finishing voice input"
+                : isListening
+                  ? "Stop voice input"
+                  : "Start voice input"
+            }
+          >
+            {isListening ? (
+              <MicOffIcon className={voiceStatus === "stopping" ? "size-3.5 animate-pulse" : "size-3.5"} />
+            ) : (
+              <MicIcon className={voiceStatus === "connecting" ? "size-3.5 animate-pulse" : "size-3.5"} />
+            )}
+          </Button>
+          <Button
+            size="xs"
+            variant={moreOpen ? "default" : "secondary"}
+            className={toolbarButtonClassName}
+            onClick={() => setMoreOpen((current) => !current)}
+            aria-label="More controls"
+          >
+            <EllipsisIcon className="size-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -221,11 +393,21 @@ function extractBufferText(term: XtermTerminal): string {
   return lines.join("\n");
 }
 
-export function Terminal({ terminalId, isActive }: { terminalId: string; isActive?: boolean }) {
+export function Terminal({
+  terminalId,
+  isActive,
+  onSwipeNavigate,
+}: {
+  terminalId: string;
+  isActive?: boolean;
+  onSwipeNavigate?: (dir: -1 | 1) => void;
+}) {
   const isMobile = useIsMobile();
+  const { keyboardInset, keyboardOpen } = useMobileKeyboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(Boolean(isActive));
   const isMobileRef = useRef(isMobile);
+  const onSwipeNavigateRef = useRef(onSwipeNavigate);
   const termRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -234,10 +416,16 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldRestoreFocusRef = useRef(false);
+  const mobileCompositionActiveRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
+  const [mobileComposingText, setMobileComposingText] = useState("");
+  const [mobileInputPreview, setMobileInputPreview] = useState("");
 
   useLayoutEffect(() => {
     setTextOverlay(null);
+    mobileCompositionActiveRef.current = false;
+    setMobileComposingText("");
+    setMobileInputPreview("");
     attachedRef.current = false;
     lastSeqRef.current = 0;
     pendingChunksRef.current.clear();
@@ -252,6 +440,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     isActiveRef.current = Boolean(isActive);
     if (!isActive) {
       shouldRestoreFocusRef.current = false;
+      mobileCompositionActiveRef.current = false;
+      setMobileComposingText("");
+      setMobileInputPreview("");
     }
   }, [isActive]);
 
@@ -265,8 +456,15 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     }
   }, [isMobile]);
 
+  useEffect(() => {
+    onSwipeNavigateRef.current = onSwipeNavigate;
+  }, [onSwipeNavigate]);
+
   const sendToTerminal = useCallback(
     (data: string) => {
+      if (isMobileRef.current) {
+        setMobileInputPreview((current) => applyMobilePreviewInput(current, data));
+      }
       socketRef.current?.emit("terminal:input", { terminalId, data });
     },
     [terminalId]
@@ -274,7 +472,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
   const handleVoiceTranscript = useCallback(
     (text: string) => {
-      sendToTerminal(text);
+      const transcript = text.trim();
+      if (!transcript) return;
+      sendToTerminal(`${transcript}\r`);
     },
     [sendToTerminal]
   );
@@ -322,24 +522,75 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       setTextOverlay(null);
 
       // Touch scrolling for mobile
+      let touchStartX = 0;
       let touchStartY = 0;
+      let lastTouchY = 0;
       let touchAccum = 0;
       let didScroll = false;
+      let swipeTriggered = false;
+      let gestureAxis: "pending" | "horizontal" | "vertical" = "pending";
       const container = containerRef.current;
+      const gestureLockThreshold = 16;
+      const swipeTriggerThreshold = 56;
 
       const lineHeight = term.rows > 0
         ? container.clientHeight / term.rows
         : 16;
 
       const onTouchStart = (e: TouchEvent) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
+        lastTouchY = e.touches[0].clientY;
         touchAccum = 0;
         didScroll = false;
+        swipeTriggered = false;
+        gestureAxis = "pending";
       };
 
       const onTouchMove = (e: TouchEvent) => {
-        const dy = touchStartY - e.touches[0].clientY;
-        touchStartY = e.touches[0].clientY;
+        if (e.touches.length !== 1) return;
+
+        const touch = e.touches[0];
+        const totalDx = touch.clientX - touchStartX;
+        const totalDy = touch.clientY - touchStartY;
+        const absDx = Math.abs(totalDx);
+        const absDy = Math.abs(totalDy);
+
+        if (
+          gestureAxis === "pending" &&
+          (absDx >= gestureLockThreshold || absDy >= gestureLockThreshold)
+        ) {
+          if (absDx > absDy * 1.25) {
+            gestureAxis = "horizontal";
+          } else if (absDy > absDx * 1.25) {
+            gestureAxis = "vertical";
+            touchAccum += touchStartY - touch.clientY;
+            lastTouchY = touch.clientY;
+          }
+        }
+
+        if (gestureAxis === "horizontal") {
+          if (
+            !swipeTriggered &&
+            absDx >= swipeTriggerThreshold &&
+            absDx > absDy * 1.25 &&
+            isMobileRef.current &&
+            isActiveRef.current
+          ) {
+            swipeTriggered = true;
+            onSwipeNavigateRef.current?.(totalDx < 0 ? 1 : -1);
+          }
+          e.preventDefault();
+          return;
+        }
+
+        if (gestureAxis !== "vertical") {
+          return;
+        }
+
+        const dy = lastTouchY - touch.clientY;
+        lastTouchY = touch.clientY;
         touchAccum += dy;
         didScroll = true;
 
@@ -353,7 +604,7 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
       };
 
       const onTouchEnd = (e: TouchEvent) => {
-        if (didScroll) {
+        if (swipeTriggered || didScroll) {
           e.preventDefault();
           e.stopPropagation();
           return;
@@ -468,6 +719,9 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
 
       // Send keystrokes to server
       term.onData((data: string) => {
+        if (isMobileRef.current) {
+          setMobileInputPreview((current) => applyMobilePreviewInput(current, data));
+        }
         socket.emit("terminal:input", { terminalId, data });
       });
 
@@ -495,6 +749,11 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         term.textarea ??
         container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
 
+      const syncComposingText = (value?: string | null) => {
+        if (!isMobileRef.current || !mobileCompositionActiveRef.current) return;
+        setMobileComposingText(value ?? helperTextarea?.value ?? "");
+      };
+
       const onTerminalFocus = () => {
         shouldRestoreFocusRef.current = isActiveRef.current;
       };
@@ -503,13 +762,40 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         if (document.visibilityState === "hidden") {
           return;
         }
+        mobileCompositionActiveRef.current = false;
+        setMobileComposingText("");
         if (!container.contains(document.activeElement)) {
           shouldRestoreFocusRef.current = false;
         }
       };
 
+      const onHelperInput = () => {
+        if (!mobileCompositionActiveRef.current) {
+          return;
+        }
+        syncComposingText(helperTextarea?.value);
+      };
+
+      const onCompositionStart = () => {
+        mobileCompositionActiveRef.current = true;
+        setMobileComposingText("");
+      };
+
+      const onCompositionUpdate = (event: CompositionEvent) => {
+        syncComposingText(event.data);
+      };
+
+      const onCompositionEnd = () => {
+        mobileCompositionActiveRef.current = false;
+        setMobileComposingText("");
+      };
+
       helperTextarea?.addEventListener("focus", onTerminalFocus);
       helperTextarea?.addEventListener("blur", onTerminalBlur);
+      helperTextarea?.addEventListener("input", onHelperInput);
+      helperTextarea?.addEventListener("compositionstart", onCompositionStart);
+      helperTextarea?.addEventListener("compositionupdate", onCompositionUpdate);
+      helperTextarea?.addEventListener("compositionend", onCompositionEnd);
 
       const attachTerminal = async () => {
         const requestedCursor = lastSeqRef.current;
@@ -623,6 +909,10 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
         container.removeEventListener("pointerdown", onPointerDown);
         helperTextarea?.removeEventListener("focus", onTerminalFocus);
         helperTextarea?.removeEventListener("blur", onTerminalBlur);
+        helperTextarea?.removeEventListener("input", onHelperInput);
+        helperTextarea?.removeEventListener("compositionstart", onCompositionStart);
+        helperTextarea?.removeEventListener("compositionupdate", onCompositionUpdate);
+        helperTextarea?.removeEventListener("compositionend", onCompositionEnd);
         container.removeEventListener("touchstart", onTouchStart);
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
@@ -681,9 +971,28 @@ export function Terminal({ terminalId, isActive }: { terminalId: string; isActiv
     handleShowText();
   }, [handleShowText, textOverlay]);
 
+  const mobilePreviewValue = mobileComposingText
+    ? trimPreview(`${mobileInputPreview}${mobileComposingText}`)
+    : mobileInputPreview;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
+
+      {isActive && isMobile && keyboardOpen && (
+        <div
+          className="pointer-events-none absolute inset-x-0 z-[100] px-2"
+          style={{ bottom: `${keyboardInset + 8}px` }}
+        >
+          <textarea
+            readOnly
+            value={mobilePreviewValue}
+            placeholder="Typing preview"
+            aria-label="Typing preview"
+            className="h-14 w-full resize-none rounded-lg border border-border bg-card/95 px-3 py-2 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+          />
+        </div>
+      )}
 
       {textOverlay !== null && (
         <div className="absolute inset-0 z-[110] flex flex-col bg-background">

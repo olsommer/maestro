@@ -1,8 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { Server as SocketServer } from "socket.io";
-import { initTerminalManager, restorePersistentTerminals } from "./agents/terminal-manager.js";
-import { killAllPty } from "./agents/pty-manager.js";
+import {
+  initTerminalManager,
+  restorePersistentTerminals,
+  shutdownTerminalManager,
+} from "./agents/terminal-manager.js";
 import { registerTerminalRoutes } from "./routes/terminal-routes.js";
 import { registerProjectRoutes } from "./routes/project-routes.js";
 import { registerKanbanRoutes } from "./routes/kanban-routes.js";
@@ -102,7 +105,6 @@ async function main() {
 
   // 9. Start background services
   startKanbanAssigner(io);
-  await restorePersistentTerminals();
   await startScheduler();
   startAutomationRunner();
   startAutoUpdater();
@@ -143,6 +145,9 @@ async function main() {
   // 11. Start server
   await app.listen({ port: PORT, host: HOST });
   console.log(`Maestro server listening on http://${HOST}:${PORT}`);
+  void restorePersistentTerminals().catch((error) => {
+    console.error("Failed to restore persistent terminals:", error);
+  });
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
@@ -156,7 +161,7 @@ async function main() {
     await stopWhatsApp();
     stopTelegramQueue();
     await stopTelegram();
-    killAllPty();
+    await shutdownTerminalManager();
     io.close();
     await app.close();
     process.exit(0);

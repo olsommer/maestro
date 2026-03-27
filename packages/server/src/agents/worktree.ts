@@ -6,12 +6,13 @@ const WORKTREE_BASE = "/tmp/maestro-worktrees";
 
 /**
  * Create a git worktree for a terminal.
- * Creates a new branch `agent/<terminalId>` from the current HEAD of the project repo.
+ * Creates a new branch `agent/<terminalId>` from the requested git ref.
  * Returns the absolute path to the new worktree.
  */
 export function createTerminalWorktree(
   projectPath: string,
-  terminalId: string
+  terminalId: string,
+  startPoint = "HEAD"
 ): string {
   const worktreeDir = path.join(WORKTREE_BASE, terminalId);
   const branchName = `agent/${terminalId}`;
@@ -42,9 +43,9 @@ export function createTerminalWorktree(
     // Branch doesn't exist — fine
   }
 
-  // Create the worktree with a new branch from HEAD
+  // Create the worktree with a new branch from the requested start point.
   execSync(
-    `git worktree add -b ${JSON.stringify(branchName)} ${JSON.stringify(worktreeDir)}`,
+    `git worktree add -b ${JSON.stringify(branchName)} ${JSON.stringify(worktreeDir)} ${JSON.stringify(startPoint)}`,
     { cwd: projectPath, stdio: "pipe" }
   );
 

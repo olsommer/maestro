@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider } from "@maestro/wire";
+import type { AgentStatus, AgentProvider, SandboxProvider } from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -19,7 +19,7 @@ import {
   applyTerminalInputChunk,
 } from "./terminal-input-history.js";
 import { createTerminalReplica, type TerminalReplica } from "./terminal-replica.js";
-import { removeTerminalWorktree } from "./worktree.js";
+import { createTerminalWorktree, isGitRepo, removeTerminalWorktree } from "./worktree.js";
 import { assertAutoSpawnProviderReady } from "./auto-spawn-provider.js";
 import {
   appendTerminalHistoryBatch,
@@ -36,37 +36,46 @@ import {
 import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
+import {
+  resolveAutoWorktreeStartPoint,
+  syncProjectRepoBeforeSpawn,
+} from "../projects/repo-sync.js";
 import { getSettings } from "../state/settings.js";
 import type { TerminalRecord } from "../state/types.js";
 
 export interface TerminalRuntime {
   ptyId: string | null;
   replica: TerminalReplica;
-  outputBuffer: Array<{ seq: number; data: string }>;
+  outputBuffer: Array<{ seq: number; data: string } | undefined>;
+  outputBufferHead: number;
+  outputBufferSize: number;
   nextOutputSeq: number;
   lastStartedAt: number | null;
   intentionalStop: boolean;
+  deleting: boolean;
+  deleted: boolean;
   restartTimer: ReturnType<typeof setTimeout> | null;
   pendingHistory: string[];
   historyFlushTimer: ReturnType<typeof setTimeout> | null;
   historyWritePromise: Promise<void>;
   snapshotPersistTimer: ReturnType<typeof setTimeout> | null;
   snapshotWritePromise: Promise<void>;
-  pendingLastActivity: string | null;
-  lastActivityFlushTimer: ReturnType<typeof setTimeout> | null;
+  exitPromise: Promise<void>;
+  resolveExit: (() => void) | null;
   pendingInputLine: string;
 }
 
 export interface StartTerminalOptions {
   mcpConfigPath?: string;
-  /** Enable nsjail sandbox for this agent (Linux only, graceful fallback) */
-  sandbox?: boolean;
+  /** Override the sandbox provider for this start */
+  sandboxProvider?: SandboxProvider;
+  syncRepo?: boolean;
 }
 
 const agentRuntimes = new Map<string, TerminalRuntime>();
 const MAX_OUTPUT_LINES = 10000;
+const RESTORE_CONCURRENCY = 2;
 const HISTORY_FLUSH_DELAY_MS = 64;
-const LAST_ACTIVITY_FLUSH_DELAY_MS = 1000;
 const SNAPSHOT_PERSIST_DELAY_MS = 400;
 
 export interface TerminalManagerDeps {
@@ -109,6 +118,17 @@ export function prepareShellCommand(
   return trimmed;
 }
 
+function createExitWaiter(): {
+  promise: Promise<void>;
+  resolve: () => void;
+} {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 function getRuntime(terminalId: string): TerminalRuntime {
   let rt = agentRuntimes.get(terminalId);
   if (!rt) {
@@ -127,18 +147,22 @@ function getRuntime(terminalId: string): TerminalRuntime {
             }
           : null,
       }),
-      outputBuffer: [],
+      outputBuffer: new Array(MAX_OUTPUT_LINES),
+      outputBufferHead: 0,
+      outputBufferSize: 0,
       nextOutputSeq: persistedSnapshot ? persistedSnapshot.cursor + 1 : 1,
       lastStartedAt: null,
       intentionalStop: false,
+      deleting: false,
+      deleted: false,
       restartTimer: null,
       pendingHistory: [],
       historyFlushTimer: null,
       historyWritePromise: Promise.resolve(),
       snapshotPersistTimer: null,
       snapshotWritePromise: Promise.resolve(),
-      pendingLastActivity: null,
-      lastActivityFlushTimer: null,
+      exitPromise: Promise.resolve(),
+      resolveExit: null,
       pendingInputLine: "",
     };
     agentRuntimes.set(terminalId, rt);
@@ -146,33 +170,73 @@ function getRuntime(terminalId: string): TerminalRuntime {
   return rt;
 }
 
-function scheduleLastActivityFlush(terminalId: string, rt: TerminalRuntime) {
-  if (rt.lastActivityFlushTimer) {
-    return;
-  }
-
-  rt.lastActivityFlushTimer = setTimeout(() => {
-    rt.lastActivityFlushTimer = null;
-    flushLastActivity(terminalId, rt);
-  }, LAST_ACTIVITY_FLUSH_DELAY_MS);
+function terminalCanUseRuntime(terminalId: string, rt: TerminalRuntime): boolean {
+  return !rt.deleting && !rt.deleted && getTerminalRecord(terminalId) != null;
 }
 
-function flushLastActivity(terminalId: string, rt: TerminalRuntime) {
-  const lastActivity = rt.pendingLastActivity;
-  rt.pendingLastActivity = null;
-  if (!lastActivity || !getTerminalRecord(terminalId)) {
+function resetOutputBuffer(rt: TerminalRuntime) {
+  rt.outputBufferHead = 0;
+  rt.outputBufferSize = 0;
+  rt.outputBuffer.fill(undefined);
+}
+
+function appendOutputChunk(
+  rt: TerminalRuntime,
+  chunk: { seq: number; data: string }
+) {
+  if (rt.outputBufferSize < MAX_OUTPUT_LINES) {
+    const index = (rt.outputBufferHead + rt.outputBufferSize) % MAX_OUTPUT_LINES;
+    rt.outputBuffer[index] = chunk;
+    rt.outputBufferSize += 1;
     return;
   }
 
-  try {
-    updateTerminalRecord(terminalId, { lastActivity });
-  } catch (error) {
-    console.warn(`Failed to persist last activity for terminal ${terminalId}:`, error);
+  rt.outputBuffer[rt.outputBufferHead] = chunk;
+  rt.outputBufferHead = (rt.outputBufferHead + 1) % MAX_OUTPUT_LINES;
+}
+
+function getOutputBufferChunks(
+  rt: TerminalRuntime
+): Array<{ seq: number; data: string }> {
+  const chunks: Array<{ seq: number; data: string }> = [];
+  for (let index = 0; index < rt.outputBufferSize; index += 1) {
+    const chunk = rt.outputBuffer[(rt.outputBufferHead + index) % MAX_OUTPUT_LINES];
+    if (chunk) {
+      chunks.push(chunk);
+    }
   }
+  return chunks;
+}
+
+function clearRuntimeTimers(rt: TerminalRuntime) {
+  if (rt.restartTimer) {
+    clearTimeout(rt.restartTimer);
+    rt.restartTimer = null;
+  }
+  if (rt.historyFlushTimer) {
+    clearTimeout(rt.historyFlushTimer);
+    rt.historyFlushTimer = null;
+  }
+  if (rt.snapshotPersistTimer) {
+    clearTimeout(rt.snapshotPersistTimer);
+    rt.snapshotPersistTimer = null;
+  }
+}
+
+function prepareExitWaiter(rt: TerminalRuntime) {
+  const waiter = createExitWaiter();
+  rt.exitPromise = waiter.promise;
+  rt.resolveExit = waiter.resolve;
+}
+
+function resolveExitWaiter(rt: TerminalRuntime) {
+  const resolve = rt.resolveExit;
+  rt.resolveExit = null;
+  resolve?.();
 }
 
 function scheduleHistoryFlush(terminalId: string, rt: TerminalRuntime) {
-  if (rt.historyFlushTimer) {
+  if (rt.historyFlushTimer || !terminalCanUseRuntime(terminalId, rt)) {
     return;
   }
 
@@ -183,7 +247,8 @@ function scheduleHistoryFlush(terminalId: string, rt: TerminalRuntime) {
 }
 
 async function flushBufferedHistory(terminalId: string, rt: TerminalRuntime) {
-  if (rt.pendingHistory.length === 0) {
+  if (rt.pendingHistory.length === 0 || !terminalCanUseRuntime(terminalId, rt)) {
+    rt.pendingHistory = [];
     return;
   }
 
@@ -200,7 +265,7 @@ async function flushBufferedHistory(terminalId: string, rt: TerminalRuntime) {
 }
 
 function scheduleSnapshotPersist(terminalId: string, rt: TerminalRuntime) {
-  if (rt.snapshotPersistTimer) {
+  if (rt.snapshotPersistTimer || !terminalCanUseRuntime(terminalId, rt)) {
     return;
   }
 
@@ -211,10 +276,20 @@ function scheduleSnapshotPersist(terminalId: string, rt: TerminalRuntime) {
 }
 
 async function persistRuntimeSnapshot(terminalId: string, rt: TerminalRuntime) {
+  if (!terminalCanUseRuntime(terminalId, rt)) {
+    return;
+  }
+
   rt.snapshotWritePromise = rt.snapshotWritePromise
     .catch(() => undefined)
     .then(async () => {
+      if (!terminalCanUseRuntime(terminalId, rt)) {
+        return;
+      }
       const snapshot = await rt.replica.snapshot();
+      if (!terminalCanUseRuntime(terminalId, rt)) {
+        return;
+      }
       writeTerminalSnapshot(terminalId, snapshot);
     })
     .catch((error) => {
@@ -225,22 +300,17 @@ async function persistRuntimeSnapshot(terminalId: string, rt: TerminalRuntime) {
 }
 
 async function flushRuntimePersistence(terminalId: string, rt: TerminalRuntime) {
-  if (rt.historyFlushTimer) {
-    clearTimeout(rt.historyFlushTimer);
-    rt.historyFlushTimer = null;
-  }
-  if (rt.snapshotPersistTimer) {
-    clearTimeout(rt.snapshotPersistTimer);
-    rt.snapshotPersistTimer = null;
-  }
-  if (rt.lastActivityFlushTimer) {
-    clearTimeout(rt.lastActivityFlushTimer);
-    rt.lastActivityFlushTimer = null;
-  }
+  clearRuntimeTimers(rt);
 
   await flushBufferedHistory(terminalId, rt);
   await persistRuntimeSnapshot(terminalId, rt);
-  flushLastActivity(terminalId, rt);
+}
+
+async function waitForRuntimeWritesToSettle(rt: TerminalRuntime) {
+  await Promise.all([
+    rt.historyWritePromise.catch(() => undefined),
+    rt.snapshotWritePromise.catch(() => undefined),
+  ]);
 }
 
 type TerminalWithProject = TerminalRecord & {
@@ -253,9 +323,21 @@ function getRecentInputs(terminal: TerminalRecord): string[] {
     return [];
   }
 
-  return recentInputs
-    .filter((input): input is string => typeof input === "string")
-    .slice(-10);
+  return recentInputs.filter((input): input is string => typeof input === "string").slice(-10);
+}
+
+function emitTerminalStatus(
+  terminalId: string,
+  status: AgentStatus,
+  error: string | null
+) {
+  const terminal = getTerminalRecord(terminalId);
+  deps.io.emit("terminal:status", {
+    terminalId,
+    status,
+    error,
+    recentInputs: terminal ? getRecentInputs(terminal) : [],
+  });
 }
 
 function hydrateTerminal(terminal: TerminalRecord | null): TerminalWithProject | null {
@@ -282,6 +364,7 @@ export async function createTerminal(options: {
   customDisplayName?: string;
   customCommandTemplate?: string;
   customEnv?: Record<string, string>;
+  sandboxProvider?: SandboxProvider | null;
   secondaryProjectPaths?: string[];
   skills?: string[];
   skipPermissions?: boolean;
@@ -298,6 +381,7 @@ export async function createTerminal(options: {
     customDisplayName: options.customDisplayName ?? null,
     customCommandTemplate: options.customCommandTemplate ?? null,
     customEnv: options.customEnv ?? null,
+    sandboxProvider: options.sandboxProvider ?? null,
     secondaryProjectPaths: options.secondaryProjectPaths ?? [],
     skills: options.skills ?? [],
     status: "idle",
@@ -310,11 +394,7 @@ export async function createTerminal(options: {
     kanbanTaskId: null,
   });
 
-  deps.io.emit("terminal:status", {
-    terminalId: agent.id,
-    status: agent.status,
-    error: null,
-  });
+  emitTerminalStatus(agent.id, agent.status, null);
 
   return agent;
 }
@@ -351,7 +431,36 @@ export async function startTerminal(
     throw new Error(`Agent ${terminalId} is already running`);
   }
 
-  const cwd = agent.worktreePath || agent.projectPath;
+  let cwd = agent.worktreePath || agent.projectPath;
+  if (agent.autoWorktree && !agent.worktreePath) {
+    if (!isGitRepo(agent.projectPath)) {
+      throw new Error("Auto-worktree requires the project to be a git repository");
+    }
+
+    const project = agent.projectId ? getProjectRecordById(agent.projectId) : null;
+    const startPoint =
+      options?.syncRepo === false
+        ? "HEAD"
+        : (
+            await resolveAutoWorktreeStartPoint({
+              projectId: agent.projectId,
+              projectPath: agent.projectPath,
+              preferredBranch: project?.defaultBranch ?? null,
+            })
+          ).ref;
+    const worktreePath = createTerminalWorktree(agent.projectPath, terminalId, startPoint);
+    updateTerminalRecord(terminalId, {
+      worktreePath,
+      lastActivity: new Date().toISOString(),
+    });
+    cwd = worktreePath;
+  } else if (options?.syncRepo !== false) {
+    await syncProjectRepoBeforeSpawn({
+      projectId: agent.projectId,
+      projectPath: cwd,
+    });
+  }
+
   if (!fs.existsSync(cwd)) {
     throw new Error(`Agent working directory does not exist: ${cwd}`);
   }
@@ -370,7 +479,11 @@ export async function startTerminal(
   };
 
   const settings = getSettings();
-  const sandboxEnabled = agent.disableSandbox ? false : (options?.sandbox ?? settings.sandboxEnabled);
+  const sandboxProvider =
+    agent.disableSandbox
+      ? "none"
+      : (options?.sandboxProvider ?? agent.sandboxProvider ?? settings.sandboxProvider);
+  const sandboxEnabled = sandboxProvider !== "none";
 
   const command = provider.buildInteractiveCommand({
     binaryPath,
@@ -383,35 +496,32 @@ export async function startTerminal(
     skills: agent.skills,
   });
 
-  if (rt.restartTimer) {
-    clearTimeout(rt.restartTimer);
-    rt.restartTimer = null;
-  }
+  clearRuntimeTimers(rt);
   const persistedSnapshot = readTerminalSnapshot(terminalId);
   if (persistedSnapshot && rt.nextOutputSeq <= persistedSnapshot.cursor) {
     rt.nextOutputSeq = persistedSnapshot.cursor + 1;
   }
+  rt.deleting = false;
+  rt.deleted = false;
   rt.intentionalStop = false;
   rt.lastStartedAt = Date.now();
   rt.pendingInputLine = "";
-  rt.outputBuffer = [];
+  resetOutputBuffer(rt);
+  prepareExitWaiter(rt);
 
   const ptyInstance = spawnPty({
     terminalId,
     cwd,
     env: childEnv,
-    sandbox: sandboxEnabled,
+    sandboxProvider,
     readonlyMounts: agent.secondaryProjectPaths,
     onData: (data) => {
-      if (!getTerminalRecord(terminalId)) {
+      if (!terminalCanUseRuntime(terminalId, rt)) {
         return;
       }
 
       const seq = rt.nextOutputSeq++;
-      rt.outputBuffer.push({ seq, data });
-      if (rt.outputBuffer.length > MAX_OUTPUT_LINES) {
-        rt.outputBuffer = rt.outputBuffer.slice(-MAX_OUTPUT_LINES);
-      }
+      appendOutputChunk(rt, { seq, data });
 
       deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
         terminalId,
@@ -423,8 +533,6 @@ export async function startTerminal(
       scheduleSnapshotPersist(terminalId, rt);
       rt.pendingHistory.push(data);
       scheduleHistoryFlush(terminalId, rt);
-      rt.pendingLastActivity = new Date().toISOString();
-      scheduleLastActivityFlush(terminalId, rt);
     },
     onExit: async (exitCode) => {
       const newStatus: AgentStatus = exitCode === 0 ? "completed" : "error";
@@ -433,118 +541,119 @@ export async function startTerminal(
       const ranForMs = rt.lastStartedAt ? Date.now() - rt.lastStartedAt : null;
       const intentionalStop = rt.intentionalStop;
       rt.lastStartedAt = null;
-      await flushRuntimePersistence(terminalId, rt);
 
-      if (!agent) {
-        return;
-      }
-
-      if (intentionalStop) {
-        updateTerminalRecord(terminalId, {
-          status: "idle",
-          currentTask: null,
-          error: null,
-          lastActivity: new Date().toISOString(),
-        });
-
-        deps.io.emit("terminal:status", {
-          terminalId,
-          status: "idle" as AgentStatus,
-          error: null,
-        });
-      } else {
-        updateTerminalRecord(terminalId, {
-          status: newStatus,
-          currentTask: null,
-          error: exitCode !== 0 ? `Exited with code ${exitCode}` : null,
-          lastActivity: new Date().toISOString(),
-        });
-
-        deps.io.emit("terminal:status", {
-          terminalId,
-          status: newStatus,
-          error: exitCode !== 0 ? `Exited with code ${exitCode}` : null,
-        });
-      }
-
-      const shouldAutoRestart =
-        agent.kind !== "kanban" &&
-        agent.kind !== "automation" &&
-        agent.kind !== "scheduler" &&
-        !intentionalStop &&
-        (exitCode === 0 || ranForMs === null || ranForMs >= 5_000);
-
-      rt.intentionalStop = false;
-
-      if (agent.kanbanTaskId) {
-        try {
-          const taskResult = await finalizeKanbanTaskAfterTerminalExit(
-            terminalId,
-            agent.kanbanTaskId,
-            exitCode === 0
-          );
-
-          updateTerminalRecord(terminalId, {
-            status: exitCode === 0 ? "idle" : newStatus,
-            currentTask: null,
-            error: exitCode === 0 ? null : `Exited with code ${exitCode}`,
-            kanbanTaskId: null,
-            lastActivity: new Date().toISOString(),
-          });
-
-          deps.io.emit("terminal:status", {
-            terminalId,
-            status: exitCode === 0 ? "idle" : newStatus,
-            error: exitCode === 0 ? null : `Exited with code ${exitCode}`,
-          });
-          deps.io.emit("kanban:updated", {
-            taskId: taskResult.taskId,
-            column: taskResult.column,
-            assignedTerminalId: terminalId,
-          });
-        } catch (error) {
-          console.error(`Failed to finalize kanban task for terminal ${terminalId}:`, error);
-          updateTerminalRecord(terminalId, {
-            kanbanTaskId: null,
-            lastActivity: new Date().toISOString(),
-          });
+      try {
+        if (rt.deleting || rt.deleted) {
+          return;
         }
-      }
 
-      if (shouldAutoRestart && getTerminalRecord(terminalId)) {
-        updateTerminalRecord(terminalId, {
-          status: "idle",
-          currentTask: null,
-          error: null,
-          lastActivity: new Date().toISOString(),
-        });
-        deps.io.emit("terminal:status", {
-          terminalId,
-          status: "idle" as AgentStatus,
-          error: null,
-        });
+        await flushRuntimePersistence(terminalId, rt);
 
-        rt.restartTimer = setTimeout(() => {
-          rt.restartTimer = null;
-          void startTerminal(terminalId, "").catch((error) => {
-            console.error(`Failed to auto-restart terminal ${terminalId}:`, error);
-            if (!getTerminalRecord(terminalId)) {
-              return;
-            }
+        if (!agent) {
+          return;
+        }
+
+        if (intentionalStop) {
+          updateTerminalRecord(terminalId, {
+            status: "idle",
+            currentTask: null,
+            error: null,
+            lastActivity: new Date().toISOString(),
+          });
+
+          emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
+        } else {
+          updateTerminalRecord(terminalId, {
+            status: newStatus,
+            currentTask: null,
+            error: exitCode !== 0 ? `Exited with code ${exitCode}` : null,
+            lastActivity: new Date().toISOString(),
+          });
+
+          emitTerminalStatus(
+            terminalId,
+            newStatus,
+            exitCode !== 0 ? `Exited with code ${exitCode}` : null
+          );
+        }
+
+        const shouldAutoRestart =
+          !isShuttingDown &&
+          agent.kind !== "kanban" &&
+          agent.kind !== "automation" &&
+          agent.kind !== "scheduler" &&
+          !intentionalStop &&
+          (exitCode === 0 || ranForMs === null || ranForMs >= 5_000);
+
+        rt.intentionalStop = false;
+
+        if (agent.kanbanTaskId) {
+          try {
+            const taskResult = await finalizeKanbanTaskAfterTerminalExit(
+              terminalId,
+              agent.kanbanTaskId,
+              exitCode === 0
+            );
+
             updateTerminalRecord(terminalId, {
-              status: "error",
-              error:
-                error instanceof Error ? error.message : "Failed to auto-restart terminal",
+              status: exitCode === 0 ? "idle" : newStatus,
+              currentTask: null,
+              error: exitCode === 0 ? null : `Exited with code ${exitCode}`,
+              kanbanTaskId: null,
               lastActivity: new Date().toISOString(),
             });
-            deps.io.emit("terminal:status", {
+
+            emitTerminalStatus(
               terminalId,
-              status: "error" as AgentStatus,
-              error:
-                error instanceof Error ? error.message : "Failed to auto-restart terminal",
+              exitCode === 0 ? "idle" : newStatus,
+              exitCode === 0 ? null : `Exited with code ${exitCode}`
+            );
+            deps.io.emit("kanban:updated", {
+              taskId: taskResult.taskId,
+              column: taskResult.column,
+              assignedTerminalId: terminalId,
             });
+          } catch (error) {
+            console.error(`Failed to finalize kanban task for terminal ${terminalId}:`, error);
+            updateTerminalRecord(terminalId, {
+              kanbanTaskId: null,
+              lastActivity: new Date().toISOString(),
+            });
+          }
+        }
+
+        if (shouldAutoRestart && getTerminalRecord(terminalId)) {
+          updateTerminalRecord(terminalId, {
+            status: "idle",
+            currentTask: null,
+            error: null,
+            lastActivity: new Date().toISOString(),
           });
-        }, 250);
+          emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
+
+          rt.restartTimer = setTimeout(() => {
+            rt.restartTimer = null;
+            void startTerminal(terminalId, "", { syncRepo: false }).catch((error) => {
+              console.error(`Failed to auto-restart terminal ${terminalId}:`, error);
+              if (!getTerminalRecord(terminalId)) {
+                return;
+              }
+              updateTerminalRecord(terminalId, {
+                status: "error",
+                error:
+                  error instanceof Error ? error.message : "Failed to auto-restart terminal",
+                lastActivity: new Date().toISOString(),
+              });
+              emitTerminalStatus(
+                terminalId,
+                "error" as AgentStatus,
+                error instanceof Error ? error.message : "Failed to auto-restart terminal"
+              );
+            });
+          }, 250);
+        }
+      } finally {
+        resolveExitWaiter(rt);
       }
     },
   });
@@ -558,11 +667,7 @@ export async function startTerminal(
     lastActivity: new Date().toISOString(),
   });
 
-  deps.io.emit("terminal:status", {
-    terminalId,
-    status: "running" as AgentStatus,
-    error: null,
-  });
+  emitTerminalStatus(terminalId, "running" as AgentStatus, null);
 
   const shellCommand = prepareShellCommand(command, agent.kind);
   if (shellCommand) {
@@ -572,14 +677,27 @@ export async function startTerminal(
 }
 
 export async function stopTerminal(terminalId: string) {
+  const agent = getTerminalRecord(terminalId);
   const rt = agentRuntimes.get(terminalId);
+  if (!agent && !rt) {
+    return;
+  }
+
   if (rt?.ptyId) {
     rt.intentionalStop = true;
+    const exitPromise = rt.exitPromise;
     killPty(rt.ptyId);
     rt.ptyId = null;
+    await exitPromise;
+    return;
   }
-  if (rt) {
+
+  if (rt && agent) {
     await flushRuntimePersistence(terminalId, rt);
+  }
+
+  if (!agent) {
+    return;
   }
 
   updateTerminalRecord(terminalId, {
@@ -589,15 +707,16 @@ export async function stopTerminal(terminalId: string) {
     lastActivity: new Date().toISOString(),
   });
 
-  deps.io.emit("terminal:status", {
-    terminalId,
-    status: "idle" as AgentStatus,
-    error: null,
-  });
+  emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
 }
 
 export async function deleteTerminal(terminalId: string) {
   const agent = getTerminalRecord(terminalId);
+  const rt = agentRuntimes.get(terminalId);
+  if (!agent && !rt) {
+    return;
+  }
+
   if (agent?.kanbanTaskId) {
     updateTerminalRecord(terminalId, {
       kanbanTaskId: null,
@@ -605,19 +724,21 @@ export async function deleteTerminal(terminalId: string) {
       lastActivity: new Date().toISOString(),
     });
   }
-  const rt = agentRuntimes.get(terminalId);
-  if (rt?.restartTimer) {
-    clearTimeout(rt.restartTimer);
-    rt.restartTimer = null;
-  }
   if (rt) {
+    clearRuntimeTimers(rt);
     rt.intentionalStop = true;
+    rt.deleting = true;
+    rt.pendingHistory = [];
   }
   if (rt?.ptyId) {
+    const exitPromise = rt.exitPromise;
     killPty(rt.ptyId);
+    rt.ptyId = null;
+    await exitPromise;
   }
   if (rt) {
-    await flushRuntimePersistence(terminalId, rt);
+    await waitForRuntimeWritesToSettle(rt);
+    rt.deleted = true;
     rt.replica.dispose();
   }
   agentRuntimes.delete(terminalId);
@@ -634,16 +755,11 @@ export async function deleteTerminal(terminalId: string) {
   deleteTerminalRecord(terminalId);
   deleteTerminalState(terminalId);
 
-  deps.io.emit("terminal:status", {
-    terminalId,
-    status: "idle" as AgentStatus,
-    error: null,
-  });
+  emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
 }
 
 export function sendTerminalInput(terminalId: string, data: string): boolean {
-  const terminal = getTerminalRecord(terminalId);
-  if (!terminal) return false;
+  if (!getTerminalRecord(terminalId)) return false;
   const rt = agentRuntimes.get(terminalId);
   if (!rt?.ptyId) return false;
 
@@ -652,24 +768,31 @@ export function sendTerminalInput(terminalId: string, data: string): boolean {
     data
   );
   const ok = writeToPty(rt.ptyId, data);
-  if (!ok) return false;
+  if (!ok) {
+    return false;
+  }
 
   rt.pendingInputLine = currentLine;
   if (committedInputs.length > 0) {
-    const recentInputs = appendRecentTerminalInputs(getRecentInputs(terminal), committedInputs);
-    updateTerminalRecord(terminalId, {
-      recentInputs,
-      lastActivity: new Date().toISOString(),
-    });
-    deps.io.emit("terminal:status", {
-      terminalId,
-      status: terminal.status,
-      error: terminal.error,
-      recentInputs,
-    });
+    const terminal = getTerminalRecord(terminalId);
+    if (terminal) {
+      const nextRecentInputs = appendRecentTerminalInputs(
+        getRecentInputs(terminal),
+        committedInputs
+      );
+      updateTerminalRecord(terminalId, {
+        recentInputs: nextRecentInputs,
+        lastActivity: new Date().toISOString(),
+      });
+      emitTerminalStatus(terminalId, terminal.status, terminal.error);
+    }
   }
 
   return true;
+}
+
+export function hasTerminal(terminalId: string): boolean {
+  return getTerminalRecord(terminalId) != null;
 }
 
 export function resizeTerminal(
@@ -677,7 +800,14 @@ export function resizeTerminal(
   cols: number,
   rows: number
 ): boolean {
+  if (!getTerminalRecord(terminalId)) {
+    return false;
+  }
+
   const rt = getRuntime(terminalId);
+  if (rt.deleting || rt.deleted) {
+    return false;
+  }
   void rt.replica.resize(cols, rows, rt.nextOutputSeq - 1);
   scheduleSnapshotPersist(terminalId, rt);
   if (!rt.ptyId) return false;
@@ -692,25 +822,33 @@ export async function restorePersistentTerminals() {
       agent.kind !== "scheduler"
   );
 
-  for (const terminal of terminals) {
-    try {
-      await startTerminal(terminal.id, "");
-    } catch (error) {
-      console.error(`Failed to restore terminal ${terminal.id}:`, error);
-      updateTerminalRecord(terminal.id, {
-        status: "error",
-        error:
-          error instanceof Error ? error.message : "Failed to restore terminal session",
-        lastActivity: new Date().toISOString(),
-      });
-      deps.io.emit("terminal:status", {
-        terminalId: terminal.id,
-        status: "error" as AgentStatus,
-        error:
-          error instanceof Error ? error.message : "Failed to restore terminal session",
-      });
+  let nextIndex = 0;
+  const workerCount = Math.min(RESTORE_CONCURRENCY, terminals.length);
+
+  const restoreNext = async () => {
+    while (nextIndex < terminals.length) {
+      const terminal = terminals[nextIndex++];
+
+      try {
+        await startTerminal(terminal.id, "", { syncRepo: false });
+      } catch (error) {
+        console.error(`Failed to restore terminal ${terminal.id}:`, error);
+        updateTerminalRecord(terminal.id, {
+          status: "error",
+          error:
+            error instanceof Error ? error.message : "Failed to restore terminal session",
+          lastActivity: new Date().toISOString(),
+        });
+        emitTerminalStatus(
+          terminal.id,
+          "error" as AgentStatus,
+          error instanceof Error ? error.message : "Failed to restore terminal session"
+        );
+      }
     }
-  }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => restoreNext()));
 }
 
 export async function getTerminalOutput(terminalId: string): Promise<string[]> {
@@ -720,12 +858,16 @@ export async function getTerminalOutput(terminalId: string): Promise<string[]> {
 export async function getTerminalOutputSnapshot(
   terminalId: string
 ): Promise<{ output: string[]; cursor: number }> {
+  if (!getTerminalRecord(terminalId)) {
+    throw new Error("Terminal not found");
+  }
+
   const rt = getRuntime(terminalId);
   const persistedSnapshot = await rt.replica.snapshot();
   const history = readTerminalHistory(terminalId);
 
   return buildTerminalSnapshotOutput({
-    outputBuffer: rt.outputBuffer,
+    outputBuffer: getOutputBufferChunks(rt),
     persistedSnapshot,
     history,
   });
@@ -735,8 +877,12 @@ export function getBufferedTerminalOutputSince(
   terminalId: string,
   sinceSeq: number
 ): Array<{ seq: number; data: string }> {
+  if (!getTerminalRecord(terminalId)) {
+    return [];
+  }
+
   const rt = getRuntime(terminalId);
-  return rt.outputBuffer.filter((chunk) => chunk.seq >= sinceSeq);
+  return getOutputBufferChunks(rt).filter((chunk) => chunk.seq >= sinceSeq);
 }
 
 export async function getTerminalAttachment(
@@ -753,10 +899,42 @@ export async function getTerminalAttachment(
   return buildTerminalAttachResponse({
     terminalId,
     requestedCursor: cursor,
-    outputBuffer: rt.outputBuffer,
+    outputBuffer: getOutputBufferChunks(rt),
     snapshotOutput: snapshot.output,
     snapshotCursor: snapshot.cursor,
   });
+}
+
+let isShuttingDown = false;
+
+export async function shutdownTerminalManager() {
+  isShuttingDown = true;
+
+  const activeExitPromises: Promise<void>[] = [];
+  const idleFlushes: Promise<void>[] = [];
+
+  for (const [terminalId, rt] of agentRuntimes) {
+    clearRuntimeTimers(rt);
+    if (rt.deleting || rt.deleted) {
+      continue;
+    }
+
+    if (rt.ptyId) {
+      rt.intentionalStop = true;
+      const exitPromise = rt.exitPromise;
+      killPty(rt.ptyId);
+      rt.ptyId = null;
+      activeExitPromises.push(exitPromise);
+      continue;
+    }
+
+    if (getTerminalRecord(terminalId)) {
+      idleFlushes.push(flushRuntimePersistence(terminalId, rt));
+    }
+  }
+
+  await Promise.all(activeExitPromises);
+  await Promise.all(idleFlushes);
 }
 
 export async function listTerminals() {
