@@ -76,17 +76,12 @@ export const UpdateStatus = z.object({
 
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 
-export const DeploymentReleaseInfo = z.object({
-  tag: z.string(),
-  name: z.string().nullable(),
-  url: z.string().nullable(),
-  publishedAt: z.string().nullable(),
-  notes: z.string().nullable(),
-});
-export type DeploymentReleaseInfo = z.infer<typeof DeploymentReleaseInfo>;
+export const MaestroInstallMode = z.enum(["npm", "container", "unknown"]);
+export type MaestroInstallMode = z.infer<typeof MaestroInstallMode>;
 
-export const DeploymentUpdateStatus = z.object({
-  configured: z.boolean(),
+export const MaestroUpdateStatus = z.object({
+  supported: z.boolean(),
+  installMode: MaestroInstallMode,
   currentVersion: z.string().nullable(),
   latestVersion: z.string().nullable(),
   updateAvailable: z.boolean(),
@@ -94,13 +89,12 @@ export const DeploymentUpdateStatus = z.object({
   lastCheckedAt: z.string().nullable(),
   lastUpdatedAt: z.string().nullable(),
   lastError: z.string().nullable(),
-  latestRelease: DeploymentReleaseInfo.nullable(),
 });
-export type DeploymentUpdateStatus = z.infer<typeof DeploymentUpdateStatus>;
+export type MaestroUpdateStatus = z.infer<typeof MaestroUpdateStatus>;
 
-export const DeploymentRedeployResponse = z.object({
+export const MaestroUpdateTriggerResponse = z.object({
   accepted: z.boolean(),
-  targetVersion: z.string().nullable(),
   message: z.string(),
+  targetVersion: z.string().nullable(),
 });
-export type DeploymentRedeployResponse = z.infer<typeof DeploymentRedeployResponse>;
+export type MaestroUpdateTriggerResponse = z.infer<typeof MaestroUpdateTriggerResponse>;

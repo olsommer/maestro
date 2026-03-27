@@ -2,6 +2,8 @@
 
 Standalone CLI for running Maestro without Docker Compose.
 
+The Maestro server runs directly on the host. Docker is optional and only needed if you enable Docker sandboxing for agents or terminals.
+
 ## Install
 
 ```bash

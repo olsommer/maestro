@@ -1,4 +1,6 @@
+import type { MaestroUpdateStatus, MaestroUpdateTriggerResponse } from "@maestro/wire";
 import { getAuthToken, getServerUrl, invalidateAuth } from "./auth";
+export type { MaestroUpdateStatus, MaestroUpdateTriggerResponse } from "@maestro/wire";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
@@ -144,32 +146,6 @@ export interface UpdateStatus {
   lastError: string | null;
 }
 
-export interface DeploymentReleaseInfo {
-  tag: string;
-  name: string | null;
-  url: string | null;
-  publishedAt: string | null;
-  notes: string | null;
-}
-
-export interface DeploymentUpdateStatus {
-  configured: boolean;
-  currentVersion: string | null;
-  latestVersion: string | null;
-  updateAvailable: boolean;
-  updating: boolean;
-  lastCheckedAt: string | null;
-  lastUpdatedAt: string | null;
-  lastError: string | null;
-  latestRelease: DeploymentReleaseInfo | null;
-}
-
-export interface DeploymentRedeployResponse {
-  accepted: boolean;
-  targetVersion: string | null;
-  message: string;
-}
-
 export interface GitHubRepoSuggestion {
   id: number;
   name: string;
@@ -238,15 +214,9 @@ export const api = {
       "/api/settings/update-now",
       { method: "POST" }
     ),
-  getDeploymentUpdateStatus: () =>
-    request<DeploymentUpdateStatus>("/api/deployment/update-status"),
-  checkDeploymentUpdateStatus: () =>
-    request<DeploymentUpdateStatus>("/api/deployment/check", { method: "POST" }),
-  redeployDeployment: (tag?: string) =>
-    request<DeploymentRedeployResponse>("/api/deployment/redeploy", {
-      method: "POST",
-      body: JSON.stringify(tag ? { tag } : {}),
-    }),
+  getMaestroUpdateStatus: () => request<MaestroUpdateStatus>("/api/maestro/update-status"),
+  checkForMaestroUpdate: () => request<MaestroUpdateStatus>("/api/maestro/check", { method: "POST" }),
+  updateMaestro: () => request<MaestroUpdateTriggerResponse>("/api/maestro/update", { method: "POST" }),
 
   getProject: (id: string) => request<{ project: Project }>(`/api/projects/${id}`),
 

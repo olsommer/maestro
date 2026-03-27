@@ -84,76 +84,7 @@ No frontend secrets are required. The connect page lets each user enter their ow
 
 Each user runs their own server instance. The server holds their API token, agents, and project data.
 
-**Option 1: Docker**
-
-```bash
-docker compose up -d
-```
-
-Data persists in Docker volumes:
-- `maestro_data` — API token, JWT secret, SQLite state, sandbox state, and cloned project directories (`~/.maestro/`)
-- `maestro_claude` — Claude Code auth state (`~/.claude/`)
-- `maestro_codex` — Codex auth state (`~/.codex/`)
-- `ollama_data` — Ollama models and runtime state
-
-The bundled stack uses the `docker` sandbox runner for agent and terminal isolation, with Node, Python, Docker CLI,
-and Docker Compose tooling inside the sandbox container.
-
-The `server` service mounts the Docker socket so it can launch ephemeral Docker sandboxes for agents and terminals. The sandbox containers themselves do not inherit that socket, so code running inside a sandbox cannot control the host Docker daemon unless you explicitly provide a remote Docker endpoint through environment configuration.
-
-Retrieve your API token:
-
-```bash
-docker compose exec server cat /root/.maestro/token
-```
-
-The Docker stack also starts an `ollama` service on `http://localhost:11434`.
-Inside the Compose network, the server can reach it at `http://ollama:11434` via
-the default `OLLAMA_HOST` environment variable.
-
-After the stack is up, pull the model you want once:
-
-```bash
-docker compose exec ollama ollama pull llama3.2
-```
-
-You can list installed models with:
-
-```bash
-docker compose exec ollama ollama list
-```
-
-Models persist in `ollama_data`, so you usually only need to pull them once per
-machine or Docker volume.
-
-#### Optional: Frontend-triggered release redeploys
-
-Maestro can show GitHub release updates in the Settings page and trigger a one-click redeploy through the bundled `updater` Compose service.
-
-The updater service:
-
-1. Checks GitHub releases for the configured repo
-2. Downloads each release tarball into the internal updater state volume
-3. Runs Compose build and `up -d` commands from the extracted release while keeping `COMPOSE_PROJECT_NAME` fixed across redeploys
-
-This avoids a required `STACK_DIR` host path because the updater keeps its own release checkout inside the Compose stack and talks to Docker through the mounted socket.
-
-Files:
-
-- [updater/server.js](updater/server.js)
-- [updater/README.md](updater/README.md)
-- [updater/Dockerfile](updater/Dockerfile)
-- [updater/updater.env.example](updater/updater.env.example)
-
-To enable the UI with the bundled compose setup:
-
-1. Set `GITHUB_REPO` in `.env`.
-2. Optionally set `GITHUB_TOKEN`, `UPDATER_TOKEN`, and `COMPOSE_PROJECT_NAME`.
-3. Start the stack with `docker compose up -d --build`.
-
-The bundled `docker-compose.yml` already starts the internal `updater` service and defaults the Maestro server to `UPDATER_URL=http://updater:4810`.
-
-**Option 2: Bare Metal**
+**Bare Metal**
 
 ```bash
 pnpm install
@@ -161,6 +92,20 @@ NODE_ENV=production pnpm dev:server
 ```
 
 The API token is printed on first run and stored at `~/.maestro/token`.
+
+Bare-metal deployment does not require Docker for the Maestro server itself.
+
+- Maestro-owned state lives under `~/.maestro/`
+- managed projects live under `~/.maestro/projects/`
+- sandbox state lives under `~/.maestro/sandboxes/`
+- Docker is only needed if you want Docker sandboxing for agents and terminals
+- Ollama is only needed if you want to use the local Pi agent
+
+If you run Ollama locally, Maestro uses the normal Ollama HTTP endpoint. By default that is:
+
+```bash
+http://localhost:11434
+```
 
 If you want a globally installed package instead of a repo checkout:
 
@@ -238,54 +183,6 @@ sudo cloudflared service install
 sudo systemctl enable cloudflared
 sudo systemctl start cloudflared
 ```
-
-### Docker + Cloudflare Tunnel
-
-Add a `cloudflared` sidecar to `docker-compose.yml`:
-
-```yaml
-services:
-  server:
-    build: .
-    depends_on:
-      - ollama
-    ports:
-      - "4800:4800"
-    environment:
-      HOST: 0.0.0.0
-      PORT: 4800
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      GH_TOKEN: ${GH_TOKEN:-}
-      OLLAMA_HOST: http://ollama:11434
-    volumes:
-      - maestro_data:/root/.maestro
-      - maestro_claude:/root/.claude
-      - maestro_codex:/root/.codex
-
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - server
-    restart: unless-stopped
-
-volumes:
-  maestro_data:
-  maestro_claude:
-  maestro_codex:
-  ollama_data:
-```
-
-Create the tunnel in the Cloudflare Zero Trust dashboard, point it to `http://server:4800`, and set `CLOUDFLARE_TUNNEL_TOKEN` in your `.env`.
 
 ### Caddy (Alternative — Auto-TLS)
 
@@ -373,7 +270,6 @@ Maestro uses a **"bring your own backend"** model. There is no central auth serv
 | `AUTH_DISABLED` | — | Set to `1` to disable auth (dev only) |
 | `GITHUB_TOKEN` | — | GitHub API token for integrations |
 | `GH_TOKEN` | — | Alternative GitHub token variable |
-| `CLOUDFLARE_TUNNEL_TOKEN` | — | Cloudflare Tunnel token (Docker) |
 
 ## Project Structure
 
@@ -384,7 +280,5 @@ maestro/
 │   ├── client/   # Next.js web interface
 │   ├── wire/     # Shared Zod schemas & types
 │   └── mcp/      # MCP orchestrator for super agent
-├── docker-compose.yml
-├── Dockerfile
 └── pnpm-workspace.yaml
 ```

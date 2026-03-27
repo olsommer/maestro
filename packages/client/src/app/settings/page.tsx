@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TriangleAlertIcon, RefreshCwIcon, DownloadIcon, LoaderIcon, CheckCircleIcon, EyeIcon, EyeOffIcon, GithubIcon, CopyIcon, ExternalLinkIcon, UnlinkIcon, MicIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { api, type Settings, type UpdateStatus, type DeploymentUpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
+import { api, type Settings, type MaestroUpdateStatus, type OllamaModelInfo, type OllamaPullStatus, type OllamaStatus, type GitHubConnectionStatus, type ClaudeAuthStatus, type CodexAuthStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -506,7 +506,6 @@ function AgentDefaultsCard({
   refreshKey: number;
 }) {
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker">("none");
   const [disableSandbox, setDisableSandbox] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
@@ -518,7 +517,6 @@ function AgentDefaultsCard({
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
-    setSandboxProvider(settings.sandboxProvider);
     setDisableSandbox(settings.agentDefaultDisableSandbox);
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);
@@ -544,7 +542,6 @@ function AgentDefaultsCard({
   const hasAvailableProvider = claudeAvailable || codexAvailable;
   const isDirty =
     provider !== (settings?.agentDefaultProvider ?? "claude") ||
-    sandboxProvider !== (settings?.sandboxProvider ?? "none") ||
     disableSandbox !== (settings?.agentDefaultDisableSandbox ?? false) ||
     skipPermissions !== (settings?.agentDefaultSkipPermissions ?? true) ||
     worktreeMode !== (settings?.agentDefaultWorktreeMode ?? "none");
@@ -554,7 +551,7 @@ function AgentDefaultsCard({
     try {
       const updated = await api.updateSettings({
         agentDefaultProvider: provider,
-        sandboxProvider,
+        sandboxProvider: disableSandbox ? "none" : "docker",
         agentDefaultDisableSandbox: disableSandbox,
         agentDefaultSkipPermissions: skipPermissions,
         agentDefaultWorktreeMode: worktreeMode,
@@ -593,31 +590,6 @@ function AgentDefaultsCard({
 
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="sandbox-provider">Sandbox runner</FieldLabel>
-            <Select
-              value={sandboxProvider}
-              onValueChange={(value) =>
-                setSandboxProvider((value as "none" | "docker") ?? "none")
-              }
-            >
-              <SelectTrigger id="sandbox-provider" className="w-full">
-                <SelectValue placeholder="Select a sandbox runner" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="docker">Docker</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription>
-              Docker uses an isolated container with Node, Python, and Docker Compose tooling.
-              It does not expose the host Docker socket inside the sandbox. This runner is
-              used whenever a terminal or auto-spawned agent has sandboxing enabled.
-            </FieldDescription>
-          </Field>
-
-          <Field>
             <FieldLabel htmlFor="agent-default-provider">Coding agent</FieldLabel>
             <Select
               value={provider}
@@ -646,9 +618,9 @@ function AgentDefaultsCard({
             <FieldContent>
               <FieldLabel htmlFor="agent-default-sandbox">Sandbox</FieldLabel>
               <FieldDescription>
-                {sandboxProvider === "none"
-                  ? "No sandbox runner is configured. Auto-spawned agents will run unsandboxed."
-                  : `Run automatically spawned agents inside the configured ${sandboxProvider} sandbox.`}
+                {disableSandbox
+                  ? "Auto-spawned agents will run without sandboxing."
+                  : "Run automatically spawned agents inside the Docker sandbox."}
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -1209,15 +1181,11 @@ function SettingsView() {
     status: string;
     timestamp: string;
   } | null>(null);
-  // Auto-update state
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [updatingClis, setUpdatingClis] = useState(false);
-  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentUpdateStatus | null>(null);
-  const [checkingDeployment, setCheckingDeployment] = useState(false);
-  const [redeployingDeployment, setRedeployingDeployment] = useState(false);
-  const [deploymentMessage, setDeploymentMessage] = useState("");
+  const [maestroUpdateStatus, setMaestroUpdateStatus] = useState<MaestroUpdateStatus | null>(null);
+  const [checkingMaestro, setCheckingMaestro] = useState(false);
+  const [updatingMaestro, setUpdatingMaestro] = useState(false);
+  const [maestroUpdateMessage, setMaestroUpdateMessage] = useState("");
   // Auth status refresh key — incremented to re-fetch all auth cards
   const [authRefreshKey, setAuthRefreshKey] = useState(0);
 
@@ -1232,19 +1200,10 @@ function SettingsView() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
-  const loadUpdateStatus = useCallback(async () => {
+  const loadMaestroUpdateStatus = useCallback(async () => {
     try {
-      const status = await api.checkForUpdates();
-      setUpdateStatus(status);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const loadDeploymentStatus = useCallback(async () => {
-    try {
-      const status = await api.getDeploymentUpdateStatus();
-      setDeploymentStatus(status);
+      const status = await api.getMaestroUpdateStatus();
+      setMaestroUpdateStatus(status);
     } catch {
       /* ignore */
     }
@@ -1260,99 +1219,57 @@ function SettingsView() {
       }
     };
     void loadSettings();
-    void loadUpdateStatus();
-    void loadDeploymentStatus();
-  }, [loadDeploymentStatus, loadUpdateStatus]);
+    void loadMaestroUpdateStatus();
+  }, [loadMaestroUpdateStatus]);
 
   useEffect(() => {
-    if (!deploymentStatus?.configured || !deploymentStatus.updating) {
+    if (!maestroUpdateStatus?.updating) {
       return;
     }
 
     const timer = window.setInterval(() => {
-      void loadDeploymentStatus();
-    }, 15_000);
+      void loadMaestroUpdateStatus();
+    }, 5_000);
 
     return () => window.clearInterval(timer);
-  }, [deploymentStatus?.configured, deploymentStatus?.updating, loadDeploymentStatus]);
+  }, [loadMaestroUpdateStatus, maestroUpdateStatus?.updating]);
 
-  async function handleToggleAutoUpdate(enabled: boolean) {
+  async function handleCheckMaestroUpdate() {
+    setCheckingMaestro(true);
     try {
-      const updated = await api.updateSettings({ autoUpdateEnabled: enabled });
-      setSettings(updated);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function handleIntervalChange(hours: string | null) {
-    if (hours == null) return;
-    try {
-      const updated = await api.updateSettings({ autoUpdateIntervalHours: Number(hours) });
-      setSettings(updated);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function handleCheckUpdates() {
-    setChecking(true);
-    try {
-      const status = await api.checkForUpdates();
-      setUpdateStatus(status);
-    } catch {
-      /* ignore */
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  async function handleUpdateNow() {
-    setUpdatingClis(true);
-    try {
-      const result = await api.updateNow();
-      setUpdateStatus(result.status);
-    } catch {
-      /* ignore */
-    } finally {
-      setUpdatingClis(false);
-    }
-  }
-
-  async function handleCheckDeployment() {
-    setCheckingDeployment(true);
-    try {
-      const status = await api.checkDeploymentUpdateStatus();
-      setDeploymentStatus(status);
-    } catch {
-      /* ignore */
-    } finally {
-      setCheckingDeployment(false);
-    }
-  }
-
-  async function handleRedeployLatest() {
-    setRedeployingDeployment(true);
-    setDeploymentMessage("");
-    try {
-      const result = await api.redeployDeployment();
-      setDeploymentMessage(result.message);
-      setDeploymentStatus((current) =>
-        current
-          ? {
-              ...current,
-              updating: true,
-              lastError: null,
-            }
-          : current
-      );
-      window.setTimeout(() => {
-        void loadDeploymentStatus();
-      }, 2_000);
+      const status = await api.checkForMaestroUpdate();
+      setMaestroUpdateStatus(status);
+      setMaestroUpdateMessage("");
     } catch (err) {
-      setDeploymentMessage(err instanceof Error ? err.message : "Failed to start redeploy");
+      setMaestroUpdateMessage(err instanceof Error ? err.message : "Failed to check for Maestro updates");
     } finally {
-      setRedeployingDeployment(false);
+      setCheckingMaestro(false);
+    }
+  }
+
+  async function handleUpdateMaestro() {
+    setUpdatingMaestro(true);
+    setMaestroUpdateMessage("");
+    try {
+      const result = await api.updateMaestro();
+      setMaestroUpdateMessage(result.message);
+      if (result.accepted) {
+        setMaestroUpdateStatus((current) =>
+          current
+            ? {
+                ...current,
+                updating: true,
+                lastError: null,
+              }
+            : current
+        );
+      } else {
+        await loadMaestroUpdateStatus();
+      }
+    } catch (err) {
+      setMaestroUpdateMessage(err instanceof Error ? err.message : "Failed to start Maestro update");
+    } finally {
+      setUpdatingMaestro(false);
     }
   }
 
@@ -1406,12 +1323,12 @@ function SettingsView() {
           <Card>
             <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle className="text-sm">CLI Updates</CardTitle>
+                <CardTitle className="text-sm">Updates</CardTitle>
                 <CardDescription>
-                  Manage automatic updates for Claude Code, Codex, and GitHub CLI tools.
+                  Check for and trigger self-updates for the bare-metal global npm install of Maestro.
                 </CardDescription>
               </div>
-              {updateStatus?.updating && (
+              {maestroUpdateStatus?.updating && (
                 <Badge variant="secondary">
                   <LoaderIcon className="mr-1 size-3 animate-spin" />
                   Updating
@@ -1419,161 +1336,13 @@ function SettingsView() {
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <FieldGroup>
-                <Field orientation="horizontal">
-                  <FieldLabel>Auto-update</FieldLabel>
-                  <FieldContent className="items-end">
-                    <Switch
-                      checked={settings?.autoUpdateEnabled ?? false}
-                      onCheckedChange={handleToggleAutoUpdate}
-                    />
-                  </FieldContent>
-                </Field>
-                <FieldSeparator />
-                <Field orientation="horizontal">
-                  <div>
-                    <FieldLabel>Check interval</FieldLabel>
-                    <FieldDescription>How often to check for new versions.</FieldDescription>
-                  </div>
-                  <FieldContent className="items-end">
-                    <Select
-                      value={String(settings?.autoUpdateIntervalHours ?? 24)}
-                      onValueChange={handleIntervalChange}
-                    >
-                      <SelectTrigger className="w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Every hour</SelectItem>
-                        <SelectItem value="6">Every 6 hours</SelectItem>
-                        <SelectItem value="12">Every 12 hours</SelectItem>
-                        <SelectItem value="24">Every 24 hours</SelectItem>
-                        <SelectItem value="72">Every 3 days</SelectItem>
-                        <SelectItem value="168">Every week</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-
-              {updateStatus && (
-                <FieldGroup>
-                  <FieldSeparator />
-                  <Field orientation="horizontal">
-                    <FieldLabel>Claude Code</FieldLabel>
-                    <FieldContent className="items-end">
-                      <span className="font-mono text-xs">
-                        {updateStatus.claudeCode.currentVersion ?? "Not installed"}
-                      </span>
-                      {updateStatus.claudeCode.updateAvailable && (
-                        <Badge variant="secondary" className="text-xs">
-                          {updateStatus.claudeCode.latestVersion} available
-                        </Badge>
-                      )}
-                    </FieldContent>
-                  </Field>
-                  <FieldSeparator />
-                  <Field orientation="horizontal">
-                    <FieldLabel>Codex</FieldLabel>
-                    <FieldContent className="items-end">
-                      <span className="font-mono text-xs">
-                        {updateStatus.codex.currentVersion ?? "Not installed"}
-                      </span>
-                      {updateStatus.codex.updateAvailable && (
-                        <Badge variant="secondary" className="text-xs">
-                          {updateStatus.codex.latestVersion} available
-                        </Badge>
-                      )}
-                    </FieldContent>
-                  </Field>
-                  <FieldSeparator />
-                  <Field orientation="horizontal">
-                    <FieldLabel>GitHub CLI</FieldLabel>
-                    <FieldContent className="items-end">
-                      <span className="font-mono text-xs">
-                        {updateStatus.gh.currentVersion ?? "Not installed"}
-                      </span>
-                      {updateStatus.gh.updateAvailable && (
-                        <Badge variant="secondary" className="text-xs">
-                          {updateStatus.gh.latestVersion} available
-                        </Badge>
-                      )}
-                    </FieldContent>
-                  </Field>
-                  {updateStatus.lastCheckAt && (
-                    <>
-                      <FieldSeparator />
-                      <Field orientation="horizontal">
-                        <FieldLabel>Last checked</FieldLabel>
-                        <FieldContent className="items-end">
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(updateStatus.lastCheckAt).toLocaleString()}
-                          </span>
-                        </FieldContent>
-                      </Field>
-                    </>
-                  )}
-                  {updateStatus.lastError && (
-                    <Alert variant="destructive">
-                      <TriangleAlertIcon />
-                      <AlertTitle>Update error</AlertTitle>
-                      <AlertDescription>{updateStatus.lastError}</AlertDescription>
-                    </Alert>
-                  )}
-                </FieldGroup>
-              )}
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  variant="outline"
-                  disabled={checking}
-                  onClick={() => void handleCheckUpdates()}
-                >
-                  {checking ? (
-                    <LoaderIcon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <RefreshCwIcon className="mr-2 size-4" />
-                  )}
-                  Check for Updates
-                </Button>
-                <Button
-                  disabled={updatingClis}
-                  onClick={() => void handleUpdateNow()}
-                >
-                  {updatingClis ? (
-                    <LoaderIcon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <DownloadIcon className="mr-2 size-4" />
-                  )}
-                  Update Now
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle className="text-sm">Deployment Updates</CardTitle>
-                <CardDescription>
-                  Detect GitHub releases and rebuild the Docker deployment from a release tarball via the internal updater service.
-                </CardDescription>
-              </div>
-              {deploymentStatus?.updating && (
-                <Badge variant="secondary">
-                  <LoaderIcon className="mr-1 size-3 animate-spin" />
-                  Redeploying
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {!deploymentStatus?.configured ? (
+              {!maestroUpdateStatus?.supported ? (
                 <Alert>
                   <TriangleAlertIcon />
-                  <AlertTitle>Updater not configured</AlertTitle>
+                  <AlertTitle>Self-update unavailable</AlertTitle>
                   <AlertDescription>
-                    {deploymentStatus?.lastError ??
-                      "Start the `updater` Compose service and set `UPDATER_URL` on the Maestro server. `UPDATER_TOKEN` is optional on the internal network."}
+                    {maestroUpdateStatus?.lastError ??
+                      "Maestro self-update is only available for the published global npm install on bare metal."}
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -1583,60 +1352,45 @@ function SettingsView() {
                       <FieldLabel>Current version</FieldLabel>
                       <FieldContent className="items-end">
                         <span className="font-mono text-xs">
-                          {deploymentStatus.currentVersion ?? "Unknown"}
+                          {maestroUpdateStatus.currentVersion ?? "Unknown"}
                         </span>
                       </FieldContent>
                     </Field>
                     <FieldSeparator />
                     <Field orientation="horizontal">
-                      <FieldLabel>Latest release</FieldLabel>
+                      <FieldLabel>Latest version</FieldLabel>
                       <FieldContent className="items-end">
                         <span className="font-mono text-xs">
-                          {deploymentStatus.latestVersion ?? "Unavailable"}
+                          {maestroUpdateStatus.latestVersion ?? "Unavailable"}
                         </span>
-                        {deploymentStatus.updateAvailable && (
+                        {maestroUpdateStatus.updateAvailable && (
                           <Badge variant="secondary" className="text-xs">
                             Update available
                           </Badge>
                         )}
                       </FieldContent>
                     </Field>
-                    {deploymentStatus.latestRelease?.publishedAt && (
-                      <>
-                        <FieldSeparator />
-                        <Field orientation="horizontal">
-                          <FieldLabel>Published</FieldLabel>
-                          <FieldContent className="items-end">
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(
-                                deploymentStatus.latestRelease.publishedAt
-                              ).toLocaleString()}
-                            </span>
-                          </FieldContent>
-                        </Field>
-                      </>
-                    )}
-                    {deploymentStatus.lastCheckedAt && (
+                    {maestroUpdateStatus.lastCheckedAt && (
                       <>
                         <FieldSeparator />
                         <Field orientation="horizontal">
                           <FieldLabel>Last checked</FieldLabel>
                           <FieldContent className="items-end">
                             <span className="text-xs text-muted-foreground">
-                              {new Date(deploymentStatus.lastCheckedAt).toLocaleString()}
+                              {new Date(maestroUpdateStatus.lastCheckedAt).toLocaleString()}
                             </span>
                           </FieldContent>
                         </Field>
                       </>
                     )}
-                    {deploymentStatus.lastUpdatedAt && (
+                    {maestroUpdateStatus.lastUpdatedAt && (
                       <>
                         <FieldSeparator />
                         <Field orientation="horizontal">
-                          <FieldLabel>Last deployed</FieldLabel>
+                          <FieldLabel>Last updated</FieldLabel>
                           <FieldContent className="items-end">
                             <span className="text-xs text-muted-foreground">
-                              {new Date(deploymentStatus.lastUpdatedAt).toLocaleString()}
+                              {new Date(maestroUpdateStatus.lastUpdatedAt).toLocaleString()}
                             </span>
                           </FieldContent>
                         </Field>
@@ -1644,37 +1398,19 @@ function SettingsView() {
                     )}
                   </FieldGroup>
 
-                  {deploymentStatus.latestRelease?.url && (
-                    <a
-                      href={deploymentStatus.latestRelease.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs underline"
-                    >
-                      View release
-                      <ExternalLinkIcon className="size-3" />
-                    </a>
-                  )}
-
-                  {deploymentStatus.latestRelease?.notes && (
-                    <p className="line-clamp-6 whitespace-pre-wrap text-xs text-muted-foreground">
-                      {deploymentStatus.latestRelease.notes}
-                    </p>
-                  )}
-
-                  {deploymentStatus.lastError && (
+                  {maestroUpdateStatus.lastError && (
                     <Alert variant="destructive">
                       <TriangleAlertIcon />
-                      <AlertTitle>Deployment error</AlertTitle>
-                      <AlertDescription>{deploymentStatus.lastError}</AlertDescription>
+                      <AlertTitle>Maestro update error</AlertTitle>
+                      <AlertDescription>{maestroUpdateStatus.lastError}</AlertDescription>
                     </Alert>
                   )}
 
-                  {deploymentMessage && (
+                  {maestroUpdateMessage && (
                     <Alert>
                       <TriangleAlertIcon />
-                      <AlertTitle>Deployment status</AlertTitle>
-                      <AlertDescription>{deploymentMessage}</AlertDescription>
+                      <AlertTitle>Maestro update</AlertTitle>
+                      <AlertDescription>{maestroUpdateMessage}</AlertDescription>
                     </Alert>
                   )}
                 </>
@@ -1683,36 +1419,36 @@ function SettingsView() {
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   variant="outline"
-                  disabled={checkingDeployment || !deploymentStatus?.configured}
-                  onClick={() => void handleCheckDeployment()}
+                  disabled={checkingMaestro}
+                  onClick={() => void handleCheckMaestroUpdate()}
                 >
-                  {checkingDeployment ? (
+                  {checkingMaestro ? (
                     <LoaderIcon className="mr-2 size-4 animate-spin" />
                   ) : (
                     <RefreshCwIcon className="mr-2 size-4" />
                   )}
-                  Check Releases
+                  Check for Update
                 </Button>
                 <Button
                   disabled={
-                    redeployingDeployment ||
-                    !deploymentStatus?.configured ||
-                    deploymentStatus.updating ||
-                    !deploymentStatus.latestVersion
+                    updatingMaestro ||
+                    !maestroUpdateStatus?.supported ||
+                    maestroUpdateStatus.updating ||
+                    !maestroUpdateStatus.updateAvailable
                   }
-                  onClick={() => void handleRedeployLatest()}
+                  onClick={() => void handleUpdateMaestro()}
                 >
-                  {redeployingDeployment ? (
+                  {updatingMaestro ? (
                     <LoaderIcon className="mr-2 size-4 animate-spin" />
                   ) : (
                     <DownloadIcon className="mr-2 size-4" />
                   )}
-                  Redeploy Latest
+                  Update Maestro
                 </Button>
               </div>
 
               <FieldDescription>
-                Redeploys are started asynchronously. Expect the Maestro server connection to drop briefly while Docker rebuilds and restarts the service.
+                Maestro restarts itself after a successful update. Expect the connection to drop briefly while the server comes back up.
               </FieldDescription>
             </CardContent>
           </Card>
