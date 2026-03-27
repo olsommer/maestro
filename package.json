@@ -1,6 +1,7 @@
 {
   "name": "maestro",
   "private": true,
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev:server": "pnpm --filter @maestro/server dev",
     "dev:client": "pnpm --filter @maestro/client dev",
