@@ -58,8 +58,8 @@ RUN mkdir -p /root/.claude && echo '{"hasCompletedOnboarding":true}' > /root/.cl
 # Allow sandbox user to traverse /root so it can access mounted project dirs
 # (only execute/traverse bit, not read — sandbox can't list /root contents)
 RUN chmod 711 /root \
- && mkdir -p /root/maestro-projects && chmod 755 /root/maestro-projects \
- && mkdir -p /root/.maestro/data && chmod 755 /root/.maestro /root/.maestro/data \
+ && mkdir -p /root/.maestro/projects /root/.maestro/sandboxes \
+ && chmod 755 /root/.maestro /root/.maestro/projects /root/.maestro/sandboxes \
  && chmod 755 /root/.claude
 
 WORKDIR /app
