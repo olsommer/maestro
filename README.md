@@ -168,6 +168,8 @@ If you want a globally installed package instead of a repo checkout:
 npm i -g @isarai/maestro
 maestro start
 maestro status
+maestro logs
+maestro logs -f
 maestro auth
 maestro version
 maestro update --check
