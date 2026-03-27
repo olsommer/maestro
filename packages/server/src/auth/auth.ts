@@ -1,11 +1,11 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import jwt from "jsonwebtoken";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { MAESTRO_DATA_DIR, ensureDataDir } from "../state/files.js";
 
-const MAESTRO_DIR = path.join(os.homedir(), ".maestro");
+const MAESTRO_DIR = MAESTRO_DATA_DIR;
 const SECRET_PATH = path.join(MAESTRO_DIR, "jwt-secret");
 const TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
 
@@ -16,9 +16,7 @@ let jwtSecret: string;
  * Returns the API token for display on first run.
  */
 export function initAuth(): { apiToken: string } {
-  if (!fs.existsSync(MAESTRO_DIR)) {
-    fs.mkdirSync(MAESTRO_DIR, { recursive: true });
-  }
+  ensureDataDir();
 
   // JWT secret
   if (fs.existsSync(SECRET_PATH)) {

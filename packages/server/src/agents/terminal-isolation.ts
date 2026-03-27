@@ -1,8 +1,9 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import * as os from "os";
+import { MAESTRO_SANDBOX_TERMINALS_DIR } from "../state/files.js";
 
-const DEFAULT_TERMINAL_STATE_BASE = path.join(os.homedir(), ".maestro", "terminals");
+const DEFAULT_TERMINAL_STATE_BASE = MAESTRO_SANDBOX_TERMINALS_DIR;
 const TERMINAL_STATE_BASE =
   process.env.MAESTRO_TERMINAL_STATE_BASE?.trim() || DEFAULT_TERMINAL_STATE_BASE;
 const BOOTSTRAP_MARKER = ".bootstrap-complete";

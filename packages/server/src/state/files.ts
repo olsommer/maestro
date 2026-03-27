@@ -3,10 +3,19 @@ import * as os from "os";
 import * as path from "path";
 
 export const MAESTRO_DATA_DIR = path.join(os.homedir(), ".maestro");
+export const MAESTRO_PROJECTS_DIR = path.join(MAESTRO_DATA_DIR, "projects");
+export const MAESTRO_SANDBOXES_DIR = path.join(MAESTRO_DATA_DIR, "sandboxes");
+export const MAESTRO_SANDBOX_TERMINALS_DIR = path.join(MAESTRO_SANDBOXES_DIR, "terminals");
+export const MAESTRO_SANDBOX_WORKTREES_DIR = path.join(MAESTRO_SANDBOXES_DIR, "worktrees");
 
 export function ensureDataDir(): string {
   fs.mkdirSync(MAESTRO_DATA_DIR, { recursive: true });
   return MAESTRO_DATA_DIR;
+}
+
+export function ensureSandboxesDir(): string {
+  fs.mkdirSync(MAESTRO_SANDBOXES_DIR, { recursive: true });
+  return MAESTRO_SANDBOXES_DIR;
 }
 
 export function ensureDir(dirPath: string): string {

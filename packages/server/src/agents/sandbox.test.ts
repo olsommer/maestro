@@ -151,3 +151,37 @@ test("skips container-only home files that are not backed by a Docker mount", ()
     }
   }
 });
+
+test("does not mount the root Maestro data directory into generic docker sandboxes", () => {
+  const previousHome = process.env.HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-home-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-project-"));
+  const maestroDir = path.join(home, ".maestro");
+  const sandboxesDir = path.join(maestroDir, "sandboxes");
+
+  fs.mkdirSync(sandboxesDir, { recursive: true });
+  process.env.HOME = home;
+  __setRunningInsideContainerForTests(false);
+  __setSelfContainerMountsForTests([]);
+
+  try {
+    const config: SandboxConfig = {
+      cwd,
+      env: {},
+    };
+
+    const args = buildDockerRunArgs(config, ["/bin/bash", "-l"], "example-sandbox:latest");
+    const mountArgs = args.filter((value) => value.startsWith("type="));
+
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${maestroDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${sandboxesDir}`)));
+  } finally {
+    __setSelfContainerMountsForTests(undefined);
+    __setRunningInsideContainerForTests(undefined);
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+});

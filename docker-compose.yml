@@ -16,7 +16,6 @@ services:
       UPDATER_TOKEN: ${UPDATER_TOKEN:-}
     volumes:
       - maestro_data:/root/.maestro
-      - maestro_projects:/root/maestro-projects
       - maestro_gh:/root/.config/gh
       - maestro_claude:/root/.claude
       - maestro_codex:/root/.codex
@@ -51,7 +50,6 @@ services:
 
 volumes:
   maestro_data:
-  maestro_projects:
   maestro_gh:
   maestro_claude:
   maestro_codex:
