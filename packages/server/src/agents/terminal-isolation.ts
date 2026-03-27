@@ -62,6 +62,9 @@ function bootstrapTerminalHome(homeDir: string): void {
     copyPathIfPresent(source, target);
   }
 
+  // Pre-create shell history so login shells don't emit noisy warnings when
+  // history append is enabled inside isolated homes.
+  fs.writeFileSync(path.join(homeDir, ".bash_history"), "", { flag: "a" });
   fs.writeFileSync(markerPath, new Date().toISOString());
 }
 

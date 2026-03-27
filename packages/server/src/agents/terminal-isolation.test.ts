@@ -40,6 +40,7 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".config", "gh", "hosts.yml")));
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".claude", "settings.json")));
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".codex", "config.json")));
+    assert.ok(fs.existsSync(path.join(paths.homeDir, ".bash_history")));
   } finally {
     if (previousHome === undefined) {
       delete process.env.HOME;

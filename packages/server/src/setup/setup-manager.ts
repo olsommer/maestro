@@ -14,10 +14,13 @@ const ANSI_RE = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?|\[[0-9;]*[A-Za-z])/g;
 // Detect prompts like "Do you want to use Claude Code? (y/n)" or "Running:"
 // which indicate a new step has started and any previous URL is stale.
 const STEP_BOUNDARY_RE = /(?:Running:|Checking|Do you want|Enter|Paste|Token)/i;
-const SCRIPT_PATH = path.resolve(
-  import.meta.dirname ?? __dirname,
-  "../../scripts/setup.sh"
-);
+const INSTALL_ROOT = process.env.MAESTRO_INSTALL_ROOT?.trim();
+const SCRIPT_PATH = INSTALL_ROOT
+  ? path.resolve(INSTALL_ROOT, "assets/setup.sh")
+  : path.resolve(
+      import.meta.dirname ?? __dirname,
+      "../../scripts/setup.sh"
+    );
 
 let activePty: pty.IPty | null = null;
 let running = false;

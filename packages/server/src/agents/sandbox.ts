@@ -652,7 +652,9 @@ function mountSharedAgentPaths(args: string[], home: string): void {
 
 function resolveDockerSandboxDockerfile(): string {
   const localDir = path.dirname(fileURLToPath(import.meta.url));
+  const installRoot = process.env.MAESTRO_INSTALL_ROOT?.trim();
   const candidates = [
+    ...(installRoot ? [path.resolve(installRoot, "assets/docker/sandbox/Dockerfile")] : []),
     path.resolve(process.cwd(), "docker/sandbox/Dockerfile"),
     path.resolve(localDir, "../../../../docker/sandbox/Dockerfile"),
   ];
