@@ -7,7 +7,6 @@ import {
   performUpdate,
   restartAutoUpdater,
 } from "../services/auto-updater.js";
-import { writePiModelsConfig } from "../services/ollama.js";
 
 export async function registerSettingsRoutes(app: FastifyInstance) {
   // Get current settings
@@ -26,11 +25,6 @@ export async function registerSettingsRoutes(app: FastifyInstance) {
 
     // Restart the auto-updater timer if settings changed
     restartAutoUpdater();
-
-    // Write Pi's models.json when Ollama model is configured
-    if (parsed.data.piOllamaModel) {
-      writePiModelsConfig(parsed.data.piOllamaModel);
-    }
 
     return settings;
   });

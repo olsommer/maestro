@@ -150,17 +150,6 @@ export function registerSocketHandlers(io: SocketServer) {
         socket.emit("error", { message: "Invalid setup restart payload" });
       }
     });
-
-    // WhatsApp handlers
-    socket.on("whatsapp:subscribe", () => {
-      socket.join("whatsapp");
-      console.log(`Client ${socket.id} subscribed to whatsapp`);
-    });
-
-    socket.on("whatsapp:unsubscribe", () => {
-      socket.leave("whatsapp");
-    });
-
     socket.on("disconnect", () => {
       console.log(`Client disconnected: ${socket.id}`);
     });

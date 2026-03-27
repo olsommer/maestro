@@ -99,13 +99,6 @@ Bare-metal deployment does not require Docker for the Maestro server itself.
 - managed projects live under `~/.maestro/projects/`
 - sandbox state lives under `~/.maestro/sandboxes/`
 - Docker is only needed if you want Docker sandboxing for agents and terminals
-- Ollama is only needed if you want to use the local Pi agent
-
-If you run Ollama locally, Maestro uses the normal Ollama HTTP endpoint. By default that is:
-
-```bash
-http://localhost:11434
-```
 
 If you want a globally installed package instead of a repo checkout:
 

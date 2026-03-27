@@ -93,7 +93,6 @@ export interface CodexAuthStatus {
 export interface Settings {
   autoUpdateEnabled: boolean;
   autoUpdateIntervalHours: number;
-  piOllamaModel: string;
   telegramBotToken: string;
   sandboxEnabled: boolean;
   sandboxProvider: "none" | "docker";
@@ -102,26 +101,6 @@ export interface Settings {
   agentDefaultDisableSandbox: boolean;
   agentDefaultSkipPermissions: boolean;
   agentDefaultWorktreeMode: "none" | "new";
-}
-
-export interface OllamaModelInfo {
-  name: string;
-  size: number;
-  digest: string;
-  modifiedAt: string;
-}
-
-export interface OllamaPullStatus {
-  model: string | null;
-  status: string;
-  progress: number;
-  error: string | null;
-  done: boolean;
-}
-
-export interface OllamaStatus {
-  running: boolean;
-  host: string;
 }
 
 export interface UpdateStatus {
@@ -217,6 +196,15 @@ export const api = {
   getMaestroUpdateStatus: () => request<MaestroUpdateStatus>("/api/maestro/update-status"),
   checkForMaestroUpdate: () => request<MaestroUpdateStatus>("/api/maestro/check", { method: "POST" }),
   updateMaestro: () => request<MaestroUpdateTriggerResponse>("/api/maestro/update", { method: "POST" }),
+  getTelegramStatus: () =>
+    request<{ status: string; botUsername: string | null }>("/api/integrations/telegram"),
+  connectTelegram: () =>
+    request<{ status: string; botUsername: string | null }>(
+      "/api/integrations/telegram/connect",
+      { method: "POST" }
+    ),
+  disconnectTelegram: () =>
+    request<{ ok: boolean }>("/api/integrations/telegram/connect", { method: "DELETE" }),
 
   getProject: (id: string) => request<{ project: Project }>(`/api/projects/${id}`),
 
@@ -335,22 +323,6 @@ export const api = {
 
   deleteKanbanTask: (id: string) =>
     request<{ ok: boolean }>(`/api/kanban/tasks/${id}`, { method: "DELETE" }),
-
-  // Ollama / Pi Agent
-  getOllamaStatus: () => request<OllamaStatus>("/api/ollama/status"),
-  getOllamaModels: () => request<{ models: OllamaModelInfo[] }>("/api/ollama/models"),
-  getRecommendedModels: () => request<{ models: string[] }>("/api/ollama/recommended"),
-  pullOllamaModel: (model: string) =>
-    request<{ ok: boolean; model: string }>("/api/ollama/pull", {
-      method: "POST",
-      body: JSON.stringify({ model }),
-    }),
-  getOllamaPullStatus: () => request<OllamaPullStatus>("/api/ollama/pull/status"),
-
-  // Telegram
-  getTelegramStatus: () => request<{ status: string; botUsername: string | null }>("/api/integrations/telegram"),
-  connectTelegram: () => request<{ status: string; botUsername: string | null }>("/api/integrations/telegram/connect", { method: "POST" }),
-  disconnectTelegram: () => request<{ ok: boolean }>("/api/integrations/telegram/connect", { method: "DELETE" }),
 };
 
 export interface KanbanTask {

@@ -7,3 +7,4 @@ dist/
 .next/
 .playwright-cli/
 output/
+packages/cli/assets/
