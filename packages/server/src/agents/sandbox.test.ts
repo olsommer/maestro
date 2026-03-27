@@ -7,6 +7,7 @@ import {
   __setRunningInsideContainerForTests,
   __setSelfContainerMountsForTests,
   buildDockerRunArgs,
+  type DockerMountSpec,
   normalizeSandboxProvider,
   resolveSandboxProviderAvailability,
   type SandboxConfig,
@@ -46,6 +47,7 @@ test("falls back to none when requested sandbox is unavailable", () => {
 test("builds docker run args with mounts, env, and command", () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-"));
   const readonlyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-ro-"));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-sandbox-home-"));
   const previousHome = process.env.HOME;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-home-"));
   const codexDir = path.join(home, ".codex");
@@ -63,8 +65,17 @@ test("builds docker run args with mounts, env, and command", () => {
   try {
     const config: SandboxConfig = {
       cwd,
+      homeDir,
       env: { FOO: "bar" },
       readonlyMounts: [readonlyDir],
+      dockerExtraMounts: [
+        {
+          type: "volume",
+          source: "maestro-test-sock",
+          target: "/var/run/maestro-dind",
+          readonly: false,
+        } satisfies DockerMountSpec,
+      ],
       memoryLimit: 128 * 1024 * 1024,
       maxProcesses: 16,
     };
@@ -79,19 +90,18 @@ test("builds docker run args with mounts, env, and command", () => {
     assert.ok(args.includes("-l"));
     assert.ok(args.includes("--env"));
     assert.ok(args.includes("FOO=bar"));
+    assert.ok(args.includes(`HOME=${homeDir}`));
 
-    const mountArgs = args.filter((value) => value.startsWith("type=bind,"));
+    const mountArgs = args.filter((value) => value.startsWith("type="));
     assert.ok(mountArgs.some((value) => value.includes(`src=${cwd}`)));
     assert.ok(mountArgs.some((value) => value.includes(`src=${readonlyDir}`)));
     assert.ok(mountArgs.some((value) => value.includes(`dst=${readonlyDir}`) && value.includes("readonly")));
-    assert.ok(mountArgs.some((value) => value.includes(`dst=${codexDir}`)));
-    assert.ok(!mountArgs.some((value) => value.includes(`dst=${codexDir}`) && value.includes("readonly")));
-    assert.ok(mountArgs.some((value) => value.includes(`dst=${claudeDir}`)));
-    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeDir}`) && value.includes("readonly")));
-    assert.ok(mountArgs.some((value) => value.includes(`dst=${claudeJson}`)));
-    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeJson}`) && value.includes("readonly")));
-    assert.ok(mountArgs.some((value) => value.includes(`dst=${ghConfigDir}`)));
-    assert.ok(!mountArgs.some((value) => value.includes(`dst=${ghConfigDir}`) && value.includes("readonly")));
+    assert.ok(mountArgs.some((value) => value.includes(`src=${homeDir}`)));
+    assert.ok(mountArgs.some((value) => value.includes("type=volume,src=maestro-test-sock,dst=/var/run/maestro-dind")));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${codexDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeDir}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${claudeJson}`)));
+    assert.ok(!mountArgs.some((value) => value.includes(`dst=${ghConfigDir}`)));
   } finally {
     __setSelfContainerMountsForTests(undefined);
     __setRunningInsideContainerForTests(undefined);
