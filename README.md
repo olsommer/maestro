@@ -169,6 +169,8 @@ npm i -g @isarai/maestro
 maestro start
 maestro status
 maestro auth
+maestro version
+maestro update --check
 maestro stop
 ```
 

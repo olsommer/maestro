@@ -1,10 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PACKAGE_JSON_PATH = path.join(PACKAGE_ROOT, "package.json");
 const MAESTRO_DIR = path.join(os.homedir(), ".maestro");
 const PID_PATH = path.join(MAESTRO_DIR, "server.pid");
 const META_PATH = path.join(MAESTRO_DIR, "server-meta.json");
@@ -24,6 +25,11 @@ interface ServerMeta {
   cwd: string;
 }
 
+interface PackageMeta {
+  name: string;
+  version: string;
+}
+
 function ensureMaestroDir(): void {
   fs.mkdirSync(MAESTRO_DIR, { recursive: true });
 }
@@ -31,6 +37,14 @@ function ensureMaestroDir(): void {
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
+}
+
+function readPackageMeta(): PackageMeta {
+  try {
+    return JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8")) as PackageMeta;
+  } catch {
+    fail(`Maestro package metadata not found at ${PACKAGE_JSON_PATH}`);
+  }
 }
 
 function preflight(): void {
@@ -112,6 +126,75 @@ function displayHost(host: string | undefined): string {
     return "127.0.0.1";
   }
   return host;
+}
+
+function isContainerManagedInstall(): boolean {
+  return fs.existsSync("/.dockerenv") || Boolean(process.env.KUBERNETES_SERVICE_HOST);
+}
+
+function getNpmCommand(): string {
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  try {
+    execFileSync(npmCommand, ["--version"], { stdio: ["ignore", "ignore", "ignore"] });
+    return npmCommand;
+  } catch {
+    fail("npm is required for `maestro update`, but it was not found in PATH.");
+  }
+}
+
+function getGlobalNpmRoot(npmCommand: string): string {
+  try {
+    return execFileSync(npmCommand, ["root", "-g"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    fail("Failed to determine the global npm install directory.");
+  }
+}
+
+function ensureGlobalNpmInstall(npmCommand: string, packageName: string): void {
+  const globalRoot = path.resolve(getGlobalNpmRoot(npmCommand));
+  const expectedRoot = path.resolve(globalRoot, packageName);
+  const installedRoot = path.resolve(PACKAGE_ROOT);
+
+  if (installedRoot !== expectedRoot) {
+    fail(
+      `maestro update only supports global npm installs. Expected package path ${expectedRoot}, found ${installedRoot}.`
+    );
+  }
+}
+
+function getLatestPublishedVersion(npmCommand: string, packageName: string): string {
+  try {
+    const raw = execFileSync(npmCommand, ["view", `${packageName}@latest`, "version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    }).trim();
+    if (!raw) {
+      throw new Error("empty version response");
+    }
+    return raw;
+  } catch {
+    fail(`Failed to query the latest published version for ${packageName}.`);
+  }
+}
+
+function version(): void {
+  const meta = readPackageMeta();
+  console.log(meta.version);
+}
+
+function runNpmInstallGlobal(npmCommand: string, packageName: string, versionSpec: string): void {
+  try {
+    execFileSync(
+      npmCommand,
+      ["install", "-g", `${packageName}@${versionSpec}`],
+      { stdio: "inherit" }
+    );
+  } catch {
+    throw new Error(`Failed to update ${packageName}@${versionSpec}.`);
+  }
 }
 
 function getStatus(): { running: boolean; pid: number | null; meta: ServerMeta | null } {
@@ -234,6 +317,59 @@ function auth(): void {
   console.log(`Token path: ${tokenPath}`);
 }
 
+async function update(args: string[]): Promise<void> {
+  if (isContainerManagedInstall()) {
+    fail("maestro update is only supported for bare-metal npm installs. Redeploy the container image instead.");
+  }
+
+  const meta = readPackageMeta();
+  const npmCommand = getNpmCommand();
+  ensureGlobalNpmInstall(npmCommand, meta.name);
+
+  const latestVersion = getLatestPublishedVersion(npmCommand, meta.name);
+  const currentVersion = meta.version;
+  const checkOnly = args.includes("--check");
+
+  console.log(`Installed: ${currentVersion}`);
+  console.log(`Latest: ${latestVersion}`);
+
+  if (currentVersion === latestVersion) {
+    console.log("Maestro is already up to date.");
+    return;
+  }
+
+  if (checkOnly) {
+    console.log(`Update available: ${currentVersion} -> ${latestVersion}`);
+    return;
+  }
+
+  const current = getStatus();
+  const wasRunning = current.running;
+
+  if (wasRunning) {
+    console.log("Stopping Maestro before update...");
+    await stop();
+  }
+
+  console.log(`Updating ${meta.name} to ${latestVersion}...`);
+  try {
+    runNpmInstallGlobal(npmCommand, meta.name, "latest");
+  } catch (error) {
+    if (wasRunning) {
+      console.log("Update failed; attempting to restart the previous Maestro process...");
+      start();
+    }
+    fail(error instanceof Error ? error.message : "Maestro update failed.");
+  }
+
+  if (wasRunning) {
+    console.log("Starting Maestro after update...");
+    start();
+  } else {
+    console.log("Update complete.");
+  }
+}
+
 function help(): void {
   console.log("Usage: maestro <command>");
   console.log("");
@@ -242,10 +378,16 @@ function help(): void {
   console.log("  stop    Stop the background Maestro server");
   console.log("  status  Show whether the Maestro server is running");
   console.log("  auth    Print the local Maestro API token");
+  console.log("  version Print the installed Maestro CLI version");
+  console.log("  update  Update the globally installed Maestro CLI");
+  console.log("");
+  console.log("Options:");
+  console.log("  maestro update --check   Check whether an update is available");
 }
 
 async function main(): Promise<void> {
   const cmd = process.argv[2];
+  const args = process.argv.slice(3);
 
   switch (cmd) {
     case "start":
@@ -259,6 +401,12 @@ async function main(): Promise<void> {
       break;
     case "auth":
       auth();
+      break;
+    case "version":
+      version();
+      break;
+    case "update":
+      await update(args);
       break;
     case "help":
     case "--help":
