@@ -317,6 +317,66 @@ function auth(): void {
   console.log(`Token path: ${tokenPath}`);
 }
 
+function logs(args: string[]): void {
+  const follow = args.includes("-f") || args.includes("--follow");
+
+  if (!fs.existsSync(LOG_PATH)) {
+    fail(`Maestro log file not found at ${LOG_PATH}. Start Maestro first.`);
+  }
+
+  let position = 0;
+
+  const printChunk = (start: number, end: number) => {
+    if (end <= start) return;
+
+    const fd = fs.openSync(LOG_PATH, "r");
+    try {
+      const length = end - start;
+      const buffer = Buffer.alloc(length);
+      fs.readSync(fd, buffer, 0, length, start);
+      process.stdout.write(buffer);
+    } finally {
+      fs.closeSync(fd);
+    }
+  };
+
+  const stat = fs.statSync(LOG_PATH);
+  printChunk(0, stat.size);
+  position = stat.size;
+
+  if (!follow) {
+    return;
+  }
+
+  const stopWatching = () => {
+    fs.unwatchFile(LOG_PATH, onChange);
+  };
+
+  const onChange = (curr: fs.Stats, prev: fs.Stats) => {
+    if (curr.size < position) {
+      position = 0;
+    }
+    if (curr.size > position) {
+      printChunk(position, curr.size);
+      position = curr.size;
+    } else if (prev.size > curr.size) {
+      position = curr.size;
+    }
+  };
+
+  process.on("SIGINT", () => {
+    stopWatching();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", () => {
+    stopWatching();
+    process.exit(0);
+  });
+
+  fs.watchFile(LOG_PATH, { interval: 500 }, onChange);
+}
+
 async function update(args: string[]): Promise<void> {
   if (isContainerManagedInstall()) {
     fail("maestro update is only supported for bare-metal npm installs. Redeploy the container image instead.");
@@ -378,10 +438,12 @@ function help(): void {
   console.log("  stop    Stop the background Maestro server");
   console.log("  status  Show whether the Maestro server is running");
   console.log("  auth    Print the local Maestro API token");
+  console.log("  logs    Print the Maestro server log");
   console.log("  version Print the installed Maestro CLI version");
   console.log("  update  Update the globally installed Maestro CLI");
   console.log("");
   console.log("Options:");
+  console.log("  maestro logs -f         Follow the Maestro server log");
   console.log("  maestro update --check   Check whether an update is available");
 }
 
@@ -401,6 +463,9 @@ async function main(): Promise<void> {
       break;
     case "auth":
       auth();
+      break;
+    case "logs":
+      logs(args);
       break;
     case "version":
       version();

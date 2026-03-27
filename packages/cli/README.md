@@ -13,6 +13,8 @@ npm i -g @isarai/maestro
 ```bash
 maestro start
 maestro status
+maestro logs
+maestro logs -f
 maestro auth
 maestro version
 maestro update --check
