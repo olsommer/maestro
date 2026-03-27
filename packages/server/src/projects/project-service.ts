@@ -26,9 +26,11 @@ import {
   listAutomationRecords,
   listScheduledTaskRecords,
 } from "../state/sqlite.js";
+import { MAESTRO_PROJECTS_DIR } from "../state/files.js";
 import type { ProjectRecord } from "../state/types.js";
 
-const MANAGED_PROJECTS_DIR = path.join(os.homedir(), "maestro-projects");
+const LEGACY_MANAGED_PROJECTS_DIR = path.join(os.homedir(), "maestro-projects");
+const MANAGED_PROJECTS_DIR = MAESTRO_PROJECTS_DIR;
 
 interface GitHubRepoParts {
   repoUrl: string | null;
@@ -102,6 +104,24 @@ function getUniqueSlug(name: string): string {
   return slug;
 }
 
+function ensureManagedProjectsDir(): string {
+  if (fs.existsSync(MANAGED_PROJECTS_DIR)) {
+    return MANAGED_PROJECTS_DIR;
+  }
+
+  if (fs.existsSync(LEGACY_MANAGED_PROJECTS_DIR)) {
+    fs.mkdirSync(path.dirname(MANAGED_PROJECTS_DIR), { recursive: true });
+    fs.renameSync(LEGACY_MANAGED_PROJECTS_DIR, MANAGED_PROJECTS_DIR);
+    console.log(
+      `Migrated managed projects directory from ${LEGACY_MANAGED_PROJECTS_DIR} to ${MANAGED_PROJECTS_DIR}`
+    );
+    return MANAGED_PROJECTS_DIR;
+  }
+
+  fs.mkdirSync(MANAGED_PROJECTS_DIR, { recursive: true });
+  return MANAGED_PROJECTS_DIR;
+}
+
 function deriveLocalPath(
   localPath: string | undefined,
   name: string
@@ -110,7 +130,7 @@ function deriveLocalPath(
     return path.resolve(localPath.trim());
   }
 
-  return path.join(MANAGED_PROJECTS_DIR, slugify(name));
+  return path.join(ensureManagedProjectsDir(), slugify(name));
 }
 
 function runGitCommand(args: string[]): void {

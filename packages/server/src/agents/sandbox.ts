@@ -621,7 +621,6 @@ function getSharedAgentPaths(home: string): {
   readonly: string[];
   readwrite: string[];
 } {
-  const maestroDir = path.join(home, ".maestro");
   const codexDir = path.join(home, ".codex");
   const claudeDir = path.join(home, ".claude");
   const claudeProjectsDir = path.join(claudeDir, "projects");
@@ -630,11 +629,10 @@ function getSharedAgentPaths(home: string): {
   const ghConfigDir = path.join(home, ".config", "gh");
 
   return {
-    // Codex, Claude, and gh may all persist runtime/session state under their
-    // home config paths when started inside a sandbox. Keep those writable so
-    // the CLIs can boot and authenticate normally while leaving gitconfig
-    // itself read-only.
-    readwrite: [maestroDir, codexDir, claudeDir, claudeProjectsDir, claudeJson, ghConfigDir].filter(fs.existsSync),
+    // Keep only CLI/runtime config writable here. Maestro's own server state
+    // stays outside the generic sandbox mount set and terminal sandboxes use
+    // a dedicated isolated HOME under ~/.maestro/sandboxes/terminals/<id>.
+    readwrite: [codexDir, claudeDir, claudeProjectsDir, claudeJson, ghConfigDir].filter(fs.existsSync),
     readonly: [gitconfig].filter(fs.existsSync),
   };
 }

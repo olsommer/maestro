@@ -141,7 +141,7 @@ function ProjectsView(props: Props) {
   const githubProjectName = parseGitHubRepoName(repoQuery);
   const effectiveProjectName = useGitHubRepo ? githubProjectName : name.trim();
   const displayedProjectName = useGitHubRepo ? githubProjectName : name;
-  const derivedLocalPath = `~/maestro-projects/${slugifyProjectName(effectiveProjectName)}`;
+  const derivedLocalPath = `~/.maestro/projects/${slugifyProjectName(effectiveProjectName)}`;
   const showRepoSuggestions =
     useGitHubRepo &&
     Boolean(github?.connected) &&

@@ -1,6 +1,7 @@
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { MAESTRO_PROJECTS_DIR, MAESTRO_SANDBOXES_DIR } from "../state/files.js";
 import {
   getDockerPath,
   isDockerAvailable,
@@ -47,8 +48,8 @@ export function getTerminalDockerRuntime(terminalId: string): TerminalDockerRunt
 
 function getSharedTerminalRuntimeMounts(): DockerMountSpec[] {
   const requestedPaths = [
-    path.join(os.homedir(), ".maestro"),
-    path.join(os.homedir(), "maestro-projects"),
+    MAESTRO_SANDBOXES_DIR,
+    MAESTRO_PROJECTS_DIR,
   ];
 
   return requestedPaths.flatMap((requestedPath) => {

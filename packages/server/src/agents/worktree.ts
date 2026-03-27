@@ -1,9 +1,9 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { execSync } from "child_process";
+import { MAESTRO_SANDBOX_WORKTREES_DIR } from "../state/files.js";
 
-const DEFAULT_WORKTREE_BASE = path.join(os.homedir(), ".maestro", "worktrees");
+const DEFAULT_WORKTREE_BASE = MAESTRO_SANDBOX_WORKTREES_DIR;
 const WORKTREE_BASE = process.env.MAESTRO_WORKTREE_BASE?.trim() || DEFAULT_WORKTREE_BASE;
 
 export function getWorktreeBasePath(): string {

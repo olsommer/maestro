@@ -28,6 +28,7 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
     );
 
     const paths = ensureTerminalIsolationHome("terminal-123");
+    const expectedRoot = path.join(tempState, "terminal-123");
 
     assert.equal(
       fs.readFileSync(path.join(paths.homeDir, ".gitconfig"), "utf-8"),
@@ -41,6 +42,8 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".claude", "settings.json")));
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".codex", "config.json")));
     assert.ok(fs.existsSync(path.join(paths.homeDir, ".bash_history")));
+    assert.equal(paths.rootDir, expectedRoot);
+    assert.equal(paths.homeDir, path.join(expectedRoot, "home"));
   } finally {
     if (previousHome === undefined) {
       delete process.env.HOME;
