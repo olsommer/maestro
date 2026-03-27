@@ -1,0 +1,107 @@
+name: Release Maestro CLI
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release-cli:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read CLI release metadata
+        id: meta
+        run: |
+          PACKAGE_NAME="$(node -p "require('./packages/cli/package.json').name")"
+          VERSION="$(node -p "require('./packages/cli/package.json').version")"
+          TAG="maestro-cli-v${VERSION}"
+
+          echo "package_name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this CLI version is already released
+        id: check
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "CLI version ${{ steps.meta.outputs.version }} already has tag ${{ steps.meta.outputs.tag }}. Skipping publish."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run server tests
+        if: steps.check.outputs.should_release == 'true'
+        run: pnpm --filter @maestro/server test
+
+      - name: Build CLI package
+        if: steps.check.outputs.should_release == 'true'
+        run: pnpm --dir packages/cli build
+
+      - name: Create draft GitHub release
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --draft \
+            --target "${GITHUB_SHA}" \
+            --title "Maestro CLI v${{ steps.meta.outputs.version }}" \
+            --notes "Install with: npm i -g ${{ steps.meta.outputs.package_name }}@${{ steps.meta.outputs.version }}"
+
+      - name: Publish CLI to npm
+        if: steps.check.outputs.should_release == 'true'
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
+            echo "NPM_TOKEN repository secret is required to publish."
+            exit 1
+          fi
+
+          npm publish --provenance
+
+      - name: Publish GitHub release
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ steps.meta.outputs.tag }}" \
+            --draft=false \
+            --latest
+
+      - name: Delete draft release on failure
+        if: ${{ failure() && steps.check.outputs.should_release == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "${{ steps.meta.outputs.tag }}" --cleanup-tag --yes || true

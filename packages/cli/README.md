@@ -1,11 +1,11 @@
-# @maestro/cli
+# @isarai/maestro
 
 Standalone CLI for running Maestro without Docker Compose.
 
 ## Install
 
 ```bash
-npm i -g @maestro/cli
+npm i -g @isarai/maestro
 ```
 
 ## Usage

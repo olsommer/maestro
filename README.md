@@ -182,6 +182,15 @@ maestro auth
 maestro stop
 ```
 
+If you want a globally installed package instead of a repo checkout:
+
+```bash
+npm i -g @isarai/maestro
+maestro start
+maestro auth
+maestro stop
+```
+
 ## Remote Access (Exposing Your Server)
 
 The server listens on plain HTTP. For remote access, put a TLS-terminating layer in front of it. **Never expose port 4800 directly to the internet.**
