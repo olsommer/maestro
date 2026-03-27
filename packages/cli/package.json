@@ -1,11 +1,23 @@
 {
-  "name": "@maestro/cli",
+  "name": "@isarai/maestro",
   "version": "0.1.0",
   "description": "Standalone CLI for running the Maestro server",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olsommer/maestro.git"
+  },
+  "homepage": "https://github.com/olsommer/maestro",
+  "bugs": {
+    "url": "https://github.com/olsommer/maestro/issues"
+  },
   "bin": {
     "maestro": "./bin/maestro.js"
   },
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "bin",
     "dist",
