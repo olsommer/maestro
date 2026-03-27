@@ -1,3 +1,5 @@
+import type { SandboxProvider } from "@maestro/wire";
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -24,6 +26,7 @@ export interface TerminalRecord {
   customDisplayName: string | null;
   customCommandTemplate: string | null;
   customEnv: Record<string, string> | null;
+  sandboxProvider: SandboxProvider | null;
   secondaryProjectPaths: string[];
   worktreePath: string | null;
   autoWorktree: boolean;

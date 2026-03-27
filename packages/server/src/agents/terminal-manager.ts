@@ -348,6 +348,7 @@ export async function createTerminal(options: {
   customDisplayName?: string;
   customCommandTemplate?: string;
   customEnv?: Record<string, string>;
+  sandboxProvider?: SandboxProvider | null;
   secondaryProjectPaths?: string[];
   skills?: string[];
   skipPermissions?: boolean;
@@ -364,6 +365,7 @@ export async function createTerminal(options: {
     customDisplayName: options.customDisplayName ?? null,
     customCommandTemplate: options.customCommandTemplate ?? null,
     customEnv: options.customEnv ?? null,
+    sandboxProvider: options.sandboxProvider ?? null,
     secondaryProjectPaths: options.secondaryProjectPaths ?? [],
     skills: options.skills ?? [],
     status: "idle",
@@ -462,7 +464,9 @@ export async function startTerminal(
 
   const settings = getSettings();
   const sandboxProvider =
-    agent.disableSandbox ? "none" : (options?.sandboxProvider ?? settings.sandboxProvider);
+    agent.disableSandbox
+      ? "none"
+      : (options?.sandboxProvider ?? agent.sandboxProvider ?? settings.sandboxProvider);
   const sandboxEnabled = sandboxProvider !== "none";
 
   const command = provider.buildInteractiveCommand({
