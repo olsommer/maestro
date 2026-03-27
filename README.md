@@ -57,7 +57,7 @@ pnpm dev:server
 pnpm dev:client
 ```
 
-On first run the server generates an API token at `~/.maestro/api-token`.
+On first run the server generates an API token at `~/.maestro/token`.
 Open `http://localhost:3000`, enter `http://localhost:4800` as the server URL, paste the token, and connect.
 
 ## Deployment
@@ -104,7 +104,7 @@ The `server` service mounts the Docker socket so it can launch ephemeral Docker 
 Retrieve your API token:
 
 ```bash
-docker compose exec server cat /root/.maestro/api-token
+docker compose exec server cat /root/.maestro/token
 ```
 
 The Docker stack also starts an `ollama` service on `http://localhost:11434`.
@@ -160,7 +160,7 @@ pnpm install
 NODE_ENV=production pnpm dev:server
 ```
 
-The API token is printed on first run and stored at `~/.maestro/api-token`.
+The API token is printed on first run and stored at `~/.maestro/token`.
 
 For a simple local process manager, you can also use the repo CLI:
 
@@ -365,7 +365,7 @@ Note: Tailscale requires the Tailscale app on every connecting device.
 Maestro uses a **"bring your own backend"** model. There is no central auth server — each user's server is its own auth authority.
 
 **How it works:**
-1. Server generates a static API token on first start → `~/.maestro/api-token` (permissions `0600`)
+1. Server generates a static API token on first start → `~/.maestro/token` (permissions `0600`)
 2. User opens the shared frontend → connect page asks for server URL + API token
 3. Frontend stores both in `localStorage`
 4. HTTP requests include `Authorization: Bearer <token>`

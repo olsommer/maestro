@@ -132,7 +132,7 @@ export default function ConnectPage() {
                   autoFocus
                 />
                 <FieldDescription>
-                  Find your token at <code>~/.maestro/api-token</code>.
+                  Find your token at <code>~/.maestro/token</code>.
                 </FieldDescription>
               </Field>
             </FieldGroup>
