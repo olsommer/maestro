@@ -95,6 +95,7 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
         customDisplayName: options.customDisplayName,
         customCommandTemplate: options.customCommandTemplate,
         customEnv: options.customEnv,
+        sandboxProvider: options.sandboxProvider ?? null,
         secondaryProjectPaths: options.secondaryProjectPaths,
         skills: options.skills,
         skipPermissions: options.skipPermissions,

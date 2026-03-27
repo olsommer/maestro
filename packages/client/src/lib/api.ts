@@ -33,6 +33,7 @@ export interface Agent {
   customEnv?: Record<string, string> | null;
   worktreePath?: string | null;
   autoWorktree?: boolean;
+  sandboxProvider?: "none" | "nsjail" | "docker" | null;
   project?: {
     id: string;
     name: string;
@@ -293,6 +294,7 @@ export const api = {
     skills?: string[];
     skipPermissions?: boolean;
     disableSandbox?: boolean;
+    sandboxProvider?: "none" | "nsjail" | "docker";
     useWorktree?: boolean;
     worktreePath?: string;
     autoWorktree?: boolean;

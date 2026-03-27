@@ -50,8 +50,12 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<"none" | "claude" | "codex">("none");
   const [projectId, setProjectId] = useState("");
+  const [autoWorktree, setAutoWorktree] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [disableSandbox, setDisableSandbox] = useState(false);
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "nsjail" | "docker">(
+    "docker"
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -60,8 +64,10 @@ export function NewTerminalDialog({ open, onClose }: Props) {
     setName(generateDefaultTerminalName());
     setProjectId("__root__");
     setProvider("none");
+    setAutoWorktree(false);
     setSkipPermissions(true);
     setDisableSandbox(false);
+    setSandboxProvider("docker");
     setError("");
   }, [open]);
 
@@ -86,8 +92,10 @@ export function NewTerminalDialog({ open, onClose }: Props) {
         provider,
         projectId: trimmedProjectId,
         projectPath: isRoot ? "/" : undefined,
+        autoWorktree: !isRoot && autoWorktree ? true : undefined,
         skipPermissions: hasCodingAgent && !disableSandbox ? skipPermissions : false,
         disableSandbox,
+        sandboxProvider: !disableSandbox ? sandboxProvider : undefined,
       });
       addTerminal(terminal);
       selectTerminal(terminal.id);
@@ -95,8 +103,10 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       setName(generateDefaultTerminalName());
       setProjectId("__root__");
       setProvider("none");
+      setAutoWorktree(false);
       setSkipPermissions(true);
       setDisableSandbox(false);
+      setSandboxProvider("docker");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create terminal");
     } finally {
@@ -105,6 +115,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   };
 
   const selectedProject = projects.find((project) => project.id === projectId);
+  const worktreeDisabled = projectId === "__root__";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -140,7 +151,13 @@ export function NewTerminalDialog({ open, onClose }: Props) {
               <FieldLabel htmlFor="project">Project</FieldLabel>
               <Select
                 value={projectId}
-                onValueChange={(value) => setProjectId(String(value ?? ""))}
+                onValueChange={(value) => {
+                  const nextProjectId = String(value ?? "");
+                  setProjectId(nextProjectId);
+                  if (nextProjectId === "__root__") {
+                    setAutoWorktree(false);
+                  }
+                }}
               >
                 <SelectTrigger id="project" className="w-full">
                   <SelectValue placeholder="Select a project" />
@@ -166,10 +183,26 @@ export function NewTerminalDialog({ open, onClose }: Props) {
 
             <Field orientation="responsive">
               <FieldContent>
+                <FieldLabel htmlFor="auto-worktree">Fresh Git Worktree</FieldLabel>
+                <FieldDescription>
+                  {worktreeDisabled
+                    ? "Unavailable for Root (/). Select a project to create a fresh worktree."
+                    : "Create a fresh git worktree for this terminal. Requires the selected project to be a git repository."}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="auto-worktree"
+                checked={autoWorktree}
+                disabled={worktreeDisabled}
+                onCheckedChange={setAutoWorktree}
+              />
+            </Field>
+
+            <Field orientation="responsive">
+              <FieldContent>
                 <FieldLabel htmlFor="sandbox-enabled">Sandbox</FieldLabel>
                 <FieldDescription>
-                  Run inside the configured sandbox runner. If no runner is configured, the
-                  terminal launches unsandboxed.
+                  Run inside a sandbox runner. Choose the runner below when sandboxing is on.
                 </FieldDescription>
               </FieldContent>
               <Switch
@@ -183,6 +216,35 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 }}
               />
             </Field>
+
+            {!disableSandbox && (
+              <Field>
+                <FieldLabel htmlFor="sandbox-provider">Sandbox runner</FieldLabel>
+                <Select
+                  value={sandboxProvider}
+                  onValueChange={(value) =>
+                    setSandboxProvider(
+                      (value as "none" | "nsjail" | "docker") ?? "docker"
+                    )
+                  }
+                >
+                  <SelectTrigger id="sandbox-provider" className="w-full">
+                    <SelectValue placeholder="Select a sandbox runner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="docker">Docker</SelectItem>
+                      <SelectItem value="nsjail">nsjail</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  Docker uses an isolated container with Node, Python, and Docker Compose
+                  tooling. nsjail uses the existing Linux namespace sandbox.
+                </FieldDescription>
+              </Field>
+            )}
 
             <Field>
               <FieldLabel htmlFor="provider">Spawn Coding Agent</FieldLabel>
