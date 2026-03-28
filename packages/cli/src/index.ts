@@ -13,6 +13,7 @@ const LOG_PATH = path.join(MAESTRO_DIR, "server.log");
 const UPDATE_STATE_PATH = path.join(MAESTRO_DIR, "maestro-update-state.json");
 const TOKEN_PATH = path.join(MAESTRO_DIR, "token");
 const LEGACY_TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
+const ONBOARD_FLAG_PATH = path.join(MAESTRO_DIR, "setup-complete");
 const SERVER_PATH = path.join(PACKAGE_ROOT, "dist", "server.js");
 const ONBOARD_SCRIPT_PATH = path.join(PACKAGE_ROOT, "assets", "setup.sh");
 const DEFAULT_HOST = process.env.HOST || "0.0.0.0";
@@ -109,6 +110,15 @@ function onboardPreflight(): void {
   if (!fs.existsSync(ONBOARD_SCRIPT_PATH)) {
     fail(`Maestro onboarding script not found at ${ONBOARD_SCRIPT_PATH}`);
   }
+}
+
+function isOnboardComplete(): boolean {
+  return fs.existsSync(ONBOARD_FLAG_PATH);
+}
+
+function markOnboardComplete(): void {
+  ensureMaestroDir();
+  fs.writeFileSync(ONBOARD_FLAG_PATH, `${new Date().toISOString()}\n`, "utf8");
 }
 
 function readPid(): number | null {
@@ -293,6 +303,15 @@ function getStatus(): { running: boolean; pid: number | null; meta: ServerMeta |
 
 function start(): void {
   requireSupportedServerNode();
+  if (!isOnboardComplete()) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      fail("Maestro onboarding has not been completed. Run `maestro onboard` once before starting Maestro in a non-interactive environment.");
+    }
+
+    console.log("Maestro onboarding has not been completed yet. Running `maestro onboard` first...");
+    onboard();
+  }
+
   preflight();
   ensureMaestroDir();
 
@@ -410,6 +429,7 @@ function onboard(): void {
       stdio: "inherit",
       env: process.env,
     });
+    markOnboardComplete();
   } catch (error) {
     if (
       error &&
