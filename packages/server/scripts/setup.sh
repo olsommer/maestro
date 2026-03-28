@@ -128,16 +128,9 @@ echo ""
 # --- Claude Code ---
 if prompt_yes_no "Do you want to use Claude Code? (y/n) "; then
   if ensure_tool claude "Claude Code CLI" install_claude; then
-    echo "Checking Claude Code authentication..."
-    if claude auth status >/dev/null 2>&1; then
-      echo "Claude Code is already authenticated."
-    else
-      echo ""
-      echo "Running: claude setup-token"
-      echo "Open the URL shown below in your browser, then paste the token back."
-      echo ""
-      claude setup-token || echo "(claude setup-token exited with error)"
-    fi
+    echo "Claude Code install check complete."
+    echo "Skipping Claude authentication during maestro onboard."
+    echo "Authenticate Claude Code later by running \`claude\` directly."
   fi
 fi
 echo ""

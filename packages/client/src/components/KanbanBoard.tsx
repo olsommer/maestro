@@ -163,9 +163,8 @@ export function KanbanBoard({ onNewTask }: Props) {
                   key={task.id}
                   draggable
                   onDragStart={(e) => handleDragStart(e, task.id)}
-                  className={`cursor-grab rounded-lg border bg-card p-3 transition-all active:cursor-grabbing hover:ring-1 hover:ring-ring/30 ${
-                    draggedId === task.id ? "opacity-50" : ""
-                  }`}
+                  className={`cursor-grab rounded-lg border bg-card p-3 transition-all active:cursor-grabbing hover:ring-1 hover:ring-ring/30 ${draggedId === task.id ? "opacity-50" : ""
+                    }`}
                 >
                   <div className="mb-1 flex items-start justify-between gap-2">
                     <h4 className="text-sm font-medium leading-tight">{task.title}</h4>
@@ -282,9 +281,9 @@ export function KanbanBoard({ onNewTask }: Props) {
                           ? "No active tasks"
                           : col.id === "review"
                             ? "Nothing in review"
-                          : col.id === "done"
-                            ? "No completed tasks"
-                            : "No tasks yet"}
+                            : col.id === "done"
+                              ? "No completed tasks"
+                              : "No tasks yet"}
                     </EmptyTitle>
                     <EmptyDescription>
                       {col.id === "planned"
@@ -293,9 +292,9 @@ export function KanbanBoard({ onNewTask }: Props) {
                           ? "Active tasks appear here while terminals are working."
                           : col.id === "review"
                             ? "Open pull requests appear here while work is under review."
-                          : col.id === "done"
-                            ? "Completed tasks land here."
-                            : "Create a task to start filling the board."}
+                            : col.id === "done"
+                              ? "Completed tasks land here."
+                              : "Create a task to start filling the board."}
                     </EmptyDescription>
                   </EmptyHeader>
                   {col.id === "backlog" && (

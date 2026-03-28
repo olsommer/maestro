@@ -120,6 +120,8 @@ maestro update --check
 maestro stop
 ```
 
+If onboarding has not been completed yet, `maestro start` will trigger `maestro onboard` first in interactive shells.
+
 ## Remote Access (Exposing Your Server)
 
 The server listens on plain HTTP. For remote access, put a TLS-terminating layer in front of it. **Never expose port 4800 directly to the internet.**
