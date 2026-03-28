@@ -1,4 +1,8 @@
-import type { MaestroUpdateStatus, MaestroUpdateTriggerResponse } from "@maestro/wire";
+import type {
+  MaestroUpdateStatus,
+  MaestroUpdateTriggerResponse,
+  TerminalStartupStatus,
+} from "@maestro/wire";
 import { getAuthToken, getServerUrl, invalidateAuth } from "./auth";
 export type { MaestroUpdateStatus, MaestroUpdateTriggerResponse } from "@maestro/wire";
 
@@ -43,6 +47,7 @@ export interface Agent {
   secondaryProjectPaths: string[];
   skills: string[];
   status: string;
+  startupStatus?: TerminalStartupStatus | null;
   currentTask: string | null;
   error: string | null;
   recentInputs: string[];

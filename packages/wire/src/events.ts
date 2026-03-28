@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentStatus } from "./agent";
+import { AgentStatus, TerminalStartupStatus } from "./agent";
 import { KanbanColumn } from "./kanban";
 
 export const TerminalOutputChunk = z.object({
@@ -32,6 +32,7 @@ export const ServerEvents = {
     terminalId: z.string(),
     status: AgentStatus,
     error: z.string().nullable().optional(),
+    startupStatus: TerminalStartupStatus.nullable().optional(),
     recentInputs: z.array(z.string()).optional(),
   }),
   "kanban:updated": z.object({

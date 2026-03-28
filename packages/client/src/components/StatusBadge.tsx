@@ -1,5 +1,6 @@
 "use client";
 
+import type { TerminalStartupStatus } from "@maestro/wire";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -44,25 +45,47 @@ const statusConfig: Record<
   },
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({
+  status,
+  startupStatus,
+}: {
+  status: string;
+  startupStatus?: TerminalStartupStatus | null;
+}) {
   const config = statusConfig[status] || statusConfig.idle;
+  const label =
+    startupStatus && status === "waiting"
+      ? `${startupStatus.label} ${startupStatus.step}/${startupStatus.totalSteps}`
+      : config.label;
   return (
     <Badge
       variant="outline"
       className={cn("gap-1.5 text-[11px]", config.badgeClassName)}
     >
       <span className={cn("size-1.5 rounded-full", config.dotClassName)} />
-      {config.label}
+      {label}
     </Badge>
   );
 }
 
-export function StatusDot({ status, className }: { status: string; className?: string }) {
+export function StatusDot({
+  status,
+  className,
+  startupStatus,
+}: {
+  status: string;
+  className?: string;
+  startupStatus?: TerminalStartupStatus | null;
+}) {
   const config = statusConfig[status] || statusConfig.idle;
   return (
     <span
       className={cn("size-2 shrink-0 rounded-full", config.standaloneDotClassName, className)}
-      title={config.label}
+      title={
+        startupStatus && status === "waiting"
+          ? `${startupStatus.label} ${startupStatus.step}/${startupStatus.totalSteps}`
+          : config.label
+      }
     />
   );
 }

@@ -1,6 +1,8 @@
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { fileURLToPath } from "url";
 import { MAESTRO_PROJECTS_DIR, MAESTRO_SANDBOXES_DIR } from "../state/files.js";
 import {
   getDockerPath,
@@ -9,12 +11,13 @@ import {
   type DockerMountSpec,
 } from "./sandbox.js";
 
-const DEFAULT_DIND_IMAGE = process.env.MAESTRO_DIND_IMAGE || "docker:29-dind";
+const DEFAULT_DIND_IMAGE = process.env.MAESTRO_DIND_IMAGE || "maestro-dind:latest";
 const DEFAULT_DIND_READY_TIMEOUT_MS = Number(
   process.env.MAESTRO_DIND_READY_TIMEOUT_MS || "30000"
 );
 const DIND_SOCKET_DIR = "/var/run/maestro-dind";
 const DIND_SOCKET_PATH = `${DIND_SOCKET_DIR}/docker.sock`;
+let dindImageReadyFor: string | null = null;
 
 export interface TerminalDockerRuntime {
   containerName: string;
@@ -91,13 +94,61 @@ function buildDindRunArgs(runtime: TerminalDockerRuntime): string[] {
   }
 
   args.push(
-    DEFAULT_DIND_IMAGE,
+    ensureTerminalDockerRuntimeImage(),
     "--host",
     runtime.dockerHost,
     "--storage-driver",
     "overlay2"
   );
   return args;
+}
+
+function ensureTerminalDockerRuntimeImage(): string {
+  if (!isDockerAvailable()) {
+    throw new Error("docker is not available");
+  }
+
+  const image = DEFAULT_DIND_IMAGE;
+  if (dindImageReadyFor === image) {
+    return image;
+  }
+
+  try {
+    execFileSync(getDockerPath(), ["image", "inspect", image], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    dindImageReadyFor = image;
+    return image;
+  } catch {
+    const dockerfilePath = resolveDindDockerfile();
+    const repoRoot = path.resolve(dockerfilePath, "../../..");
+    console.log(`Building terminal DIND image ${image} from ${dockerfilePath}`);
+    execFileSync(
+      getDockerPath(),
+      ["build", "-t", image, "-f", dockerfilePath, repoRoot],
+      { stdio: "inherit" }
+    );
+    dindImageReadyFor = image;
+    return image;
+  }
+}
+
+function resolveDindDockerfile(): string {
+  const localDir = path.dirname(fileURLToPath(import.meta.url));
+  const installRoot = process.env.MAESTRO_INSTALL_ROOT?.trim();
+  const candidates = [
+    ...(installRoot ? [path.resolve(installRoot, "assets/docker/dind/Dockerfile")] : []),
+    path.resolve(process.cwd(), "docker/dind/Dockerfile"),
+    path.resolve(localDir, "../../../../docker/dind/Dockerfile"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error("Terminal DIND Dockerfile not found");
 }
 
 function recreateContainer(runtime: TerminalDockerRuntime): void {

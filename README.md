@@ -19,8 +19,8 @@ Maestro separates the **frontend** from the **server**. In the common setup, use
                               │               │
                               ▼               ▼
                     ┌───────────────────┐  ┌───────────────────┐
-                    │  Tunnel (User A)  │  │  Tunnel (User B)  │
-                    │  Cloudflare / etc │  │  Cloudflare / etc │
+                    │ Tailscale (User A)│  │ Tailscale (User B)│
+                    │  HTTPS + MagicDNS │  │  HTTPS + MagicDNS │
                     └────────┬──────────┘  └────────┬──────────┘
                              │                      │
                              ▼                      ▼
@@ -33,12 +33,58 @@ Maestro separates the **frontend** from the **server**. In the common setup, use
 
 Each user:
 1. Runs the Maestro server on their own machine
-2. Exposes it via a secure HTTPS URL (Tailscale, Cloudflare Tunnel, Caddy, etc.)
+2. Exposes it via a secure HTTPS URL, typically with Tailscale
 3. Opens the shared frontend, or a self-hosted frontend, and enters their backend URL + API token
 4. Gets their own isolated agent environment
 
 Public shared frontend:
 `https://maestro-beige.vercel.app`
+
+## Quick Start
+
+This is the standard setup for using Maestro on your own machine.
+
+The shared frontend is available at `https://maestro-beige.vercel.app`.
+
+Maestro currently requires Node.js `22.13.0` or newer because the server uses the built-in `node:sqlite` module.
+
+```bash
+nvm install 22
+nvm use 22
+npm i -g @isarai/maestro
+maestro onboard
+maestro start
+maestro status
+```
+
+On first run the server generates an API token at `~/.maestro/token`.
+
+Then expose the backend with Tailscale:
+
+```bash
+brew install tailscale   # macOS
+# see https://tailscale.com/download for Linux packages
+
+sudo tailscale up
+tailscale serve --bg http://localhost:4800
+```
+
+Then open the shared frontend and connect using:
+- Server URL: `https://<machine-name>.<tailnet>.ts.net`
+- API token: contents of `~/.maestro/token`
+
+Useful CLI commands:
+
+```bash
+maestro logs
+maestro logs -f
+maestro auth
+maestro version
+maestro update --check
+maestro stop
+```
+
+If onboarding has not been completed yet, `maestro start` will trigger `maestro onboard` first in interactive shells.
 
 ## Quick Start (Local Development)
 
@@ -103,109 +149,13 @@ Bare-metal deployment does not require Docker for the Maestro server itself.
 - sandbox state lives under `~/.maestro/sandboxes/`
 - Docker is only needed if you want Docker sandboxing for agents and terminals
 
-If you want a globally installed package instead of a repo checkout:
-
-```bash
-nvm install 22
-nvm use 22
-npm i -g @isarai/maestro
-maestro onboard
-maestro start
-maestro status
-maestro logs
-maestro logs -f
-maestro auth
-maestro version
-maestro update --check
-maestro stop
-```
-
-If onboarding has not been completed yet, `maestro start` will trigger `maestro onboard` first in interactive shells.
-
 ## Remote Access (Exposing Your Server)
 
 The server listens on plain HTTP. For remote access, put a TLS-terminating layer in front of it. **Never expose port 4800 directly to the internet.**
 
-If you already use Tailscale, that is enough. You do not need to self-host the frontend or set up a separate public tunnel provider just to use Maestro remotely.
+Tailscale is the standard recommendation. It gives you HTTPS, private connectivity, and MagicDNS without exposing port `4800` publicly.
 
-### Cloudflare Tunnel (Recommended)
-
-Zero open ports, free, no TLS certs to manage. Cloudflare creates an outbound-only connection from your machine.
-
-```bash
-# 1. Install cloudflared
-brew install cloudflared          # macOS
-# curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared  # Linux
-
-# 2. Authenticate (one-time)
-cloudflared tunnel login
-
-# 3. Create a tunnel
-cloudflared tunnel create maestro
-
-# 4. Configure it — create ~/.cloudflared/config.yml
-cat <<'EOF' > ~/.cloudflared/config.yml
-tunnel: maestro
-credentials-file: ~/.cloudflared/<TUNNEL_ID>.json
-
-ingress:
-  - hostname: maestro.yourdomain.com
-    service: http://localhost:4800
-  - service: http_status:404
-EOF
-
-# 5. Add DNS record (points hostname to tunnel)
-cloudflared tunnel route dns maestro maestro.yourdomain.com
-
-# 6. Run it
-cloudflared tunnel run maestro
-```
-
-Then connect from the client using `https://maestro.yourdomain.com` as the server URL.
-
-#### Quick Tunnel (No Domain Required)
-
-For quick testing without a custom domain:
-
-```bash
-cloudflared tunnel --url http://localhost:4800
-```
-
-This gives you a temporary `https://<random>.trycloudflare.com` URL.
-
-#### Run as a System Service
-
-```bash
-# macOS (launchd)
-sudo cloudflared service install
-
-# Linux (systemd)
-sudo cloudflared service install
-sudo systemctl enable cloudflared
-sudo systemctl start cloudflared
-```
-
-### Caddy (Alternative — Auto-TLS)
-
-If you have a public-facing server with ports 80/443 open, Caddy handles TLS certificates automatically:
-
-```bash
-# Install Caddy
-brew install caddy   # macOS
-# apt install caddy  # Debian/Ubuntu
-
-# Create Caddyfile
-cat <<'EOF' > Caddyfile
-maestro.yourdomain.com {
-    reverse_proxy localhost:4800
-}
-EOF
-
-# Run
-caddy run
-```
-
-### Tailscale (Alternative — Mesh VPN)
+### Tailscale (Recommended)
 
 Access Maestro from any device with Tailscale installed. No public domain needed, no open ports.
 

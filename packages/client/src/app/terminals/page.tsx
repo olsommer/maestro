@@ -99,9 +99,13 @@ function TerminalPanel({
           <span className="truncate text-xs font-medium md:text-sm">
             #{terminal.id.slice(0, 8)}
           </span>
-          <StatusDot status={terminal.status} className="md:hidden" />
+          <StatusDot
+            status={terminal.status}
+            startupStatus={terminal.startupStatus}
+            className="md:hidden"
+          />
           <span className="hidden md:inline-flex">
-            <StatusBadge status={terminal.status} />
+            <StatusBadge status={terminal.status} startupStatus={terminal.startupStatus} />
           </span>
           <Badge
             variant="outline"
@@ -191,6 +195,14 @@ function TerminalPanel({
       {terminal.currentTask && !terminal.error && (
         <div className="hidden border-b bg-card/50 px-3 py-1.5 text-[11px] text-muted-foreground md:block">
           <span className="block truncate">{terminal.currentTask}</span>
+        </div>
+      )}
+      {terminal.startupStatus && !terminal.error && (
+        <div className="border-b bg-amber-500/5 px-3 py-1.5 text-[11px] text-muted-foreground">
+          <span className="block truncate">
+            {terminal.startupStatus.label} ({terminal.startupStatus.step}/
+            {terminal.startupStatus.totalSteps})
+          </span>
         </div>
       )}
 

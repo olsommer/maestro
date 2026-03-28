@@ -17,6 +17,7 @@ fs.rmSync(distDir, { recursive: true, force: true });
 fs.rmSync(assetsDir, { recursive: true, force: true });
 fs.mkdirSync(distDir, { recursive: true });
 fs.mkdirSync(path.join(assetsDir, "docker", "sandbox"), { recursive: true });
+fs.mkdirSync(path.join(assetsDir, "docker", "dind"), { recursive: true });
 
 await build({
   entryPoints: [path.join(packageRoot, "src", "index.ts")],
@@ -45,6 +46,10 @@ await build({
 fs.copyFileSync(
   path.join(repoRoot, "docker", "sandbox", "Dockerfile"),
   path.join(assetsDir, "docker", "sandbox", "Dockerfile")
+);
+fs.copyFileSync(
+  path.join(repoRoot, "docker", "dind", "Dockerfile"),
+  path.join(assetsDir, "docker", "dind", "Dockerfile")
 );
 fs.copyFileSync(
   path.join(repoRoot, "packages", "server", "scripts", "setup.sh"),
