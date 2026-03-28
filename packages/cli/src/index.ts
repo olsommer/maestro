@@ -121,6 +121,16 @@ function markOnboardComplete(): void {
   fs.writeFileSync(ONBOARD_FLAG_PATH, `${new Date().toISOString()}\n`, "utf8");
 }
 
+function clearOnboardComplete(): void {
+  try {
+    fs.unlinkSync(ONBOARD_FLAG_PATH);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
+      fail(`Failed to reset Maestro onboarding state at ${ONBOARD_FLAG_PATH}.`);
+    }
+  }
+}
+
 function readPid(): number | null {
   try {
     const raw = fs.readFileSync(PID_PATH, "utf8").trim();
@@ -415,8 +425,13 @@ function auth(): void {
   console.log(`Token path: ${tokenPath}`);
 }
 
-function onboard(): void {
+function onboard(args: string[] = []): void {
   onboardPreflight();
+
+  if (args.includes("--reset")) {
+    clearOnboardComplete();
+    console.log(`Reset onboarding state at ${ONBOARD_FLAG_PATH}`);
+  }
 
   try {
     fs.chmodSync(ONBOARD_SCRIPT_PATH, 0o755);
@@ -588,6 +603,7 @@ function help(): void {
   console.log("  update  Update the globally installed Maestro CLI");
   console.log("");
   console.log("Options:");
+  console.log("  maestro onboard --reset   Clear onboarding state before rerunning setup");
   console.log("  maestro logs -f         Follow the Maestro server log");
   console.log("  maestro update --check   Check whether an update is available");
 }
@@ -610,7 +626,7 @@ async function main(): Promise<void> {
       auth();
       break;
     case "onboard":
-      onboard();
+      onboard(args);
       break;
     case "logs":
       logs(args);

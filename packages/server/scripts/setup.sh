@@ -57,6 +57,10 @@ print_warning() {
   echo "Warning: $1"
 }
 
+print_error() {
+  echo "Error: $1"
+}
+
 prompt_yes_no() {
   local prompt=$1
   local answer
@@ -435,7 +439,11 @@ if is_linux; then
   echo ""
 
   if have_cmd firecracker && prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
-    build_firecracker_assets || print_warning "Firecracker guest asset build skipped or failed."
+    if build_firecracker_assets; then
+      print_success "Firecracker guest assets are ready."
+    else
+      print_error "Firecracker guest asset build failed. Firecracker will stay unavailable until the kernel and rootfs assets are prepared."
+    fi
   elif ! have_cmd firecracker; then
     print_note "Skipping Firecracker guest image build because Firecracker is not installed yet."
   fi
