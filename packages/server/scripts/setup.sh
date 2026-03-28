@@ -383,17 +383,9 @@ echo ""
 
 print_section "Host Dependencies"
 ensure_tool corepack "corepack" install_corepack
-echo ""
-
 ensure_tool curl "curl" install_curl
-echo ""
-
 ensure_tool pnpm "pnpm" install_pnpm
-echo ""
-
 ensure_tool rg "ripgrep" install_ripgrep
-echo ""
-
 ensure_tool bwrap "bubblewrap" install_bubblewrap
 echo ""
 
@@ -402,8 +394,6 @@ print_note "Docker and gVisor are both prepared when the host supports them."
 echo ""
 
 ensure_tool docker "Docker" install_docker
-echo ""
-
 if is_linux; then
   ensure_tool runsc "gVisor" install_gvisor
   echo ""
@@ -431,7 +421,6 @@ if ensure_tool gh "GitHub CLI" install_gh; then
     fi
   fi
 fi
-echo ""
 
 # --- Claude Code ---
 if prompt_yes_no "Do you want to use Claude Code? (Y/n) "; then
@@ -446,7 +435,6 @@ if prompt_yes_no "Do you want to use Claude Code? (Y/n) "; then
     fi
   fi
 fi
-echo ""
 
 # --- Codex ---
 if prompt_yes_no "Do you want to use Codex? (Y/n) "; then
