@@ -19,6 +19,16 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+run_as_root() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+  elif have_cmd sudo; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
 print_section() {
   local title=$1
   echo "$BANNER"
@@ -96,14 +106,14 @@ install_system_package() {
   if have_cmd brew && [[ -n "$brew_pkg" ]]; then
     run_step "brew install $brew_pkg" brew install "$brew_pkg"
   elif have_cmd apt-get && [[ -n "$apt_pkg" ]]; then
-    run_step "apt-get update" apt-get update
-    run_step "apt-get install -y $apt_pkg" apt-get install -y "$apt_pkg"
+    run_step "apt-get update" run_as_root apt-get update
+    run_step "apt-get install -y $apt_pkg" run_as_root apt-get install -y "$apt_pkg"
   elif have_cmd dnf && [[ -n "$dnf_pkg" ]]; then
-    run_step "dnf install -y $dnf_pkg" dnf install -y "$dnf_pkg"
+    run_step "dnf install -y $dnf_pkg" run_as_root dnf install -y "$dnf_pkg"
   elif have_cmd yum && [[ -n "$yum_pkg" ]]; then
-    run_step "yum install -y $yum_pkg" yum install -y "$yum_pkg"
+    run_step "yum install -y $yum_pkg" run_as_root yum install -y "$yum_pkg"
   elif have_cmd pacman && [[ -n "$pacman_pkg" ]]; then
-    run_step "pacman -Sy --noconfirm $pacman_pkg" pacman -Sy --noconfirm "$pacman_pkg"
+    run_step "pacman -Sy --noconfirm $pacman_pkg" run_as_root pacman -Sy --noconfirm "$pacman_pkg"
   else
     echo "$label installation is not automated on this system."
     echo "Install it manually, then rerun \`maestro onboard\`."
@@ -160,8 +170,102 @@ install_virtiofsd() {
   install_system_package virtiofsd "virtiofsd" "" virtiofsd virtiofsd virtiofsd virtiofsd
 }
 
+normalize_firecracker_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      echo "x86_64"
+      ;;
+    aarch64|arm64)
+      echo "aarch64"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_firecracker_version() {
+  if [[ -n "${MAESTRO_FIRECRACKER_VERSION:-}" ]]; then
+    echo "${MAESTRO_FIRECRACKER_VERSION}"
+    return 0
+  fi
+
+  curl -fsSL "https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest" \
+    | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -n1
+}
+
 install_firecracker() {
-  install_system_package firecracker "Firecracker" firecracker firecracker firecracker firecracker firecracker
+  if ! is_linux; then
+    print_note "Firecracker install is only supported on Linux."
+    return 1
+  fi
+
+  if have_cmd firecracker; then
+    print_success "Firecracker is already installed."
+    if have_cmd jailer; then
+      print_success "Jailer is already installed."
+    fi
+    return 0
+  fi
+
+  local arch
+  arch="$(normalize_firecracker_arch)" || {
+    print_warning "Unsupported CPU architecture for automated Firecracker install: $(uname -m)"
+    return 1
+  }
+
+  local version
+  version="$(resolve_firecracker_version)"
+  if [[ -z "$version" ]]; then
+    print_warning "Could not resolve the latest Firecracker release version."
+    return 1
+  fi
+
+  local work_dir
+  work_dir="$(mktemp -d)"
+  local archive_name="firecracker-${version}-${arch}.tgz"
+  local archive_url="https://github.com/firecracker-microvm/firecracker/releases/download/${version}/${archive_name}"
+  local release_dir="${work_dir}/release-${version}-${arch}"
+
+  print_note "Installing Firecracker ${version} for ${arch} from the official GitHub release."
+
+  if ! run_step "curl -L ${archive_url} -o ${archive_name}" \
+    curl -fL "$archive_url" -o "${work_dir}/${archive_name}"; then
+    rm -rf "$work_dir"
+    print_warning "Failed to download Firecracker release archive."
+    return 1
+  fi
+
+  if ! run_step "tar -xzf ${archive_name}" tar -xzf "${work_dir}/${archive_name}" -C "$work_dir"; then
+    rm -rf "$work_dir"
+    print_warning "Failed to extract Firecracker release archive."
+    return 1
+  fi
+
+  if [[ ! -x "${release_dir}/firecracker-${version}-${arch}" ]]; then
+    rm -rf "$work_dir"
+    print_warning "Firecracker binary was not found in the extracted release archive."
+    return 1
+  fi
+
+  run_step "install firecracker to /usr/local/bin" \
+    run_as_root install -m 0755 "${release_dir}/firecracker-${version}-${arch}" /usr/local/bin/firecracker
+
+  if [[ -x "${release_dir}/jailer-${version}-${arch}" ]]; then
+    run_step "install jailer to /usr/local/bin" \
+      run_as_root install -m 0755 "${release_dir}/jailer-${version}-${arch}" /usr/local/bin/jailer
+  fi
+
+  rm -rf "$work_dir"
+
+  if have_cmd firecracker; then
+    print_success "Firecracker installed successfully."
+    return 0
+  fi
+
+  print_warning "Firecracker is still not available after the install attempt."
+  return 1
 }
 
 install_pnpm() {
@@ -300,8 +404,10 @@ if is_linux; then
   ensure_tool firecracker "Firecracker" install_firecracker
   echo ""
 
-  if prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
+  if have_cmd firecracker && prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
     build_firecracker_assets || print_warning "Firecracker guest asset build skipped or failed."
+  elif ! have_cmd firecracker; then
+    print_note "Skipping Firecracker guest image build because Firecracker is not installed yet."
   fi
   echo ""
 else
