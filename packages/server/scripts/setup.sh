@@ -3,6 +3,7 @@
 # Get terminal width, default to 40
 W=${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}
 BANNER=$(printf '%*s' "$W" '' | tr ' ' '=')
+PNPM_VERSION=10.32.1
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -22,6 +23,10 @@ run_step() {
   echo "Running: $label"
   echo ""
   "$@" || echo "($label exited with error)"
+}
+
+is_linux() {
+  [[ "$(uname -s)" == "Linux" ]]
 }
 
 install_with_npm() {
@@ -44,34 +49,87 @@ install_with_npm() {
   return 1
 }
 
-install_gh() {
-  if have_cmd gh; then
+install_system_package() {
+  local binary=$1
+  local label=$2
+  shift 2
+  local brew_pkg=${1:-}
+  local apt_pkg=${2:-}
+  local dnf_pkg=${3:-}
+  local yum_pkg=${4:-}
+  local pacman_pkg=${5:-}
+
+  if have_cmd "$binary"; then
     return 0
   fi
 
-  if have_cmd brew; then
-    run_step "brew install gh" brew install gh
-  elif have_cmd apt-get; then
+  if have_cmd brew && [[ -n "$brew_pkg" ]]; then
+    run_step "brew install $brew_pkg" brew install "$brew_pkg"
+  elif have_cmd apt-get && [[ -n "$apt_pkg" ]]; then
     run_step "apt-get update" apt-get update
-    run_step "apt-get install -y gh" apt-get install -y gh
-  elif have_cmd dnf; then
-    run_step "dnf install -y gh" dnf install -y gh
-  elif have_cmd yum; then
-    run_step "yum install -y gh" yum install -y gh
-  elif have_cmd pacman; then
-    run_step "pacman -Sy --noconfirm github-cli" pacman -Sy --noconfirm github-cli
+    run_step "apt-get install -y $apt_pkg" apt-get install -y "$apt_pkg"
+  elif have_cmd dnf && [[ -n "$dnf_pkg" ]]; then
+    run_step "dnf install -y $dnf_pkg" dnf install -y "$dnf_pkg"
+  elif have_cmd yum && [[ -n "$yum_pkg" ]]; then
+    run_step "yum install -y $yum_pkg" yum install -y "$yum_pkg"
+  elif have_cmd pacman && [[ -n "$pacman_pkg" ]]; then
+    run_step "pacman -Sy --noconfirm $pacman_pkg" pacman -Sy --noconfirm "$pacman_pkg"
   else
-    echo "GitHub CLI installation is not automated on this system."
+    echo "$label installation is not automated on this system."
     echo "Install it manually, then rerun \`maestro onboard\`."
     return 1
   fi
 
-  if have_cmd gh; then
-    echo "GitHub CLI installed successfully."
+  if have_cmd "$binary"; then
+    echo "$label installed successfully."
     return 0
   fi
 
-  echo "GitHub CLI is still not available after the install attempt."
+  echo "$label is still not available after the install attempt."
+  return 1
+}
+
+install_gh() {
+  install_system_package gh "GitHub CLI" gh gh gh gh github-cli
+}
+
+install_ripgrep() {
+  install_system_package rg "ripgrep" ripgrep ripgrep ripgrep ripgrep ripgrep
+}
+
+install_bubblewrap() {
+  if ! is_linux; then
+    echo "bubblewrap is only required for Linux sandboxing. Skipping on this system."
+    return 0
+  fi
+
+  install_system_package bwrap "bubblewrap" "" bubblewrap bubblewrap bubblewrap bubblewrap
+}
+
+install_corepack() {
+  install_with_npm "corepack" "corepack"
+}
+
+install_pnpm() {
+  if have_cmd pnpm; then
+    return 0
+  fi
+
+  if have_cmd corepack; then
+    run_step "corepack enable" corepack enable
+    run_step "corepack prepare pnpm@${PNPM_VERSION} --activate" \
+      corepack prepare "pnpm@${PNPM_VERSION}" --activate
+  else
+    install_with_npm "pnpm@${PNPM_VERSION}" "pnpm"
+    return $?
+  fi
+
+  if have_cmd pnpm; then
+    echo "pnpm installed successfully."
+    return 0
+  fi
+
+  echo "pnpm is still not available after the install attempt."
   return 1
 }
 
@@ -105,6 +163,19 @@ ensure_tool() {
 echo "$BANNER"
 echo "  Maestro First-Run Setup"
 echo "$BANNER"
+echo ""
+
+# --- Host dependencies ---
+ensure_tool corepack "corepack" install_corepack
+echo ""
+
+ensure_tool pnpm "pnpm" install_pnpm
+echo ""
+
+ensure_tool rg "ripgrep" install_ripgrep
+echo ""
+
+ensure_tool bwrap "bubblewrap" install_bubblewrap
 echo ""
 
 # --- GitHub CLI ---
