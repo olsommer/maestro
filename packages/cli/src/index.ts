@@ -39,6 +39,8 @@ interface MaestroUpdateState {
   lastError: string | null;
 }
 
+const MIN_SERVER_NODE_VERSION = { major: 22, minor: 13, patch: 0 } as const;
+
 function ensureMaestroDir(): void {
   fs.mkdirSync(MAESTRO_DIR, { recursive: true });
 }
@@ -46,6 +48,46 @@ function ensureMaestroDir(): void {
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
+}
+
+function parseNodeVersion(version: string): { major: number; minor: number; patch: number } | null {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version.trim());
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function isNodeVersionAtLeast(
+  current: { major: number; minor: number; patch: number },
+  minimum: { major: number; minor: number; patch: number }
+): boolean {
+  if (current.major !== minimum.major) {
+    return current.major > minimum.major;
+  }
+  if (current.minor !== minimum.minor) {
+    return current.minor > minimum.minor;
+  }
+  return current.patch >= minimum.patch;
+}
+
+function requireSupportedServerNode(): void {
+  const current = parseNodeVersion(process.version);
+  const required = `v${MIN_SERVER_NODE_VERSION.major}.${MIN_SERVER_NODE_VERSION.minor}.${MIN_SERVER_NODE_VERSION.patch}`;
+
+  if (!current) {
+    fail(`Unable to parse Node.js version ${process.version}. Maestro requires Node.js ${required} or newer.`);
+  }
+
+  if (isNodeVersionAtLeast(current, MIN_SERVER_NODE_VERSION)) {
+    return;
+  }
+
+  fail(
+    `Maestro requires Node.js ${required} or newer because the server uses the built-in node:sqlite module. Detected ${process.version}. Upgrade Node.js and run maestro start again.`
+  );
 }
 
 function readPackageMeta(): PackageMeta {
@@ -243,6 +285,7 @@ function getStatus(): { running: boolean; pid: number | null; meta: ServerMeta |
 }
 
 function start(): void {
+  requireSupportedServerNode();
   preflight();
   ensureMaestroDir();
 

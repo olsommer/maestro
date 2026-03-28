@@ -1,6 +1,6 @@
 {
   "name": "@isarai/maestro",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Standalone CLI for running the Maestro server",
   "license": "MIT",
   "repository": {
@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

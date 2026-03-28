@@ -46,6 +46,8 @@ This section is for developing Maestro itself. For normal use, users only need t
 
 The deployed shared frontend is available at `https://maestro-beige.vercel.app`.
 
+Maestro currently requires Node.js `22.13.0` or newer because the server uses the built-in `node:sqlite` module.
+
 ```bash
 # Install dependencies
 pnpm install
@@ -87,6 +89,7 @@ Each user runs their own server instance. The server holds their API token, agen
 **Bare Metal**
 
 ```bash
+# Node.js 22.13.0+ required
 pnpm install
 NODE_ENV=production pnpm dev:server
 ```
@@ -103,6 +106,8 @@ Bare-metal deployment does not require Docker for the Maestro server itself.
 If you want a globally installed package instead of a repo checkout:
 
 ```bash
+nvm install 22
+nvm use 22
 npm i -g @isarai/maestro
 maestro start
 maestro status
