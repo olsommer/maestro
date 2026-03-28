@@ -19,6 +19,14 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+have_virtiofsd() {
+  have_cmd virtiofsd \
+    || [[ -x /usr/libexec/virtiofsd ]] \
+    || [[ -x /usr/lib/qemu/virtiofsd ]] \
+    || [[ -x /usr/local/libexec/virtiofsd ]] \
+    || [[ -x /usr/bin/virtiofsd ]]
+}
+
 run_as_root() {
   if [[ "$(id -u)" -eq 0 ]]; then
     "$@"
@@ -167,7 +175,20 @@ install_socat() {
 }
 
 install_virtiofsd() {
+  if have_virtiofsd; then
+    print_success "virtiofsd is already installed."
+    return 0
+  fi
+
   install_system_package virtiofsd "virtiofsd" "" virtiofsd virtiofsd virtiofsd virtiofsd
+
+  if have_virtiofsd; then
+    print_success "virtiofsd is installed and available for Maestro."
+    return 0
+  fi
+
+  print_warning "virtiofsd is still not available after the install attempt."
+  return 1
 }
 
 normalize_firecracker_arch() {
@@ -321,7 +342,7 @@ firecracker_ready_for_maestro() {
   is_linux || return 1
   [[ -e /dev/kvm ]] || return 1
   have_cmd firecracker || return 1
-  have_cmd virtiofsd || return 1
+  have_virtiofsd || return 1
   have_cmd socat || return 1
   have_cmd curl || return 1
   [[ -f "$MAESTRO_FIRECRACKER_KERNEL" ]] || return 1
@@ -398,7 +419,16 @@ if is_linux; then
   ensure_tool socat "socat" install_socat
   echo ""
 
-  ensure_tool virtiofsd "virtiofsd" install_virtiofsd
+  if have_virtiofsd; then
+    print_success "virtiofsd is already installed."
+  else
+    print_note "virtiofsd is not installed yet."
+    if ! prompt_yes_no "Install virtiofsd now? (Y/n) "; then
+      print_warning "Skipping virtiofsd installation."
+    else
+      install_virtiofsd
+    fi
+  fi
   echo ""
 
   ensure_tool firecracker "Firecracker" install_firecracker
