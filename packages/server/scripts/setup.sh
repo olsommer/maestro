@@ -3,6 +3,7 @@
 # Get terminal width, default to 40
 W=${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}
 BANNER=$(printf '%*s' "$W" '' | tr ' ' '=')
+PNPM_VERSION=10.32.1
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -105,6 +106,33 @@ install_bubblewrap() {
   install_system_package bwrap "bubblewrap" "" bubblewrap bubblewrap bubblewrap bubblewrap
 }
 
+install_corepack() {
+  install_with_npm "corepack" "corepack"
+}
+
+install_pnpm() {
+  if have_cmd pnpm; then
+    return 0
+  fi
+
+  if have_cmd corepack; then
+    run_step "corepack enable" corepack enable
+    run_step "corepack prepare pnpm@${PNPM_VERSION} --activate" \
+      corepack prepare "pnpm@${PNPM_VERSION}" --activate
+  else
+    install_with_npm "pnpm@${PNPM_VERSION}" "pnpm"
+    return $?
+  fi
+
+  if have_cmd pnpm; then
+    echo "pnpm installed successfully."
+    return 0
+  fi
+
+  echo "pnpm is still not available after the install attempt."
+  return 1
+}
+
 install_claude() {
   install_with_npm "@anthropic-ai/claude-code" "claude"
 }
@@ -138,6 +166,12 @@ echo "$BANNER"
 echo ""
 
 # --- Host dependencies ---
+ensure_tool corepack "corepack" install_corepack
+echo ""
+
+ensure_tool pnpm "pnpm" install_pnpm
+echo ""
+
 ensure_tool rg "ripgrep" install_ripgrep
 echo ""
 
