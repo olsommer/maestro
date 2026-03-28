@@ -353,6 +353,43 @@ firecracker_ready_for_maestro() {
   [[ -f "$MAESTRO_FIRECRACKER_ROOTFS" ]] || return 1
 }
 
+firecracker_unavailable_reason() {
+  if ! is_linux; then
+    echo "this host is not Linux"
+    return 0
+  fi
+  if [[ ! -e /dev/kvm ]]; then
+    echo "/dev/kvm is not available on this host"
+    return 0
+  fi
+  if ! have_cmd firecracker; then
+    echo "the firecracker binary is not installed"
+    return 0
+  fi
+  if ! have_virtiofsd; then
+    echo "virtiofsd is not installed"
+    return 0
+  fi
+  if ! have_cmd socat; then
+    echo "socat is not installed"
+    return 0
+  fi
+  if ! have_cmd curl; then
+    echo "curl is not installed"
+    return 0
+  fi
+  if [[ ! -f "$MAESTRO_FIRECRACKER_KERNEL" ]]; then
+    echo "the Firecracker guest kernel is missing at $MAESTRO_FIRECRACKER_KERNEL"
+    return 0
+  fi
+  if [[ ! -f "$MAESTRO_FIRECRACKER_ROOTFS" ]]; then
+    echo "the Firecracker guest rootfs is missing at $MAESTRO_FIRECRACKER_ROOTFS"
+    return 0
+  fi
+
+  echo "an unknown Firecracker readiness check failed"
+}
+
 ensure_tool() {
   local binary=$1
   local label=$2
@@ -510,7 +547,8 @@ if firecracker_ready_for_maestro; then
   DEFAULT_SANDBOX_PROVIDER="$(prompt_default_sandbox)"
   print_success "Selected default sandbox provider: $DEFAULT_SANDBOX_PROVIDER"
 else
-  print_note "Firecracker is not fully ready on this host. Docker will be the only offered sandbox provider."
+  print_note "Firecracker is not fully ready on this host because $(firecracker_unavailable_reason)."
+  print_note "Docker will be the only offered sandbox provider."
   print_success "Default sandbox provider: Docker"
 fi
 echo "__MAESTRO_SANDBOX_PROVIDER__=${DEFAULT_SANDBOX_PROVIDER}"
