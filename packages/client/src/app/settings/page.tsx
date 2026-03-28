@@ -300,9 +300,14 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {status?.loggedIn ? (
-          <Badge variant="secondary" className="w-fit">
-            Connected
-          </Badge>
+          <FieldGroup>
+            <Field orientation="horizontal">
+              <FieldLabel>Status</FieldLabel>
+              <FieldContent className="items-end">
+                <Badge variant="secondary">Connected</Badge>
+              </FieldContent>
+            </Field>
+          </FieldGroup>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">

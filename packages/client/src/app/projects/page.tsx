@@ -181,7 +181,7 @@ function ProjectsView(props: Props) {
   useEffect(() => {
     const loadGitHub = async () => {
       try {
-        const { github: integration } = await api.getGitHubIntegration();
+        const { github: integration } = await api.getGitHubIntegration(true);
         setGitHub(integration);
       } catch {
         setGitHub(null);
