@@ -61,6 +61,11 @@ interface GitHubCliSession {
   scopes: string[];
 }
 
+interface GitHubCliHostConfig {
+  login: string | null;
+  hasToken: boolean;
+}
+
 interface GhRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   input?: unknown;
@@ -112,16 +117,100 @@ function parseScopes(raw: string | undefined): string[] {
   return raw
     ? raw
         .split(",")
-        .map((scope) => scope.trim())
+        .map((scope) => scope.trim().replace(/^['"]+|['"]+$/g, ""))
         .filter(Boolean)
     : [];
 }
 
-function getGitHubCliSession(): GitHubCliSession {
-  if (!commandExists("gh")) {
+function getGhConfigPath(): string | null {
+  const explicit = process.env.GH_CONFIG_DIR?.trim();
+  if (explicit) {
+    return path.join(explicit, "hosts.yml");
+  }
+
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdgConfigHome) {
+    return path.join(xdgConfigHome, "gh", "hosts.yml");
+  }
+
+  const homeDir = process.env.HOME?.trim();
+  if (homeDir) {
+    return path.join(homeDir, ".config", "gh", "hosts.yml");
+  }
+
+  return null;
+}
+
+function readGitHubCliHostConfig(): GitHubCliHostConfig | null {
+  const configPath = getGhConfigPath();
+  if (!configPath || !fs.existsSync(configPath)) {
+    return null;
+  }
+
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const githubBlockMatch = raw.match(
+      /^github\.com:\s*\n([\s\S]*?)(?=^[^\s].*:\s*$|$)/m
+    );
+    if (!githubBlockMatch) {
+      return null;
+    }
+
+    const githubBlock = githubBlockMatch[1];
+    const loginMatch = githubBlock.match(/^\s*user:\s*([^\s#]+)\s*$/m);
+    const tokenMatch = githubBlock.match(/^\s*oauth_token:\s*([^\s#]+)\s*$/m);
+
+    if (!loginMatch && !tokenMatch) {
+      return null;
+    }
+
+    return {
+      login: loginMatch?.[1] ?? null,
+      hasToken: Boolean(tokenMatch?.[1]),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseGitHubCliStatusText(raw: string): GitHubCliSession | null {
+  const normalized = raw.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (lower.includes("not logged into any github hosts")) {
     return {
       loggedIn: false,
       login: null,
+      scopes: [],
+    };
+  }
+
+  const loginMatch =
+    normalized.match(/Logged in to github\.com account ([^\s(]+)/i) ??
+    normalized.match(/account\s+([^\s(]+)\s*\(/i);
+  const scopeMatch = normalized.match(/Token scopes:\s*([^\n]+)/i);
+  const scopes = parseScopes(scopeMatch?.[1]);
+
+  if (!/logged in to github\.com/i.test(normalized) && !loginMatch) {
+    return null;
+  }
+
+  return {
+    loggedIn: true,
+    login: loginMatch?.[1] ?? null,
+    scopes,
+  };
+}
+
+function getGitHubCliSession(): GitHubCliSession {
+  if (!commandExists("gh")) {
+    const hostConfig = readGitHubCliHostConfig();
+    return {
+      loggedIn: Boolean(hostConfig?.hasToken),
+      login: hostConfig?.login ?? null,
       scopes: [],
     };
   }
@@ -153,13 +242,57 @@ function getGitHubCliSession(): GitHubCliSession {
       login: activeAccount.login ?? null,
       scopes: parseScopes(activeAccount.scopes),
     };
-  } catch {
+  } catch (error) {
+    const stdout =
+      error instanceof Error && "stdout" in error && typeof error.stdout === "string"
+        ? error.stdout.trim()
+        : "";
+
+    if (stdout) {
+      const parsed = parseGitHubCliStatusText(stdout);
+      if (parsed) {
+        return parsed;
+      }
+    }
+  }
+
+  try {
+    const raw = execFileSync("gh", ["auth", "status", "--hostname", "github.com"], {
+      encoding: "utf8",
+      timeout: 15_000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    const parsed = parseGitHubCliStatusText(raw);
+    if (parsed) {
+      return parsed;
+    }
+  } catch (error) {
+    const stdout =
+      error instanceof Error && "stdout" in error && typeof error.stdout === "string"
+        ? error.stdout.trim()
+        : "";
+    if (stdout) {
+      const parsed = parseGitHubCliStatusText(stdout);
+      if (parsed) {
+        return parsed;
+      }
+    }
+  }
+
+  const hostConfig = readGitHubCliHostConfig();
+  if (hostConfig?.hasToken) {
     return {
-      loggedIn: false,
-      login: null,
+      loggedIn: true,
+      login: hostConfig.login,
       scopes: [],
     };
   }
+
+  return {
+    loggedIn: false,
+    login: null,
+    scopes: [],
+  };
 }
 
 export function hasGitHubAuth(): boolean {
