@@ -19,6 +19,26 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+print_section() {
+  local title=$1
+  echo "$BANNER"
+  echo "  $title"
+  echo "$BANNER"
+  echo ""
+}
+
+print_note() {
+  echo "Note: $1"
+}
+
+print_success() {
+  echo "OK: $1"
+}
+
+print_warning() {
+  echo "Warning: $1"
+}
+
 prompt_yes_no() {
   local prompt=$1
   local answer
@@ -51,11 +71,11 @@ install_with_npm() {
   run_step "npm install -g ${package_name}@latest" npm install -g "${package_name}@latest"
 
   if have_cmd "$binary"; then
-    echo "$binary installed successfully."
+    print_success "$binary installed successfully."
     return 0
   fi
 
-  echo "$binary is still not available after the npm install attempt."
+  print_warning "$binary is still not available after the npm install attempt."
   return 1
 }
 
@@ -91,11 +111,11 @@ install_system_package() {
   fi
 
   if have_cmd "$binary"; then
-    echo "$label installed successfully."
+    print_success "$label installed successfully."
     return 0
   fi
 
-  echo "$label is still not available after the install attempt."
+  print_warning "$label is still not available after the install attempt."
   return 1
 }
 
@@ -210,13 +230,13 @@ ensure_tool() {
   local installer=$3
 
   if have_cmd "$binary"; then
-    echo "$label is already installed."
+    print_success "$label is already installed."
     return 0
   fi
 
-  echo "$label is not installed."
+  print_note "$label is not installed yet."
   if ! prompt_yes_no "Install $label now? (Y/n) "; then
-    echo "Skipping $label installation."
+    print_warning "Skipping $label installation."
     return 1
   fi
 
@@ -242,12 +262,12 @@ prompt_default_sandbox() {
   done
 }
 
-echo "$BANNER"
-echo "  Maestro First-Run Setup"
-echo "$BANNER"
+print_section "Maestro First-Run Setup"
+print_note "Press Enter to accept the default on prompts."
+print_note "This setup installs local tooling and authenticates CLIs on this machine."
 echo ""
 
-# --- Host dependencies ---
+print_section "Host Dependencies"
 ensure_tool corepack "corepack" install_corepack
 echo ""
 
@@ -263,7 +283,10 @@ echo ""
 ensure_tool bwrap "bubblewrap" install_bubblewrap
 echo ""
 
-# --- Sandbox runtimes ---
+print_section "Sandbox Runtimes"
+print_note "Docker and Firecracker are both prepared when the host supports them."
+echo ""
+
 ensure_tool docker "Docker" install_docker
 echo ""
 
@@ -278,21 +301,24 @@ if is_linux; then
   echo ""
 
   if prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
-    build_firecracker_assets || echo "Firecracker guest asset build skipped or failed."
+    build_firecracker_assets || print_warning "Firecracker guest asset build skipped or failed."
   fi
   echo ""
 else
-  echo "Firecracker install is only supported on Linux. Docker will remain the only sandbox runtime on this host."
+  print_note "Firecracker install is only supported on Linux. Docker will remain the only sandbox runtime on this host."
   echo ""
 fi
 
-# --- GitHub CLI ---
+print_section "Authentication"
+print_note "GitHub, Claude, and Codex auth prepared here can be reused by Maestro later."
+echo ""
+
 if ensure_tool gh "GitHub CLI" install_gh; then
   echo "Checking GitHub CLI authentication..."
   if gh auth status >/dev/null 2>&1; then
-    echo "GitHub CLI is already authenticated."
+    print_success "GitHub CLI is already authenticated."
   else
-    echo "GitHub CLI is not authenticated."
+    print_note "GitHub CLI is not authenticated."
     echo "Running: gh auth login"
     echo ""
     if [[ -n "${GH_PAT:-}" ]]; then
@@ -309,7 +335,7 @@ if prompt_yes_no "Do you want to use Claude Code? (Y/n) "; then
   if ensure_tool claude "Claude Code CLI" install_claude; then
     echo "Checking Claude Code authentication..."
     if claude auth status >/dev/null 2>&1; then
-      echo "Claude Code is already authenticated."
+      print_success "Claude Code is already authenticated."
     else
       echo "Running: claude auth login"
       echo ""
@@ -324,7 +350,7 @@ if prompt_yes_no "Do you want to use Codex? (Y/n) "; then
   if ensure_tool codex "Codex CLI" install_codex; then
     echo "Checking Codex authentication..."
     if codex login status >/dev/null 2>&1; then
-      echo "Codex is already authenticated."
+      print_success "Codex is already authenticated."
     else
       echo "Running: codex login --device-auth"
       echo ""
@@ -335,17 +361,17 @@ fi
 echo ""
 
 DEFAULT_SANDBOX_PROVIDER="docker"
+print_section "Sandbox Default"
 if firecracker_ready_for_maestro; then
   DEFAULT_SANDBOX_PROVIDER="$(prompt_default_sandbox)"
-  echo "Selected default sandbox provider: $DEFAULT_SANDBOX_PROVIDER"
+  print_success "Selected default sandbox provider: $DEFAULT_SANDBOX_PROVIDER"
 else
-  echo "Firecracker is not fully ready on this host. Docker will be the only offered sandbox provider."
-  echo "Default sandbox provider: Docker"
+  print_note "Firecracker is not fully ready on this host. Docker will be the only offered sandbox provider."
+  print_success "Default sandbox provider: Docker"
 fi
 echo "__MAESTRO_SANDBOX_PROVIDER__=${DEFAULT_SANDBOX_PROVIDER}"
 echo ""
 
-echo "$BANNER"
-echo "  Setup complete!"
-echo "$BANNER"
+print_section "Setup Complete"
+print_note "You can rerun this anytime with: maestro onboard"
 echo "__MAESTRO_SETUP_DONE__"

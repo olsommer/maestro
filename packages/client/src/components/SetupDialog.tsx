@@ -176,9 +176,16 @@ export function SetupDialog({
         <DialogHeader>
           <DialogTitle>First-Run Setup</DialogTitle>
           <DialogDescription>
-            Authenticate your CLI tools to get started with Maestro.
+            Install the tooling Maestro needs and authenticate the CLIs it can reuse.
           </DialogDescription>
         </DialogHeader>
+
+        {!completed && (
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            Most prompts default to <span className="font-medium text-foreground">Yes</span>.
+            Press <span className="font-mono text-xs">Enter</span> to accept the default, or use the quick buttons below.
+          </div>
+        )}
 
         {latestUrl && !completed && (
           <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm">
@@ -217,7 +224,15 @@ export function SetupDialog({
                 className="h-7 text-xs font-mono flex-1 sm:flex-none"
                 onClick={() => sendKey("y\n")}
               >
-                Yes (y)
+                Yes / Default
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs font-mono flex-1 sm:flex-none"
+                onClick={() => sendKey("\n")}
+              >
+                Enter
               </Button>
               <Button
                 variant="outline"
@@ -225,7 +240,7 @@ export function SetupDialog({
                 className="h-7 text-xs font-mono flex-1 sm:flex-none"
                 onClick={() => sendKey("n\n")}
               >
-                No (n)
+                No
               </Button>
             </div>
             <div className="flex items-center gap-2">
@@ -260,10 +275,10 @@ export function SetupDialog({
           ) : (
             <>
               <Button variant="ghost" size="sm" onClick={handleRestart}>
-                Restart Setup
+                Restart
               </Button>
               <Button variant="ghost" size="sm" onClick={handleSkip}>
-                Skip Setup
+                Close
               </Button>
             </>
           )}
