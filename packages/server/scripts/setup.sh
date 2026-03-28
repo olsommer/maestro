@@ -5,6 +5,27 @@ W=${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}
 BANNER=$(printf '%*s' "$W" '' | tr ' ' '=')
 PNPM_VERSION=10.32.1
 INSTALL_ROOT=${MAESTRO_INSTALL_ROOT:-}
+if [[ -t 1 ]]; then
+  RESET=$'\033[0m'
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  FG_MUTED=$'\033[38;5;245m'
+  FG_BLUE=$'\033[38;5;81m'
+  FG_GREEN=$'\033[38;5;78m'
+  FG_YELLOW=$'\033[38;5;221m'
+  FG_RED=$'\033[38;5;203m'
+  FG_CYAN=$'\033[38;5;117m'
+else
+  RESET=""
+  BOLD=""
+  DIM=""
+  FG_MUTED=""
+  FG_BLUE=""
+  FG_GREEN=""
+  FG_YELLOW=""
+  FG_RED=""
+  FG_CYAN=""
+fi
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -22,26 +43,26 @@ run_as_root() {
 
 print_section() {
   local title=$1
-  echo "$BANNER"
-  echo "  $title"
-  echo "$BANNER"
+  echo "${FG_MUTED}${BANNER}${RESET}"
+  echo "  ${BOLD}${FG_BLUE}${title}${RESET}"
+  echo "${FG_MUTED}${BANNER}${RESET}"
   echo ""
 }
 
 print_note() {
-  echo "Note: $1"
+  echo "${FG_CYAN}•${RESET} ${FG_MUTED}$1${RESET}"
 }
 
 print_success() {
-  echo "OK: $1"
+  echo "${FG_GREEN}✓${RESET} ${BOLD}${FG_GREEN}$1${RESET}"
 }
 
 print_warning() {
-  echo "Warning: $1"
+  echo "${FG_YELLOW}!${RESET} ${FG_YELLOW}$1${RESET}"
 }
 
 print_error() {
-  echo "Error: $1"
+  echo "${FG_RED}✕${RESET} ${FG_RED}$1${RESET}"
 }
 
 prompt_yes_no() {
@@ -55,7 +76,7 @@ run_step() {
   local label=$1
   shift
 
-  echo "Running: $label"
+  echo "${DIM}${FG_MUTED}Running:${RESET} ${DIM}${label}${RESET}"
   echo ""
   "$@" || echo "($label exited with error)"
 }
