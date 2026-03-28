@@ -14,6 +14,7 @@ const UPDATE_STATE_PATH = path.join(MAESTRO_DIR, "maestro-update-state.json");
 const TOKEN_PATH = path.join(MAESTRO_DIR, "token");
 const LEGACY_TOKEN_PATH = path.join(MAESTRO_DIR, "api-token");
 const SERVER_PATH = path.join(PACKAGE_ROOT, "dist", "server.js");
+const ONBOARD_SCRIPT_PATH = path.join(PACKAGE_ROOT, "assets", "setup.sh");
 const DEFAULT_HOST = process.env.HOST || "0.0.0.0";
 const DEFAULT_PORT = process.env.PORT || "4800";
 
@@ -101,6 +102,12 @@ function readPackageMeta(): PackageMeta {
 function preflight(): void {
   if (!fs.existsSync(SERVER_PATH)) {
     fail(`Maestro server bundle not found at ${SERVER_PATH}`);
+  }
+}
+
+function onboardPreflight(): void {
+  if (!fs.existsSync(ONBOARD_SCRIPT_PATH)) {
+    fail(`Maestro onboarding script not found at ${ONBOARD_SCRIPT_PATH}`);
   }
 }
 
@@ -389,6 +396,35 @@ function auth(): void {
   console.log(`Token path: ${tokenPath}`);
 }
 
+function onboard(): void {
+  onboardPreflight();
+
+  try {
+    fs.chmodSync(ONBOARD_SCRIPT_PATH, 0o755);
+  } catch {
+    // Ignore chmod failures and let execution report the real problem.
+  }
+
+  try {
+    execFileSync("bash", [ONBOARD_SCRIPT_PATH], {
+      stdio: "inherit",
+      env: process.env,
+    });
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "status" in error &&
+      typeof error.status === "number" &&
+      error.status > 0
+    ) {
+      process.exit(error.status);
+    }
+
+    fail(error instanceof Error ? error.message : "Maestro onboarding failed.");
+  }
+}
+
 function logs(args: string[]): void {
   const follow = args.includes("-f") || args.includes("--follow");
 
@@ -526,6 +562,7 @@ function help(): void {
   console.log("  stop    Stop the background Maestro server");
   console.log("  status  Show whether the Maestro server is running");
   console.log("  auth    Print the local Maestro API token");
+  console.log("  onboard Check/install CLI dependencies and authenticate them");
   console.log("  logs    Print the Maestro server log");
   console.log("  version Print the installed Maestro CLI version");
   console.log("  update  Update the globally installed Maestro CLI");
@@ -551,6 +588,9 @@ async function main(): Promise<void> {
       break;
     case "auth":
       auth();
+      break;
+    case "onboard":
+      onboard();
       break;
     case "logs":
       logs(args);

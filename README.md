@@ -109,6 +109,7 @@ If you want a globally installed package instead of a repo checkout:
 nvm install 22
 nvm use 22
 npm i -g @isarai/maestro
+maestro onboard
 maestro start
 maestro status
 maestro logs
