@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
+  CheckCircle2Icon,
+  CornerDownLeftIcon,
+  ExternalLinkIcon,
+  RotateCcwIcon,
+  ShieldAlertIcon,
+  XCircleIcon,
+} from "lucide-react";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -52,11 +60,18 @@ export function SetupDialog({
 
       const term: XtermTerminal = new Terminal({
         theme: {
-          background: "#09090b",
+          background: "#0b1020",
           foreground: "#fafafa",
-          cursor: "#fafafa",
+          cursor: "#dbeafe",
+          selectionBackground: "#1d4ed8",
+          brightBlack: "#6b7280",
+          green: "#4ade80",
+          yellow: "#facc15",
+          red: "#f87171",
+          blue: "#60a5fa",
+          cyan: "#67e8f9",
         },
-        fontFamily: "monospace",
+        fontFamily: "'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace",
         fontSize: 13,
         cursorBlink: true,
         scrollback: 50000,
@@ -181,14 +196,20 @@ export function SetupDialog({
         </DialogHeader>
 
         {!completed && (
-          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            Most prompts default to <span className="font-medium text-foreground">Yes</span>.
-            Press <span className="font-mono text-xs">Enter</span> to accept the default, or use the quick buttons below.
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <div className="flex items-center gap-2">
+              <CheckCircle2Icon className="size-4 text-emerald-500" />
+              <span>
+                Most prompts default to <span className="font-medium text-slate-900 dark:text-slate-100">Yes</span>.
+                Press <span className="font-mono text-xs">Enter</span> to accept the default, or use the quick actions below.
+              </span>
+            </div>
           </div>
         )}
 
         {latestUrl && !completed && (
-          <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm">
+          <div className="flex items-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm shadow-sm">
+            <ExternalLinkIcon className="size-4 shrink-0 text-blue-400" />
             <span className="shrink-0 font-medium text-blue-400">
               Open this URL to authenticate:
             </span>
@@ -211,7 +232,7 @@ export function SetupDialog({
           </div>
         )}
 
-        <div className="flex-1 min-h-0 rounded-lg overflow-hidden border bg-[#09090b]">
+        <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-900/80 bg-[#0b1020] shadow-[0_20px_60px_rgba(2,6,23,0.35)]">
           <div ref={containerRefCb} className="h-full w-full" />
         </div>
 
@@ -221,25 +242,28 @@ export function SetupDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs font-mono flex-1 sm:flex-none"
+                className="h-8 flex-1 border-emerald-500/30 bg-emerald-500/10 text-xs font-mono text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300 sm:flex-none"
                 onClick={() => sendKey("y\n")}
               >
+                <CheckCircle2Icon className="mr-1 size-3.5" />
                 Yes / Default
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs font-mono flex-1 sm:flex-none"
+                className="h-8 flex-1 border-slate-300 bg-slate-100 text-xs font-mono text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 sm:flex-none"
                 onClick={() => sendKey("\n")}
               >
+                <CornerDownLeftIcon className="mr-1 size-3.5" />
                 Enter
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs font-mono flex-1 sm:flex-none"
+                className="h-8 flex-1 border-rose-500/30 bg-rose-500/10 text-xs font-mono text-rose-700 hover:bg-rose-500/15 dark:text-rose-300 sm:flex-none"
                 onClick={() => sendKey("n\n")}
               >
+                <XCircleIcon className="mr-1 size-3.5" />
                 No
               </Button>
             </div>
@@ -269,15 +293,18 @@ export function SetupDialog({
 
         <DialogFooter className="flex-row justify-between sm:justify-between">
           {completed ? (
-            <p className="text-sm text-green-500 font-medium">
-              Setup complete! Starting Maestro...
-            </p>
+            <div className="flex items-center gap-2 text-sm font-medium text-emerald-500">
+              <CheckCircle2Icon className="size-4" />
+              <span>Setup complete! Starting Maestro...</span>
+            </div>
           ) : (
             <>
-              <Button variant="ghost" size="sm" onClick={handleRestart}>
+              <Button variant="ghost" size="sm" onClick={handleRestart} className="gap-2">
+                <RotateCcwIcon className="size-4" />
                 Restart
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleSkip}>
+              <Button variant="ghost" size="sm" onClick={handleSkip} className="gap-2">
+                <ShieldAlertIcon className="size-4" />
                 Close
               </Button>
             </>
