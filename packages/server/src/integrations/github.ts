@@ -148,15 +148,25 @@ function readGitHubCliHostConfig(): GitHubCliHostConfig | null {
   }
 
   try {
-    const raw = fs.readFileSync(configPath, "utf8");
-    const githubBlockMatch = raw.match(
-      /^github\.com:\s*\n([\s\S]*?)(?=^[^\s].*:\s*$|$)/m
-    );
-    if (!githubBlockMatch) {
+    const lines = fs.readFileSync(configPath, "utf8").split(/\r?\n/);
+    const githubIndex = lines.findIndex((line) => line.trim() === "github.com:");
+    if (githubIndex === -1) {
       return null;
     }
 
-    const githubBlock = githubBlockMatch[1];
+    const githubBlockLines: string[] = [];
+    for (const line of lines.slice(githubIndex + 1)) {
+      if (!line.trim()) {
+        githubBlockLines.push(line);
+        continue;
+      }
+      if (!/^\s/.test(line)) {
+        break;
+      }
+      githubBlockLines.push(line);
+    }
+    const githubBlock = githubBlockLines.join("\n");
+
     const loginMatch = githubBlock.match(/^\s*user:\s*([^\s#]+)\s*$/m);
     const tokenMatch = githubBlock.match(/^\s*oauth_token:\s*([^\s#]+)\s*$/m);
 
