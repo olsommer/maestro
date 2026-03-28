@@ -122,65 +122,69 @@ function parseScopes(raw: string | undefined): string[] {
     : [];
 }
 
-function getGhConfigPath(): string | null {
+function getGhConfigPaths(): string[] {
+  const paths: string[] = [];
   const explicit = process.env.GH_CONFIG_DIR?.trim();
   if (explicit) {
-    return path.join(explicit, "hosts.yml");
+    paths.push(path.join(explicit, "hosts.yml"));
   }
 
   const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
-    return path.join(xdgConfigHome, "gh", "hosts.yml");
+    paths.push(path.join(xdgConfigHome, "gh", "hosts.yml"));
   }
 
   const homeDir = process.env.HOME?.trim();
   if (homeDir) {
-    return path.join(homeDir, ".config", "gh", "hosts.yml");
+    paths.push(path.join(homeDir, ".config", "gh", "hosts.yml"));
   }
 
-  return null;
+  return [...new Set(paths)];
 }
 
 function readGitHubCliHostConfig(): GitHubCliHostConfig | null {
-  const configPath = getGhConfigPath();
-  if (!configPath || !fs.existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const lines = fs.readFileSync(configPath, "utf8").split(/\r?\n/);
-    const githubIndex = lines.findIndex((line) => line.trim() === "github.com:");
-    if (githubIndex === -1) {
-      return null;
+  for (const configPath of getGhConfigPaths()) {
+    if (!fs.existsSync(configPath)) {
+      continue;
     }
 
-    const githubBlockLines: string[] = [];
-    for (const line of lines.slice(githubIndex + 1)) {
-      if (!line.trim()) {
-        githubBlockLines.push(line);
+    try {
+      const lines = fs.readFileSync(configPath, "utf8").split(/\r?\n/);
+      const githubIndex = lines.findIndex((line) => line.trim() === "github.com:");
+      if (githubIndex === -1) {
         continue;
       }
-      if (!/^\s/.test(line)) {
-        break;
+
+      const githubBlockLines: string[] = [];
+      for (const line of lines.slice(githubIndex + 1)) {
+        if (!line.trim()) {
+          githubBlockLines.push(line);
+          continue;
+        }
+        if (!/^\s/.test(line)) {
+          break;
+        }
+        githubBlockLines.push(line);
       }
-      githubBlockLines.push(line);
+      const githubBlock = githubBlockLines.join("\n");
+
+      const loginMatch = githubBlock.match(/^\s*user:\s*([^\s#]+)\s*$/m);
+      const tokenMatch = githubBlock.match(/^\s*oauth_token:\s*([^\s#]+)\s*$/m);
+
+      if (!loginMatch && !tokenMatch) {
+        continue;
+      }
+
+      return {
+        login: loginMatch?.[1] ?? null,
+        hasToken: Boolean(tokenMatch?.[1]),
+      };
+    } catch {
+      continue;
     }
-    const githubBlock = githubBlockLines.join("\n");
-
-    const loginMatch = githubBlock.match(/^\s*user:\s*([^\s#]+)\s*$/m);
-    const tokenMatch = githubBlock.match(/^\s*oauth_token:\s*([^\s#]+)\s*$/m);
-
-    if (!loginMatch && !tokenMatch) {
-      return null;
-    }
-
-    return {
-      login: loginMatch?.[1] ?? null,
-      hasToken: Boolean(tokenMatch?.[1]),
-    };
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 function parseGitHubCliStatusText(raw: string): GitHubCliSession | null {
