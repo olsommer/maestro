@@ -394,6 +394,12 @@ function buildStartupSteps(options: {
       { phase: "preparing_sandbox", label: "Preparing sandbox" },
       { phase: "starting_docker", label: "Starting Docker runtime" }
     );
+  } else if (options.sandboxProvider === "firecracker") {
+    steps.push(
+      { phase: "preparing_sandbox", label: "Preparing sandbox" },
+      { phase: "starting_firecracker", label: "Starting Firecracker VM" },
+      { phase: "starting_docker", label: "Starting guest Docker runtime" }
+    );
   } else if (options.sandboxProvider !== "none") {
     steps.push({ phase: "preparing_sandbox", label: "Preparing sandbox" });
   }
@@ -624,7 +630,7 @@ export async function startTerminal(
     const sandboxEnabled = sandboxProvider !== "none";
     let isolatedHome: ReturnType<typeof ensureTerminalIsolationHome> | null = null;
     let dockerRuntime: ReturnType<typeof ensureTerminalDockerRuntime> | null = null;
-    if (sandboxProvider === "docker") {
+    if (sandboxProvider === "docker" || sandboxProvider === "firecracker") {
       startupStepIndex += 1;
       setTerminalStartupStatus(
         terminalId,
@@ -634,7 +640,9 @@ export async function startTerminal(
         currentTask
       );
       isolatedHome = ensureTerminalIsolationHome(terminalId);
+    }
 
+    if (sandboxProvider === "docker") {
       startupStepIndex += 1;
       setTerminalStartupStatus(
         terminalId,
@@ -644,6 +652,15 @@ export async function startTerminal(
         currentTask
       );
       dockerRuntime = ensureTerminalDockerRuntime(terminalId);
+    } else if (sandboxProvider === "firecracker") {
+      startupStepIndex += 1;
+      setTerminalStartupStatus(
+        terminalId,
+        "waiting" as AgentStatus,
+        buildStartupStatus(startupSteps, startupStepIndex),
+        null,
+        currentTask
+      );
     }
     const runtimeEnv = dockerRuntime
       ? {

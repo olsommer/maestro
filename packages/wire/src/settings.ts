@@ -6,7 +6,7 @@ export type AutoSpawnAgentProvider = z.infer<typeof AutoSpawnAgentProviderSchema
 export const AutoSpawnAgentWorktreeModeSchema = z.enum(["none", "new"]);
 export type AutoSpawnAgentWorktreeMode = z.infer<typeof AutoSpawnAgentWorktreeModeSchema>;
 
-export const SandboxProviderSchema = z.enum(["none", "docker"]);
+export const SandboxProviderSchema = z.enum(["none", "docker", "firecracker"]);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
 export const SettingsSchema = z.object({

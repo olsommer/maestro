@@ -49,25 +49,52 @@ export function NewTerminalDialog({ open, onClose }: Props) {
 
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<"none" | "claude" | "codex">("none");
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "firecracker">("docker");
+  const [sandboxAvailability, setSandboxAvailability] = useState({
+    dockerAvailable: true,
+    firecrackerAvailable: false,
+  });
   const [projectId, setProjectId] = useState("");
   const [autoWorktree, setAutoWorktree] = useState(false);
   const [skipPermissions, setSkipPermissions] = useState(true);
-  const [disableSandbox, setDisableSandbox] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!open) return;
+    void Promise.all([
+      api.getSettings().catch(() => null),
+      api.getRuntimeStatus().catch(() => null),
+    ])
+      .then(([settings, runtimeStatus]) => {
+        if (settings) {
+          const preferredProvider =
+            settings.sandboxProvider === "firecracker" &&
+            !runtimeStatus?.sandbox.firecrackerAvailable
+              ? runtimeStatus?.sandbox.dockerAvailable
+                ? "docker"
+                : "none"
+              : settings.sandboxProvider;
+          setSandboxProvider(preferredProvider);
+          setSkipPermissions(settings.agentDefaultSkipPermissions);
+        }
+        if (runtimeStatus) {
+          setSandboxAvailability(runtimeStatus.sandbox);
+        }
+      })
+      .catch(() => {
+        setSandboxProvider("docker");
+        setSkipPermissions(true);
+      });
     setName(generateDefaultTerminalName());
     setProjectId("__root__");
     setProvider("none");
     setAutoWorktree(false);
-    setSkipPermissions(true);
-    setDisableSandbox(false);
     setError("");
   }, [open]);
 
   const hasCodingAgent = provider !== "none";
+  const disableSandbox = sandboxProvider === "none";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +118,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
         autoWorktree: !isRoot && autoWorktree ? true : undefined,
         skipPermissions: hasCodingAgent && !disableSandbox ? skipPermissions : false,
         disableSandbox,
-        sandboxProvider: !disableSandbox ? "docker" : undefined,
+        sandboxProvider: !disableSandbox ? sandboxProvider : undefined,
       });
       addTerminal(terminal);
       selectTerminal(terminal.id);
@@ -101,7 +128,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       setProvider("none");
       setAutoWorktree(false);
       setSkipPermissions(true);
-      setDisableSandbox(false);
+      setSandboxProvider("docker");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create terminal");
     } finally {
@@ -199,19 +226,44 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 <FieldDescription>
                   {disableSandbox
                     ? "Run this terminal without sandboxing."
-                    : "Run this terminal inside the Docker sandbox."}
+                    : `Run this terminal inside the ${sandboxProvider} sandbox.`}
                 </FieldDescription>
               </FieldContent>
-              <Switch
-                id="sandbox-enabled"
-                checked={!disableSandbox}
-                onCheckedChange={(checked) => {
-                  setDisableSandbox(!checked);
-                  if (!checked) {
+              <Select
+                value={sandboxProvider}
+                onValueChange={(value) => {
+                  const nextProvider =
+                    value === "firecracker" || value === "docker" || value === "none"
+                      ? value
+                      : "docker";
+                  setSandboxProvider(nextProvider);
+                  if (nextProvider === "none") {
                     setSkipPermissions(false);
                   }
                 }}
-              />
+              >
+                <SelectTrigger id="sandbox-enabled" className="w-full @md/field-group:w-48">
+                  <SelectValue placeholder="Select a sandbox" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem
+                      value="firecracker"
+                      disabled={!sandboxAvailability.firecrackerAvailable}
+                    >
+                      {sandboxAvailability.firecrackerAvailable
+                        ? "Firecracker"
+                        : "Firecracker (unavailable)"}
+                    </SelectItem>
+                    <SelectItem value="docker" disabled={!sandboxAvailability.dockerAvailable}>
+                      {sandboxAvailability.dockerAvailable
+                        ? "Docker"
+                        : "Docker (unavailable)"}
+                    </SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </Field>
 
             <Field>

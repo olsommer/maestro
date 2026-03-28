@@ -39,7 +39,7 @@ export interface Agent {
   customEnv?: Record<string, string> | null;
   worktreePath?: string | null;
   autoWorktree?: boolean;
-  sandboxProvider?: "none" | "docker" | null;
+  sandboxProvider?: "none" | "docker" | "firecracker" | null;
   project?: {
     id: string;
     name: string;
@@ -66,6 +66,10 @@ export interface RuntimeStatus {
     featuresEnabled: boolean;
     needsAuthWarning: boolean;
     warningMessage: string | null;
+  };
+  sandbox: {
+    dockerAvailable: boolean;
+    firecrackerAvailable: boolean;
   };
 }
 
@@ -100,7 +104,7 @@ export interface Settings {
   autoUpdateIntervalHours: number;
   telegramBotToken: string;
   sandboxEnabled: boolean;
-  sandboxProvider: "none" | "docker";
+  sandboxProvider: "none" | "docker" | "firecracker";
   deepgramApiKey: string;
   agentDefaultProvider: "claude" | "codex";
   agentDefaultDisableSandbox: boolean;
@@ -257,7 +261,7 @@ export const api = {
     skills?: string[];
     skipPermissions?: boolean;
     disableSandbox?: boolean;
-    sandboxProvider?: "none" | "docker";
+    sandboxProvider?: "none" | "docker" | "firecracker";
     useWorktree?: boolean;
     worktreePath?: string;
     autoWorktree?: boolean;

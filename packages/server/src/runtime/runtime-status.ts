@@ -1,6 +1,8 @@
 import { listAutomationRecords } from "../state/sqlite.js";
 import { listProjectRecords } from "../state/projects.js";
 import { hasGitHubAuth } from "../integrations/github.js";
+import { isDockerAvailable } from "../agents/sandbox.js";
+import { isFirecrackerAvailable } from "../agents/firecracker.js";
 
 export interface RuntimeStatus {
   github: {
@@ -10,6 +12,10 @@ export interface RuntimeStatus {
     featuresEnabled: boolean;
     needsAuthWarning: boolean;
     warningMessage: string | null;
+  };
+  sandbox: {
+    dockerAvailable: boolean;
+    firecrackerAvailable: boolean;
   };
 }
 
@@ -34,6 +40,10 @@ export function getRuntimeStatus(): RuntimeStatus {
       warningMessage: needsAuthWarning
         ? "GitHub-backed projects or automations are configured, but GitHub CLI is not authenticated and GITHUB_TOKEN/GH_TOKEN is missing."
         : null,
+    },
+    sandbox: {
+      dockerAvailable: isDockerAvailable(),
+      firecrackerAvailable: isFirecrackerAvailable(),
     },
   };
 }

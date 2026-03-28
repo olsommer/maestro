@@ -517,18 +517,19 @@ function AgentDefaultsCard({
   refreshKey: number;
 }) {
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
-  const [disableSandbox, setDisableSandbox] = useState(false);
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "firecracker">("docker");
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
   const [saving, setSaving] = useState(false);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexAuthStatus | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<{ sandbox: { dockerAvailable: boolean; firecrackerAvailable: boolean } } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(true);
 
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
-    setDisableSandbox(settings.agentDefaultDisableSandbox);
+    setSandboxProvider(settings.sandboxProvider);
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);
   }, [settings]);
@@ -538,10 +539,15 @@ function AgentDefaultsCard({
     Promise.all([
       api.getClaudeAuthStatus(refreshKey > 0).catch(() => null),
       api.getCodexAuthStatus(refreshKey > 0).catch(() => null),
+      api.getRuntimeStatus().catch(() => null),
     ])
-      .then(([claude, codex]) => {
+      .then(([claude, codex, runtime]) => {
         setClaudeStatus(claude);
         setCodexStatus(codex);
+        setRuntimeStatus(runtime);
+        if (runtime && !runtime.sandbox.firecrackerAvailable && settings?.sandboxProvider === "firecracker") {
+          setSandboxProvider(runtime.sandbox.dockerAvailable ? "docker" : "none");
+        }
       })
       .finally(() => setLoadingProviders(false));
   }, [refreshKey]);
@@ -551,9 +557,11 @@ function AgentDefaultsCard({
   const selectedProviderAvailable =
     provider === "claude" ? claudeAvailable : codexAvailable;
   const hasAvailableProvider = claudeAvailable || codexAvailable;
+  const firecrackerAvailable = Boolean(runtimeStatus?.sandbox.firecrackerAvailable);
+  const dockerAvailable = runtimeStatus?.sandbox.dockerAvailable ?? true;
   const isDirty =
     provider !== (settings?.agentDefaultProvider ?? "claude") ||
-    disableSandbox !== (settings?.agentDefaultDisableSandbox ?? false) ||
+    sandboxProvider !== (settings?.sandboxProvider ?? "none") ||
     skipPermissions !== (settings?.agentDefaultSkipPermissions ?? true) ||
     worktreeMode !== (settings?.agentDefaultWorktreeMode ?? "none");
 
@@ -562,9 +570,9 @@ function AgentDefaultsCard({
     try {
       const updated = await api.updateSettings({
         agentDefaultProvider: provider,
-        sandboxProvider: disableSandbox ? "none" : "docker",
-        agentDefaultDisableSandbox: disableSandbox,
-        agentDefaultSkipPermissions: skipPermissions,
+        sandboxProvider,
+        agentDefaultDisableSandbox: sandboxProvider === "none",
+        agentDefaultSkipPermissions: sandboxProvider === "none" ? false : skipPermissions,
         agentDefaultWorktreeMode: worktreeMode,
       });
       onSettingsUpdate(updated);
@@ -629,28 +637,47 @@ function AgentDefaultsCard({
             <FieldContent>
               <FieldLabel htmlFor="agent-default-sandbox">Sandbox</FieldLabel>
               <FieldDescription>
-                {disableSandbox
+                {sandboxProvider === "none"
                   ? "Auto-spawned agents will run without sandboxing."
-                  : "Run automatically spawned agents inside the Docker sandbox."}
+                  : "Run automatically spawned agents inside the selected sandbox provider."}
               </FieldDescription>
             </FieldContent>
-            <Switch
+            <Select
               id="agent-default-sandbox"
-              checked={!disableSandbox}
-              onCheckedChange={(checked) => {
-                setDisableSandbox(!checked);
-                if (!checked) {
+              value={sandboxProvider}
+              onValueChange={(value) => {
+                const nextProvider =
+                  value === "firecracker" || value === "docker" || value === "none"
+                    ? value
+                    : "docker";
+                setSandboxProvider(nextProvider);
+                if (nextProvider === "none") {
                   setSkipPermissions(false);
                 }
               }}
-            />
+            >
+              <SelectTrigger id="agent-default-sandbox" className="w-full @md/field-group:w-48">
+                <SelectValue placeholder="Select a sandbox" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="firecracker" disabled={!firecrackerAvailable}>
+                    {firecrackerAvailable ? "Firecracker" : "Firecracker (unavailable)"}
+                  </SelectItem>
+                  <SelectItem value="docker" disabled={!dockerAvailable}>
+                    {dockerAvailable ? "Docker" : "Docker (unavailable)"}
+                  </SelectItem>
+                  <SelectItem value="none">None</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field orientation="responsive">
             <FieldContent>
               <FieldLabel htmlFor="agent-default-yolo">YOLO mode</FieldLabel>
               <FieldDescription>
-                {disableSandbox
+                {sandboxProvider === "none"
                   ? "Disabled because sandboxing is off."
                   : "Run without approval prompts for automatically spawned agents."}
               </FieldDescription>
@@ -659,7 +686,7 @@ function AgentDefaultsCard({
               id="agent-default-yolo"
               checked={skipPermissions}
               onCheckedChange={setSkipPermissions}
-              disabled={disableSandbox}
+              disabled={sandboxProvider === "none"}
             />
           </Field>
 

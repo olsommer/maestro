@@ -3,10 +3,12 @@ import * as path from "path";
 import * as os from "os";
 import * as pty from "node-pty";
 import type { Server as SocketServer } from "socket.io";
+import { updateSettings } from "../state/settings.js";
 
 const FLAG_DIR = path.join(os.homedir(), ".maestro");
 const FLAG_FILE = path.join(FLAG_DIR, "setup-complete");
 const SENTINEL = "__MAESTRO_SETUP_DONE__";
+const SANDBOX_PROVIDER_SENTINEL = "__MAESTRO_SANDBOX_PROVIDER__=";
 // Match URLs in PTY output. PTY data may contain ANSI escape codes interleaved
 // with the URL text, so we first strip all escape sequences before matching.
 const URL_RE = /https?:\/\/[^\s"'<>]+/g;
@@ -104,6 +106,12 @@ export function startSetupPty(io: SocketServer, cols?: number, rows?: number): v
       for (const url of urls) {
         io.to("setup").emit("setup:url", { url });
       }
+    }
+
+    const providerMatch = clean.match(/__MAESTRO_SANDBOX_PROVIDER__=(none|docker|firecracker)/);
+    if (providerMatch) {
+      const sandboxProvider = providerMatch[1] as "none" | "docker" | "firecracker";
+      updateSettings({ sandboxProvider });
     }
 
     if (data.includes(SENTINEL)) {
