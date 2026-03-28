@@ -13,6 +13,7 @@ import {
   type DockerMountSpec,
   type SandboxConfig,
 } from "./sandbox.js";
+import { ensureFirecrackerRuntime } from "./firecracker.js";
 
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
@@ -91,6 +92,7 @@ export interface PtyInstance {
   terminalId: string;
   sandboxed: boolean;
   sandboxProvider: SandboxProvider;
+  cleanup?: (() => void) | null;
 }
 
 const ptyProcesses = new Map<string, PtyInstance>();
@@ -136,6 +138,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   const fullEnv = buildChildEnv(options.env);
 
   let ptyProcess: pty.IPty;
+  let cleanup: (() => void) | null = null;
 
   if (sandboxProvider === "docker") {
     const sandboxConfig: SandboxConfig = {
@@ -163,10 +166,40 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     });
 
     console.log(`Spawned docker-sandboxed PTY for terminal ${options.terminalId}`);
+  } else if (sandboxProvider === "firecracker") {
+    const firecrackerRuntime = ensureFirecrackerRuntime({
+      terminalId: options.terminalId,
+      cwd,
+      homeDir: options.homeDir ?? os.homedir(),
+      env: fullEnv,
+      readonlyMounts: options.readonlyMounts,
+      writableMounts: options.writableMounts,
+      memoryLimit: options.memoryLimit,
+    });
+    cleanup = firecrackerRuntime.cleanup;
+
+    ptyProcess = pty.spawn(
+      firecrackerRuntime.bridgeCommand,
+      firecrackerRuntime.bridgeArgs,
+      {
+        name: "xterm-256color",
+        cols: options.cols ?? 120,
+        rows: options.rows ?? 30,
+        cwd,
+        env: { TERM: "xterm-256color" },
+      }
+    );
+
+    console.log(`Spawned firecracker-sandboxed PTY for terminal ${options.terminalId}`);
   } else {
     if (requestedSandboxProvider === "docker" && !isDockerAvailable()) {
       throw new Error(
         `Sandbox requested for terminal ${options.terminalId} but docker is not available.`
+      );
+    }
+    if (requestedSandboxProvider === "firecracker") {
+      throw new Error(
+        `Sandbox requested for terminal ${options.terminalId} but firecracker is not available.`
       );
     }
 
@@ -186,6 +219,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     terminalId: options.terminalId,
     sandboxed: actualSandboxProvider !== "none",
     sandboxProvider: actualSandboxProvider,
+    cleanup,
   };
 
   ptyProcesses.set(id, instance);
@@ -196,6 +230,8 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
   ptyProcess.onExit(({ exitCode }) => {
     ptyProcesses.delete(id);
+    instance.cleanup?.();
+    instance.cleanup = null;
     options.onExit(exitCode);
   });
 
@@ -236,6 +272,8 @@ export function killPty(ptyId: string): boolean {
   } catch {
     // Already dead
   }
+  instance.cleanup?.();
+  instance.cleanup = null;
   ptyProcesses.delete(ptyId);
   return true;
 }
@@ -245,6 +283,8 @@ export function killAllPty(): void {
   for (const [id, instance] of ptyProcesses) {
     try {
       instance.process.kill();
+      instance.cleanup?.();
+      instance.cleanup = null;
       killed++;
     } catch {
       // Ignore

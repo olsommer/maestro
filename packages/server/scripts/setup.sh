@@ -4,6 +4,16 @@
 W=${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}
 BANNER=$(printf '%*s' "$W" '' | tr ' ' '=')
 PNPM_VERSION=10.32.1
+INSTALL_ROOT=${MAESTRO_INSTALL_ROOT:-}
+BUILD_FIRECRACKER_ROOTFS_SCRIPT=${INSTALL_ROOT:+$INSTALL_ROOT/assets/build-firecracker-rootfs.sh}
+
+if [[ -z "${BUILD_FIRECRACKER_ROOTFS_SCRIPT:-}" ]]; then
+  BUILD_FIRECRACKER_ROOTFS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build-firecracker-rootfs.sh"
+fi
+
+MAESTRO_FIRECRACKER_ASSET_DIR="${MAESTRO_FIRECRACKER_ASSET_DIR:-$HOME/.maestro/firecracker}"
+MAESTRO_FIRECRACKER_KERNEL="${MAESTRO_FIRECRACKER_KERNEL:-$MAESTRO_FIRECRACKER_ASSET_DIR/vmlinux}"
+MAESTRO_FIRECRACKER_ROOTFS="${MAESTRO_FIRECRACKER_ROOTFS:-$MAESTRO_FIRECRACKER_ASSET_DIR/rootfs.ext4}"
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -13,7 +23,7 @@ prompt_yes_no() {
   local prompt=$1
   local answer
   read -rp "$prompt" answer
-  [[ "$answer" =~ ^[Yy]$ ]]
+  [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]
 }
 
 run_step() {
@@ -93,6 +103,10 @@ install_gh() {
   install_system_package gh "GitHub CLI" gh gh gh gh github-cli
 }
 
+install_curl() {
+  install_system_package curl "curl" curl curl curl curl curl
+}
+
 install_ripgrep() {
   install_system_package rg "ripgrep" ripgrep ripgrep ripgrep ripgrep ripgrep
 }
@@ -108,6 +122,26 @@ install_bubblewrap() {
 
 install_corepack() {
   install_with_npm "corepack" "corepack"
+}
+
+install_docker() {
+  if have_cmd docker; then
+    return 0
+  fi
+
+  install_system_package docker "Docker" docker docker.io docker docker docker
+}
+
+install_socat() {
+  install_system_package socat "socat" socat socat socat socat socat
+}
+
+install_virtiofsd() {
+  install_system_package virtiofsd "virtiofsd" "" virtiofsd virtiofsd virtiofsd virtiofsd
+}
+
+install_firecracker() {
+  install_system_package firecracker "Firecracker" firecracker firecracker firecracker firecracker firecracker
 }
 
 install_pnpm() {
@@ -141,6 +175,35 @@ install_codex() {
   install_with_npm "@openai/codex" "codex"
 }
 
+build_firecracker_assets() {
+  if ! is_linux; then
+    echo "Firecracker assets are only supported on Linux. Skipping."
+    return 1
+  fi
+
+  if [[ ! -x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" ]]; then
+    chmod +x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" 2>/dev/null || true
+  fi
+
+  if [[ ! -x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" ]]; then
+    echo "Firecracker asset builder not found at $BUILD_FIRECRACKER_ROOTFS_SCRIPT."
+    return 1
+  fi
+
+  run_step "Build Firecracker guest assets" "$BUILD_FIRECRACKER_ROOTFS_SCRIPT"
+}
+
+firecracker_ready_for_maestro() {
+  is_linux || return 1
+  [[ -e /dev/kvm ]] || return 1
+  have_cmd firecracker || return 1
+  have_cmd virtiofsd || return 1
+  have_cmd socat || return 1
+  have_cmd curl || return 1
+  [[ -f "$MAESTRO_FIRECRACKER_KERNEL" ]] || return 1
+  [[ -f "$MAESTRO_FIRECRACKER_ROOTFS" ]] || return 1
+}
+
 ensure_tool() {
   local binary=$1
   local label=$2
@@ -152,12 +215,31 @@ ensure_tool() {
   fi
 
   echo "$label is not installed."
-  if ! prompt_yes_no "Install $label now? (y/n) "; then
+  if ! prompt_yes_no "Install $label now? (Y/n) "; then
     echo "Skipping $label installation."
     return 1
   fi
 
   "$installer"
+}
+
+prompt_default_sandbox() {
+  local answer
+  while true; do
+    read -rp "Choose default sandbox provider [F]irecracker/[d]ocker (default: Firecracker): " answer
+    answer=${answer,,}
+    case "$answer" in
+      ""|f|firecracker)
+        echo "firecracker"
+        return 0
+        ;;
+      d|docker)
+        echo "docker"
+        return 0
+        ;;
+    esac
+    echo "Enter Firecracker or Docker."
+  done
 }
 
 echo "$BANNER"
@@ -169,6 +251,9 @@ echo ""
 ensure_tool corepack "corepack" install_corepack
 echo ""
 
+ensure_tool curl "curl" install_curl
+echo ""
+
 ensure_tool pnpm "pnpm" install_pnpm
 echo ""
 
@@ -177,6 +262,29 @@ echo ""
 
 ensure_tool bwrap "bubblewrap" install_bubblewrap
 echo ""
+
+# --- Sandbox runtimes ---
+ensure_tool docker "Docker" install_docker
+echo ""
+
+if is_linux; then
+  ensure_tool socat "socat" install_socat
+  echo ""
+
+  ensure_tool virtiofsd "virtiofsd" install_virtiofsd
+  echo ""
+
+  ensure_tool firecracker "Firecracker" install_firecracker
+  echo ""
+
+  if prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
+    build_firecracker_assets || echo "Firecracker guest asset build skipped or failed."
+  fi
+  echo ""
+else
+  echo "Firecracker install is only supported on Linux. Docker will remain the only sandbox runtime on this host."
+  echo ""
+fi
 
 # --- GitHub CLI ---
 if ensure_tool gh "GitHub CLI" install_gh; then
@@ -197,17 +305,22 @@ fi
 echo ""
 
 # --- Claude Code ---
-if prompt_yes_no "Do you want to use Claude Code? (y/n) "; then
+if prompt_yes_no "Do you want to use Claude Code? (Y/n) "; then
   if ensure_tool claude "Claude Code CLI" install_claude; then
-    echo "Claude Code install check complete."
-    echo "Skipping Claude authentication during maestro onboard."
-    echo "Authenticate Claude Code later by running \`claude\` directly."
+    echo "Checking Claude Code authentication..."
+    if claude auth status >/dev/null 2>&1; then
+      echo "Claude Code is already authenticated."
+    else
+      echo "Running: claude auth login"
+      echo ""
+      claude auth login || echo "(claude auth login exited with error)"
+    fi
   fi
 fi
 echo ""
 
 # --- Codex ---
-if prompt_yes_no "Do you want to use Codex? (y/n) "; then
+if prompt_yes_no "Do you want to use Codex? (Y/n) "; then
   if ensure_tool codex "Codex CLI" install_codex; then
     echo "Checking Codex authentication..."
     if codex login status >/dev/null 2>&1; then
@@ -219,6 +332,17 @@ if prompt_yes_no "Do you want to use Codex? (y/n) "; then
     fi
   fi
 fi
+echo ""
+
+DEFAULT_SANDBOX_PROVIDER="docker"
+if firecracker_ready_for_maestro; then
+  DEFAULT_SANDBOX_PROVIDER="$(prompt_default_sandbox)"
+  echo "Selected default sandbox provider: $DEFAULT_SANDBOX_PROVIDER"
+else
+  echo "Firecracker is not fully ready on this host. Docker will be the only offered sandbox provider."
+  echo "Default sandbox provider: Docker"
+fi
+echo "__MAESTRO_SANDBOX_PROVIDER__=${DEFAULT_SANDBOX_PROVIDER}"
 echo ""
 
 echo "$BANNER"

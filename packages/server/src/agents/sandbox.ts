@@ -4,6 +4,7 @@ import * as path from "path";
 import { execFileSync, execSync } from "child_process";
 import { fileURLToPath } from "url";
 import type { SandboxProvider } from "@maestro/wire";
+import { isFirecrackerAvailable } from "./firecracker.js";
 
 export interface SandboxConfig {
   /** Working directory (read-write) */
@@ -104,7 +105,7 @@ export function normalizeSandboxProvider(
   value: string | null | undefined,
   legacyEnabled = false
 ): SandboxProvider {
-  if (value === "none" || value === "docker") {
+  if (value === "none" || value === "docker" || value === "firecracker") {
     return value;
   }
   return legacyEnabled ? "docker" : "none";
@@ -112,10 +113,13 @@ export function normalizeSandboxProvider(
 
 export function resolveSandboxProviderAvailability(
   requested: SandboxProvider,
-  availability: { dockerAvailable: boolean }
+  availability: { dockerAvailable: boolean; firecrackerAvailable: boolean }
 ): SandboxProvider {
   if (requested === "docker") {
     return availability.dockerAvailable ? "docker" : "none";
+  }
+  if (requested === "firecracker") {
+    return availability.firecrackerAvailable ? "firecracker" : "none";
   }
   return "none";
 }
@@ -123,6 +127,7 @@ export function resolveSandboxProviderAvailability(
 export function resolveSandboxProvider(requested: SandboxProvider): SandboxProvider {
   return resolveSandboxProviderAvailability(requested, {
     dockerAvailable: isDockerAvailable(),
+    firecrackerAvailable: isFirecrackerAvailable(),
   });
 }
 
