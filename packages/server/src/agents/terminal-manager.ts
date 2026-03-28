@@ -394,11 +394,11 @@ function buildStartupSteps(options: {
       { phase: "preparing_sandbox", label: "Preparing sandbox" },
       { phase: "starting_docker", label: "Starting Docker runtime" }
     );
-  } else if (options.sandboxProvider === "firecracker") {
+  } else if (options.sandboxProvider === "gvisor") {
     steps.push(
       { phase: "preparing_sandbox", label: "Preparing sandbox" },
-      { phase: "starting_firecracker", label: "Starting Firecracker VM" },
-      { phase: "starting_docker", label: "Starting guest Docker runtime" }
+      { phase: "starting_gvisor", label: "Starting gVisor runtime" },
+      { phase: "starting_docker", label: "Starting Docker runtime" }
     );
   } else if (options.sandboxProvider !== "none") {
     steps.push({ phase: "preparing_sandbox", label: "Preparing sandbox" });
@@ -630,7 +630,7 @@ export async function startTerminal(
     const sandboxEnabled = sandboxProvider !== "none";
     let isolatedHome: ReturnType<typeof ensureTerminalIsolationHome> | null = null;
     let dockerRuntime: ReturnType<typeof ensureTerminalDockerRuntime> | null = null;
-    if (sandboxProvider === "docker" || sandboxProvider === "firecracker") {
+    if (sandboxProvider === "docker" || sandboxProvider === "gvisor") {
       startupStepIndex += 1;
       setTerminalStartupStatus(
         terminalId,
@@ -652,7 +652,7 @@ export async function startTerminal(
         currentTask
       );
       dockerRuntime = ensureTerminalDockerRuntime(terminalId);
-    } else if (sandboxProvider === "firecracker") {
+    } else if (sandboxProvider === "gvisor") {
       startupStepIndex += 1;
       setTerminalStartupStatus(
         terminalId,
@@ -661,6 +661,15 @@ export async function startTerminal(
         null,
         currentTask
       );
+      startupStepIndex += 1;
+      setTerminalStartupStatus(
+        terminalId,
+        "waiting" as AgentStatus,
+        buildStartupStatus(startupSteps, startupStepIndex),
+        null,
+        currentTask
+      );
+      dockerRuntime = ensureTerminalDockerRuntime(terminalId);
     }
     const runtimeEnv = dockerRuntime
       ? {

@@ -1,8 +1,7 @@
 import { listAutomationRecords } from "../state/sqlite.js";
 import { listProjectRecords } from "../state/projects.js";
 import { hasGitHubAuth } from "../integrations/github.js";
-import { isDockerAvailable } from "../agents/sandbox.js";
-import { isFirecrackerAvailable } from "../agents/firecracker.js";
+import { isDockerAvailable, isGvisorAvailable } from "../agents/sandbox.js";
 
 export interface RuntimeStatus {
   github: {
@@ -15,7 +14,7 @@ export interface RuntimeStatus {
   };
   sandbox: {
     dockerAvailable: boolean;
-    firecrackerAvailable: boolean;
+    gvisorAvailable: boolean;
   };
 }
 
@@ -43,7 +42,7 @@ export function getRuntimeStatus(): RuntimeStatus {
     },
     sandbox: {
       dockerAvailable: isDockerAvailable(),
-      firecrackerAvailable: isFirecrackerAvailable(),
+      gvisorAvailable: isGvisorAvailable(),
     },
   };
 }

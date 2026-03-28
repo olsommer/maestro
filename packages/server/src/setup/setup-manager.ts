@@ -108,9 +108,12 @@ export function startSetupPty(io: SocketServer, cols?: number, rows?: number): v
       }
     }
 
-    const providerMatch = clean.match(/__MAESTRO_SANDBOX_PROVIDER__=(none|docker|firecracker)/);
+    const providerMatch = clean.match(/__MAESTRO_SANDBOX_PROVIDER__=(none|docker|gvisor|firecracker)/);
     if (providerMatch) {
-      const sandboxProvider = providerMatch[1] as "none" | "docker" | "firecracker";
+      const sandboxProvider =
+        providerMatch[1] === "firecracker"
+          ? "gvisor"
+          : (providerMatch[1] as "none" | "docker" | "gvisor");
       updateSettings({ sandboxProvider });
     }
 

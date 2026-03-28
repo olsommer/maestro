@@ -18,7 +18,6 @@ fs.rmSync(assetsDir, { recursive: true, force: true });
 fs.mkdirSync(distDir, { recursive: true });
 fs.mkdirSync(path.join(assetsDir, "docker", "sandbox"), { recursive: true });
 fs.mkdirSync(path.join(assetsDir, "docker", "dind"), { recursive: true });
-fs.mkdirSync(path.join(assetsDir, "docker", "firecracker-rootfs"), { recursive: true });
 
 await build({
   entryPoints: [path.join(packageRoot, "src", "index.ts")],
@@ -57,20 +56,3 @@ fs.copyFileSync(
   path.join(assetsDir, "setup.sh")
 );
 fs.chmodSync(path.join(assetsDir, "setup.sh"), 0o755);
-fs.copyFileSync(
-  path.join(repoRoot, "packages", "server", "scripts", "build-firecracker-rootfs.sh"),
-  path.join(assetsDir, "build-firecracker-rootfs.sh")
-);
-fs.chmodSync(path.join(assetsDir, "build-firecracker-rootfs.sh"), 0o755);
-fs.copyFileSync(
-  path.join(repoRoot, "docker", "firecracker-rootfs", "Dockerfile"),
-  path.join(assetsDir, "docker", "firecracker-rootfs", "Dockerfile")
-);
-fs.copyFileSync(
-  path.join(repoRoot, "docker", "firecracker-rootfs", "maestro-guest-init.sh"),
-  path.join(assetsDir, "docker", "firecracker-rootfs", "maestro-guest-init.sh")
-);
-fs.copyFileSync(
-  path.join(repoRoot, "docker", "firecracker-rootfs", "maestro-login-shell.sh"),
-  path.join(assetsDir, "docker", "firecracker-rootfs", "maestro-login-shell.sh")
-);

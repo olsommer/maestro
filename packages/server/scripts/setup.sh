@@ -5,26 +5,9 @@ W=${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}
 BANNER=$(printf '%*s' "$W" '' | tr ' ' '=')
 PNPM_VERSION=10.32.1
 INSTALL_ROOT=${MAESTRO_INSTALL_ROOT:-}
-BUILD_FIRECRACKER_ROOTFS_SCRIPT=${INSTALL_ROOT:+$INSTALL_ROOT/assets/build-firecracker-rootfs.sh}
-
-if [[ -z "${BUILD_FIRECRACKER_ROOTFS_SCRIPT:-}" ]]; then
-  BUILD_FIRECRACKER_ROOTFS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build-firecracker-rootfs.sh"
-fi
-
-MAESTRO_FIRECRACKER_ASSET_DIR="${MAESTRO_FIRECRACKER_ASSET_DIR:-$HOME/.maestro/firecracker}"
-MAESTRO_FIRECRACKER_KERNEL="${MAESTRO_FIRECRACKER_KERNEL:-$MAESTRO_FIRECRACKER_ASSET_DIR/vmlinux}"
-MAESTRO_FIRECRACKER_ROOTFS="${MAESTRO_FIRECRACKER_ROOTFS:-$MAESTRO_FIRECRACKER_ASSET_DIR/rootfs.ext4}"
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
-}
-
-have_virtiofsd() {
-  have_cmd virtiofsd \
-    || [[ -x /usr/libexec/virtiofsd ]] \
-    || [[ -x /usr/lib/qemu/virtiofsd ]] \
-    || [[ -x /usr/local/libexec/virtiofsd ]] \
-    || [[ -x /usr/bin/virtiofsd ]]
 }
 
 run_as_root() {
@@ -178,24 +161,7 @@ install_socat() {
   install_system_package socat "socat" socat socat socat socat socat
 }
 
-install_virtiofsd() {
-  if have_virtiofsd; then
-    print_success "virtiofsd is already installed."
-    return 0
-  fi
-
-  install_system_package virtiofsd "virtiofsd" "" virtiofsd virtiofsd virtiofsd virtiofsd
-
-  if have_virtiofsd; then
-    print_success "virtiofsd is installed and available for Maestro."
-    return 0
-  fi
-
-  print_warning "virtiofsd is still not available after the install attempt."
-  return 1
-}
-
-normalize_firecracker_arch() {
+normalize_gvisor_arch() {
   case "$(uname -m)" in
     x86_64|amd64)
       echo "x86_64"
@@ -209,87 +175,86 @@ normalize_firecracker_arch() {
   esac
 }
 
-resolve_firecracker_version() {
-  if [[ -n "${MAESTRO_FIRECRACKER_VERSION:-}" ]]; then
-    echo "${MAESTRO_FIRECRACKER_VERSION}"
-    return 0
-  fi
-
-  curl -fsSL "https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest" \
-    | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
-    | head -n1
+gvisor_runtime_registered() {
+  have_cmd docker || return 1
+  docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"runsc"'
 }
 
-install_firecracker() {
+restart_docker_service() {
+  if have_cmd systemctl; then
+    run_step "systemctl restart docker" run_as_root systemctl restart docker
+    return 0
+  fi
+  if have_cmd service; then
+    run_step "service docker restart" run_as_root service docker restart
+    return 0
+  fi
+  print_note "Docker daemon restart is not automated on this host. Restart Docker manually if gVisor does not appear in \`docker info\`."
+  return 1
+}
+
+install_gvisor() {
   if ! is_linux; then
-    print_note "Firecracker install is only supported on Linux."
+    print_note "gVisor install is only supported on Linux."
     return 1
   fi
 
-  if have_cmd firecracker; then
-    print_success "Firecracker is already installed."
-    if have_cmd jailer; then
-      print_success "Jailer is already installed."
+  local runsc_path
+  runsc_path="$(command -v runsc 2>/dev/null || true)"
+  if [[ -n "$runsc_path" ]]; then
+    print_success "gVisor runsc is already installed."
+    if ! gvisor_runtime_registered; then
+      print_note "Registering runsc with Docker."
+      run_step "runsc install" run_as_root "$runsc_path" install
+      restart_docker_service || true
     fi
     return 0
   fi
 
   local arch
-  arch="$(normalize_firecracker_arch)" || {
-    print_warning "Unsupported CPU architecture for automated Firecracker install: $(uname -m)"
+  arch="$(normalize_gvisor_arch)" || {
+    print_warning "Unsupported CPU architecture for automated gVisor install: $(uname -m)"
     return 1
   }
 
-  local version
-  version="$(resolve_firecracker_version)"
-  if [[ -z "$version" ]]; then
-    print_warning "Could not resolve the latest Firecracker release version."
-    return 1
-  fi
-
-  local work_dir
+  local work_dir base_url
   work_dir="$(mktemp -d)"
-  local archive_name="firecracker-${version}-${arch}.tgz"
-  local archive_url="https://github.com/firecracker-microvm/firecracker/releases/download/${version}/${archive_name}"
-  local release_dir="${work_dir}/release-${version}-${arch}"
+  base_url="https://storage.googleapis.com/gvisor/releases/release/latest/${arch}"
 
-  print_note "Installing Firecracker ${version} for ${arch} from the official GitHub release."
+  print_note "Installing gVisor runsc for ${arch} from the official release bucket."
 
-  if ! run_step "curl -L ${archive_url} -o ${archive_name}" \
-    curl -fL "$archive_url" -o "${work_dir}/${archive_name}"; then
+  if ! run_step "curl -L ${base_url}/runsc -o runsc" \
+    curl -fsSL "${base_url}/runsc" -o "${work_dir}/runsc"; then
     rm -rf "$work_dir"
-    print_warning "Failed to download Firecracker release archive."
+    print_warning "Failed to download the runsc binary."
+    return 1
+  fi
+  if ! run_step "curl -L ${base_url}/runsc.sha512 -o runsc.sha512" \
+    curl -fsSL "${base_url}/runsc.sha512" -o "${work_dir}/runsc.sha512"; then
+    rm -rf "$work_dir"
+    print_warning "Failed to download the runsc checksum."
+    return 1
+  fi
+  if ! run_step "verify runsc checksum" \
+    bash -lc "cd '$work_dir' && sha512sum -c runsc.sha512"; then
+    rm -rf "$work_dir"
+    print_warning "runsc checksum verification failed."
     return 1
   fi
 
-  if ! run_step "tar -xzf ${archive_name}" tar -xzf "${work_dir}/${archive_name}" -C "$work_dir"; then
-    rm -rf "$work_dir"
-    print_warning "Failed to extract Firecracker release archive."
-    return 1
-  fi
-
-  if [[ ! -x "${release_dir}/firecracker-${version}-${arch}" ]]; then
-    rm -rf "$work_dir"
-    print_warning "Firecracker binary was not found in the extracted release archive."
-    return 1
-  fi
-
-  run_step "install firecracker to /usr/local/bin" \
-    run_as_root install -m 0755 "${release_dir}/firecracker-${version}-${arch}" /usr/local/bin/firecracker
-
-  if [[ -x "${release_dir}/jailer-${version}-${arch}" ]]; then
-    run_step "install jailer to /usr/local/bin" \
-      run_as_root install -m 0755 "${release_dir}/jailer-${version}-${arch}" /usr/local/bin/jailer
-  fi
+  run_step "install runsc to /usr/local/bin" \
+    run_as_root install -m 0755 "${work_dir}/runsc" /usr/local/bin/runsc
+  run_step "runsc install" run_as_root /usr/local/bin/runsc install
+  restart_docker_service || true
 
   rm -rf "$work_dir"
 
-  if have_cmd firecracker; then
-    print_success "Firecracker installed successfully."
+  if have_cmd runsc && gvisor_runtime_registered; then
+    print_success "gVisor is installed and registered with Docker."
     return 0
   fi
 
-  print_warning "Firecracker is still not available after the install attempt."
+  print_warning "gVisor is still not available after the install attempt."
   return 1
 }
 
@@ -324,70 +289,32 @@ install_codex() {
   install_with_npm "@openai/codex" "codex"
 }
 
-build_firecracker_assets() {
-  if ! is_linux; then
-    echo "Firecracker assets are only supported on Linux. Skipping."
-    return 1
-  fi
-
-  if [[ ! -x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" ]]; then
-    chmod +x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" 2>/dev/null || true
-  fi
-
-  if [[ ! -x "$BUILD_FIRECRACKER_ROOTFS_SCRIPT" ]]; then
-    echo "Firecracker asset builder not found at $BUILD_FIRECRACKER_ROOTFS_SCRIPT."
-    return 1
-  fi
-
-  run_step "Build Firecracker guest assets" "$BUILD_FIRECRACKER_ROOTFS_SCRIPT"
-}
-
-firecracker_ready_for_maestro() {
+gvisor_ready_for_maestro() {
   is_linux || return 1
-  [[ -e /dev/kvm ]] || return 1
-  have_cmd firecracker || return 1
-  have_virtiofsd || return 1
-  have_cmd socat || return 1
-  have_cmd curl || return 1
-  [[ -f "$MAESTRO_FIRECRACKER_KERNEL" ]] || return 1
-  [[ -f "$MAESTRO_FIRECRACKER_ROOTFS" ]] || return 1
+  have_cmd docker || return 1
+  have_cmd runsc || return 1
+  gvisor_runtime_registered || return 1
 }
 
-firecracker_unavailable_reason() {
+gvisor_unavailable_reason() {
   if ! is_linux; then
     echo "this host is not Linux"
     return 0
   fi
-  if [[ ! -e /dev/kvm ]]; then
-    echo "/dev/kvm is not available on this host"
+  if ! have_cmd docker; then
+    echo "Docker is not installed"
     return 0
   fi
-  if ! have_cmd firecracker; then
-    echo "the firecracker binary is not installed"
+  if ! have_cmd runsc; then
+    echo "the gVisor runsc binary is not installed"
     return 0
   fi
-  if ! have_virtiofsd; then
-    echo "virtiofsd is not installed"
-    return 0
-  fi
-  if ! have_cmd socat; then
-    echo "socat is not installed"
-    return 0
-  fi
-  if ! have_cmd curl; then
-    echo "curl is not installed"
-    return 0
-  fi
-  if [[ ! -f "$MAESTRO_FIRECRACKER_KERNEL" ]]; then
-    echo "the Firecracker guest kernel is missing at $MAESTRO_FIRECRACKER_KERNEL"
-    return 0
-  fi
-  if [[ ! -f "$MAESTRO_FIRECRACKER_ROOTFS" ]]; then
-    echo "the Firecracker guest rootfs is missing at $MAESTRO_FIRECRACKER_ROOTFS"
+  if ! gvisor_runtime_registered; then
+    echo "Docker does not have the runsc runtime registered"
     return 0
   fi
 
-  echo "an unknown Firecracker readiness check failed"
+  echo "an unknown gVisor readiness check failed"
 }
 
 ensure_tool() {
@@ -412,11 +339,11 @@ ensure_tool() {
 prompt_default_sandbox() {
   local answer
   while true; do
-    read -rp "Choose default sandbox provider [F]irecracker/[d]ocker (default: Firecracker): " answer
+    read -rp "Choose default sandbox provider [G]Visor/[d]ocker (default: gVisor): " answer
     answer=${answer,,}
     case "$answer" in
-      ""|f|firecracker)
-        echo "firecracker"
+      ""|g|gvisor)
+        echo "gvisor"
         return 0
         ;;
       d|docker)
@@ -424,7 +351,7 @@ prompt_default_sandbox() {
         return 0
         ;;
     esac
-    echo "Enter Firecracker or Docker."
+    echo "Enter gVisor or Docker."
   done
 }
 
@@ -450,43 +377,17 @@ ensure_tool bwrap "bubblewrap" install_bubblewrap
 echo ""
 
 print_section "Sandbox Runtimes"
-print_note "Docker and Firecracker are both prepared when the host supports them."
+print_note "Docker and gVisor are both prepared when the host supports them."
 echo ""
 
 ensure_tool docker "Docker" install_docker
 echo ""
 
 if is_linux; then
-  ensure_tool socat "socat" install_socat
-  echo ""
-
-  if have_virtiofsd; then
-    print_success "virtiofsd is already installed."
-  else
-    print_note "virtiofsd is not installed yet."
-    if ! prompt_yes_no "Install virtiofsd now? (Y/n) "; then
-      print_warning "Skipping virtiofsd installation."
-    else
-      install_virtiofsd
-    fi
-  fi
-  echo ""
-
-  ensure_tool firecracker "Firecracker" install_firecracker
-  echo ""
-
-  if have_cmd firecracker && prompt_yes_no "Build Firecracker guest image assets now? (Y/n) "; then
-    if build_firecracker_assets; then
-      print_success "Firecracker guest assets are ready."
-    else
-      print_error "Firecracker guest asset build failed. Firecracker will stay unavailable until the kernel and rootfs assets are prepared."
-    fi
-  elif ! have_cmd firecracker; then
-    print_note "Skipping Firecracker guest image build because Firecracker is not installed yet."
-  fi
+  ensure_tool runsc "gVisor" install_gvisor
   echo ""
 else
-  print_note "Firecracker install is only supported on Linux. Docker will remain the only sandbox runtime on this host."
+  print_note "gVisor install is only supported on Linux. Docker will remain the only sandbox runtime on this host."
   echo ""
 fi
 
@@ -543,11 +444,11 @@ echo ""
 
 DEFAULT_SANDBOX_PROVIDER="docker"
 print_section "Sandbox Default"
-if firecracker_ready_for_maestro; then
+if gvisor_ready_for_maestro; then
   DEFAULT_SANDBOX_PROVIDER="$(prompt_default_sandbox)"
   print_success "Selected default sandbox provider: $DEFAULT_SANDBOX_PROVIDER"
 else
-  print_note "Firecracker is not fully ready on this host because $(firecracker_unavailable_reason)."
+  print_note "gVisor is not fully ready on this host because $(gvisor_unavailable_reason)."
   print_note "Docker will be the only offered sandbox provider."
   print_success "Default sandbox provider: Docker"
 fi

@@ -15,7 +15,8 @@ import {
 
 test("normalizes sandbox providers and legacy booleans", () => {
   assert.equal(normalizeSandboxProvider("docker"), "docker");
-  assert.equal(normalizeSandboxProvider("firecracker"), "firecracker");
+  assert.equal(normalizeSandboxProvider("gvisor"), "gvisor");
+  assert.equal(normalizeSandboxProvider("firecracker"), "gvisor");
   assert.equal(normalizeSandboxProvider("bogus"), "none");
   assert.equal(normalizeSandboxProvider(undefined, true), "docker");
 });
@@ -24,23 +25,23 @@ test("falls back to none when requested sandbox is unavailable", () => {
   assert.equal(
     resolveSandboxProviderAvailability("docker", {
       dockerAvailable: false,
-      firecrackerAvailable: false,
+      gvisorAvailable: false,
     }),
     "none"
   );
   assert.equal(
     resolveSandboxProviderAvailability("docker", {
       dockerAvailable: true,
-      firecrackerAvailable: false,
+      gvisorAvailable: false,
     }),
     "docker"
   );
   assert.equal(
-    resolveSandboxProviderAvailability("firecracker", {
+    resolveSandboxProviderAvailability("gvisor", {
       dockerAvailable: true,
-      firecrackerAvailable: true,
+      gvisorAvailable: true,
     }),
-    "firecracker"
+    "gvisor"
   );
 });
 
