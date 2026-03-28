@@ -19,7 +19,7 @@ export const TerminalStartupPhase = z.enum([
   "creating_worktree",
   "syncing_repository",
   "preparing_sandbox",
-  "starting_firecracker",
+  "starting_gvisor",
   "starting_docker",
   "launching_terminal",
 ]);

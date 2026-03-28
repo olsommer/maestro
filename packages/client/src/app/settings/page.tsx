@@ -517,13 +517,13 @@ function AgentDefaultsCard({
   refreshKey: number;
 }) {
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "firecracker">("docker");
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "gvisor">("docker");
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [worktreeMode, setWorktreeMode] = useState<"none" | "new">("none");
   const [saving, setSaving] = useState(false);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexAuthStatus | null>(null);
-  const [runtimeStatus, setRuntimeStatus] = useState<{ sandbox: { dockerAvailable: boolean; firecrackerAvailable: boolean } } | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<{ sandbox: { dockerAvailable: boolean; gvisorAvailable: boolean } } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(true);
 
   useEffect(() => {
@@ -545,7 +545,7 @@ function AgentDefaultsCard({
         setClaudeStatus(claude);
         setCodexStatus(codex);
         setRuntimeStatus(runtime);
-        if (runtime && !runtime.sandbox.firecrackerAvailable && settings?.sandboxProvider === "firecracker") {
+        if (runtime && !runtime.sandbox.gvisorAvailable && settings?.sandboxProvider === "gvisor") {
           setSandboxProvider(runtime.sandbox.dockerAvailable ? "docker" : "none");
         }
       })
@@ -557,7 +557,7 @@ function AgentDefaultsCard({
   const selectedProviderAvailable =
     provider === "claude" ? claudeAvailable : codexAvailable;
   const hasAvailableProvider = claudeAvailable || codexAvailable;
-  const firecrackerAvailable = Boolean(runtimeStatus?.sandbox.firecrackerAvailable);
+  const gvisorAvailable = Boolean(runtimeStatus?.sandbox.gvisorAvailable);
   const dockerAvailable = runtimeStatus?.sandbox.dockerAvailable ?? true;
   const isDirty =
     provider !== (settings?.agentDefaultProvider ?? "claude") ||
@@ -647,7 +647,7 @@ function AgentDefaultsCard({
               value={sandboxProvider}
               onValueChange={(value) => {
                 const nextProvider =
-                  value === "firecracker" || value === "docker" || value === "none"
+                  value === "gvisor" || value === "docker" || value === "none"
                     ? value
                     : "docker";
                 setSandboxProvider(nextProvider);
@@ -661,8 +661,8 @@ function AgentDefaultsCard({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="firecracker" disabled={!firecrackerAvailable}>
-                    {firecrackerAvailable ? "Firecracker" : "Firecracker (unavailable)"}
+                  <SelectItem value="gvisor" disabled={!gvisorAvailable}>
+                    {gvisorAvailable ? "gVisor" : "gVisor (unavailable)"}
                   </SelectItem>
                   <SelectItem value="docker" disabled={!dockerAvailable}>
                     {dockerAvailable ? "Docker" : "Docker (unavailable)"}

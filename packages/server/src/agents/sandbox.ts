@@ -4,7 +4,6 @@ import * as path from "path";
 import { execFileSync, execSync } from "child_process";
 import { fileURLToPath } from "url";
 import type { SandboxProvider } from "@maestro/wire";
-import { isFirecrackerAvailable } from "./firecracker.js";
 
 export interface SandboxConfig {
   /** Working directory (read-write) */
@@ -55,11 +54,13 @@ const DEFAULT_MAX_PROCESSES = 64;
 
 let dockerPath: string | null | undefined; // undefined = not checked yet
 let dockerServerReachable: boolean | undefined;
+let runscPath: string | null | undefined;
+let gvisorRuntimeAvailable: boolean | undefined;
 let dockerImageReadyFor: string | null = null;
 let cachedSelfMounts: DockerInspectMount[] | undefined;
 let runningInsideContainer: boolean | undefined;
 
-function resolveBinaryPath(binary: "docker"): string | null {
+function resolveBinaryPath(binary: "docker" | "runsc"): string | null {
   try {
     return execSync(`which ${binary}`, { encoding: "utf-8" }).trim() || null;
   } catch {
@@ -101,11 +102,45 @@ export function getDockerPath(): string {
   return dockerPath;
 }
 
+export function isGvisorAvailable(): boolean {
+  if (!isDockerAvailable()) {
+    gvisorRuntimeAvailable = false;
+    return false;
+  }
+
+  if (runscPath === undefined) {
+    runscPath = resolveBinaryPath("runsc");
+  }
+
+  if (!runscPath) {
+    gvisorRuntimeAvailable = false;
+    return false;
+  }
+
+  if (gvisorRuntimeAvailable === undefined) {
+    try {
+      const runtimes = execFileSync(
+        getDockerPath(),
+        ["info", "--format", "{{json .Runtimes}}"],
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }
+      );
+      gvisorRuntimeAvailable = runtimes.includes('"runsc"');
+    } catch {
+      gvisorRuntimeAvailable = false;
+    }
+  }
+
+  return gvisorRuntimeAvailable;
+}
+
 export function normalizeSandboxProvider(
   value: string | null | undefined,
   legacyEnabled = false
 ): SandboxProvider {
-  if (value === "none" || value === "docker" || value === "firecracker") {
+  if (value === "firecracker") {
+    return "gvisor";
+  }
+  if (value === "none" || value === "docker" || value === "gvisor") {
     return value;
   }
   return legacyEnabled ? "docker" : "none";
@@ -113,13 +148,13 @@ export function normalizeSandboxProvider(
 
 export function resolveSandboxProviderAvailability(
   requested: SandboxProvider,
-  availability: { dockerAvailable: boolean; firecrackerAvailable: boolean }
+  availability: { dockerAvailable: boolean; gvisorAvailable: boolean }
 ): SandboxProvider {
   if (requested === "docker") {
     return availability.dockerAvailable ? "docker" : "none";
   }
-  if (requested === "firecracker") {
-    return availability.firecrackerAvailable ? "firecracker" : "none";
+  if (requested === "gvisor") {
+    return availability.gvisorAvailable ? "gvisor" : "none";
   }
   return "none";
 }
@@ -127,14 +162,15 @@ export function resolveSandboxProviderAvailability(
 export function resolveSandboxProvider(requested: SandboxProvider): SandboxProvider {
   return resolveSandboxProviderAvailability(requested, {
     dockerAvailable: isDockerAvailable(),
-    firecrackerAvailable: isFirecrackerAvailable(),
+    gvisorAvailable: isGvisorAvailable(),
   });
 }
 
 export function buildDockerRunArgs(
   config: SandboxConfig,
   command: string[],
-  image = DEFAULT_DOCKER_IMAGE
+  image = DEFAULT_DOCKER_IMAGE,
+  runtimeName?: string
 ): string[] {
   const args: string[] = [
     "run",
@@ -150,6 +186,10 @@ export function buildDockerRunArgs(
     "--pids-limit", String(config.maxProcesses ?? DEFAULT_MAX_PROCESSES),
     "--name", `maestro-sandbox-${process.pid}-${Date.now()}`,
   ];
+
+  if (runtimeName) {
+    args.push("--runtime", runtimeName);
+  }
 
   const mounts = collectDockerMounts(config);
   for (const mount of mounts) {

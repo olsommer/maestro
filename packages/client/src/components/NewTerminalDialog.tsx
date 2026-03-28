@@ -49,10 +49,10 @@ export function NewTerminalDialog({ open, onClose }: Props) {
 
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<"none" | "claude" | "codex">("none");
-  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "firecracker">("docker");
+  const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "gvisor">("docker");
   const [sandboxAvailability, setSandboxAvailability] = useState({
     dockerAvailable: true,
-    firecrackerAvailable: false,
+    gvisorAvailable: false,
   });
   const [projectId, setProjectId] = useState("");
   const [autoWorktree, setAutoWorktree] = useState(false);
@@ -69,8 +69,8 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       .then(([settings, runtimeStatus]) => {
         if (settings) {
           const preferredProvider =
-            settings.sandboxProvider === "firecracker" &&
-            !runtimeStatus?.sandbox.firecrackerAvailable
+            settings.sandboxProvider === "gvisor" &&
+            !runtimeStatus?.sandbox.gvisorAvailable
               ? runtimeStatus?.sandbox.dockerAvailable
                 ? "docker"
                 : "none"
@@ -233,7 +233,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 value={sandboxProvider}
                 onValueChange={(value) => {
                   const nextProvider =
-                    value === "firecracker" || value === "docker" || value === "none"
+                    value === "gvisor" || value === "docker" || value === "none"
                       ? value
                       : "docker";
                   setSandboxProvider(nextProvider);
@@ -248,12 +248,12 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 <SelectContent>
                   <SelectGroup>
                     <SelectItem
-                      value="firecracker"
-                      disabled={!sandboxAvailability.firecrackerAvailable}
+                      value="gvisor"
+                      disabled={!sandboxAvailability.gvisorAvailable}
                     >
-                      {sandboxAvailability.firecrackerAvailable
-                        ? "Firecracker"
-                        : "Firecracker (unavailable)"}
+                      {sandboxAvailability.gvisorAvailable
+                        ? "gVisor"
+                        : "gVisor (unavailable)"}
                     </SelectItem>
                     <SelectItem value="docker" disabled={!sandboxAvailability.dockerAvailable}>
                       {sandboxAvailability.dockerAvailable

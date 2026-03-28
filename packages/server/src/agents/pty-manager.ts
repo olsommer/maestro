@@ -7,13 +7,13 @@ import type { SandboxProvider } from "@maestro/wire";
 import {
   resolveSandboxProvider,
   isDockerAvailable,
+  isGvisorAvailable,
   getDockerPath,
   buildDockerRunArgs,
   ensureDockerSandboxImage,
   type DockerMountSpec,
   type SandboxConfig,
 } from "./sandbox.js";
-import { ensureFirecrackerRuntime } from "./firecracker.js";
 
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
@@ -140,7 +140,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   let ptyProcess: pty.IPty;
   let cleanup: (() => void) | null = null;
 
-  if (sandboxProvider === "docker") {
+  if (sandboxProvider === "docker" || sandboxProvider === "gvisor") {
     const sandboxConfig: SandboxConfig = {
       cwd,
       homeDir: options.homeDir,
@@ -154,7 +154,8 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
     const dockerArgs = buildDockerRunArgs(
       sandboxConfig,
       ["/bin/bash", "-l"],
-      ensureDockerSandboxImage()
+      ensureDockerSandboxImage(),
+      sandboxProvider === "gvisor" ? "runsc" : undefined
     );
 
     ptyProcess = pty.spawn(getDockerPath(), dockerArgs, {
@@ -165,41 +166,16 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       env: { TERM: "xterm-256color" },
     });
 
-    console.log(`Spawned docker-sandboxed PTY for terminal ${options.terminalId}`);
-  } else if (sandboxProvider === "firecracker") {
-    const firecrackerRuntime = ensureFirecrackerRuntime({
-      terminalId: options.terminalId,
-      cwd,
-      homeDir: options.homeDir ?? os.homedir(),
-      env: fullEnv,
-      readonlyMounts: options.readonlyMounts,
-      writableMounts: options.writableMounts,
-      memoryLimit: options.memoryLimit,
-    });
-    cleanup = firecrackerRuntime.cleanup;
-
-    ptyProcess = pty.spawn(
-      firecrackerRuntime.bridgeCommand,
-      firecrackerRuntime.bridgeArgs,
-      {
-        name: "xterm-256color",
-        cols: options.cols ?? 120,
-        rows: options.rows ?? 30,
-        cwd,
-        env: { TERM: "xterm-256color" },
-      }
-    );
-
-    console.log(`Spawned firecracker-sandboxed PTY for terminal ${options.terminalId}`);
+    console.log(`Spawned ${sandboxProvider}-sandboxed PTY for terminal ${options.terminalId}`);
   } else {
     if (requestedSandboxProvider === "docker" && !isDockerAvailable()) {
       throw new Error(
         `Sandbox requested for terminal ${options.terminalId} but docker is not available.`
       );
     }
-    if (requestedSandboxProvider === "firecracker") {
+    if (requestedSandboxProvider === "gvisor" && !isGvisorAvailable()) {
       throw new Error(
-        `Sandbox requested for terminal ${options.terminalId} but firecracker is not available.`
+        `Sandbox requested for terminal ${options.terminalId} but gvisor is not available.`
       );
     }
 
