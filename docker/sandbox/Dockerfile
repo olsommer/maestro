@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
     bubblewrap \
     docker-ce-cli \
     docker-compose-plugin \
+    gh \
     git \
     python-is-python3 \
     python3 \
