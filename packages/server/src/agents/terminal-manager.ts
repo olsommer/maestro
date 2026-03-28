@@ -1,6 +1,12 @@
 import * as fs from "fs";
 import type { Server as SocketServer } from "socket.io";
-import type { AgentStatus, AgentProvider, SandboxProvider } from "@maestro/wire";
+import type {
+  AgentStatus,
+  AgentProvider,
+  SandboxProvider,
+  TerminalStartupPhase,
+  TerminalStartupStatus,
+} from "@maestro/wire";
 import {
   spawnPty,
   writeToPty,
@@ -344,16 +350,87 @@ function getRecentInputs(terminal: TerminalRecord): string[] {
   return recentInputs.filter((input): input is string => typeof input === "string").slice(-10);
 }
 
+interface StartupStepDefinition {
+  phase: TerminalStartupPhase;
+  label: string;
+}
+
+function buildStartupStatus(
+  steps: StartupStepDefinition[],
+  index: number
+): TerminalStartupStatus {
+  const step = steps[index];
+  const totalSteps = steps.length;
+  return {
+    phase: step.phase,
+    label: step.label,
+    step: index + 1,
+    totalSteps,
+    progress: Math.round(((index + 1) / totalSteps) * 100),
+  };
+}
+
+function buildStartupSteps(options: {
+  autoWorktree: boolean;
+  hasExistingWorktree: boolean;
+  syncRepo: boolean;
+  sandboxProvider: SandboxProvider;
+}): StartupStepDefinition[] {
+  const steps: StartupStepDefinition[] = [];
+
+  if (options.autoWorktree && !options.hasExistingWorktree) {
+    steps.push(
+      { phase: "resolving_worktree", label: "Resolving worktree base" },
+      { phase: "creating_worktree", label: "Creating worktree" }
+    );
+  } else if (options.syncRepo) {
+    steps.push({ phase: "syncing_repository", label: "Syncing repository" });
+  } else {
+    steps.push({ phase: "preparing_workspace", label: "Preparing workspace" });
+  }
+
+  if (options.sandboxProvider === "docker") {
+    steps.push(
+      { phase: "preparing_sandbox", label: "Preparing sandbox" },
+      { phase: "starting_docker", label: "Starting Docker runtime" }
+    );
+  } else if (options.sandboxProvider !== "none") {
+    steps.push({ phase: "preparing_sandbox", label: "Preparing sandbox" });
+  }
+
+  steps.push({ phase: "launching_terminal", label: "Launching terminal" });
+  return steps;
+}
+
+function setTerminalStartupStatus(
+  terminalId: string,
+  status: AgentStatus,
+  startupStatus: TerminalStartupStatus | null,
+  error: string | null,
+  currentTask?: string | null
+) {
+  updateTerminalRecord(terminalId, {
+    status,
+    startupStatus,
+    error,
+    ...(currentTask !== undefined ? { currentTask } : {}),
+    lastActivity: new Date().toISOString(),
+  });
+  emitTerminalStatus(terminalId, status, error, startupStatus);
+}
+
 function emitTerminalStatus(
   terminalId: string,
   status: AgentStatus,
-  error: string | null
+  error: string | null,
+  startupStatus?: TerminalStartupStatus | null
 ) {
   const terminal = getTerminalRecord(terminalId);
   deps.io.emit("terminal:status", {
     terminalId,
     status,
     error,
+    startupStatus: startupStatus ?? terminal?.startupStatus ?? null,
     recentInputs: terminal ? getRecentInputs(terminal) : [],
   });
 }
@@ -366,6 +443,7 @@ function hydrateTerminal(terminal: TerminalRecord | null): TerminalWithProject |
   const project = terminal.projectId ? getProjectRecordById(terminal.projectId) : null;
   return {
     ...terminal,
+    startupStatus: terminal.startupStatus ?? null,
     recentInputs: getRecentInputs(terminal),
     project: project ? { id: project.id, name: project.name } : null,
   };
@@ -403,6 +481,7 @@ export async function createTerminal(options: {
     secondaryProjectPaths: options.secondaryProjectPaths ?? [],
     skills: options.skills ?? [],
     status: "idle",
+    startupStatus: null,
     currentTask: null,
     error: null,
     recentInputs: [],
@@ -449,83 +528,18 @@ export async function startTerminal(
     throw new Error(`Agent ${terminalId} is already running`);
   }
 
-  let cwd = agent.worktreePath || agent.projectPath;
-  if (agent.autoWorktree && !agent.worktreePath) {
-    if (!isGitRepo(agent.projectPath)) {
-      throw new Error("Auto-worktree requires the project to be a git repository");
-    }
-
-    const project = agent.projectId ? getProjectRecordById(agent.projectId) : null;
-    const startPoint =
-      options?.syncRepo === false
-        ? "HEAD"
-        : (
-            await resolveAutoWorktreeStartPoint({
-              projectId: agent.projectId,
-              projectPath: agent.projectPath,
-              preferredBranch: project?.defaultBranch ?? null,
-            })
-          ).ref;
-    const worktreePath = createTerminalWorktree(agent.projectPath, terminalId, startPoint);
-    updateTerminalRecord(terminalId, {
-      worktreePath,
-      lastActivity: new Date().toISOString(),
-    });
-    cwd = worktreePath;
-  } else if (options?.syncRepo !== false) {
-    await syncProjectRepoBeforeSpawn({
-      projectId: agent.projectId,
-      projectPath: cwd,
-    });
-  }
-
-  if (!fs.existsSync(cwd)) {
-    throw new Error(`Agent working directory does not exist: ${cwd}`);
-  }
-
-  const provider = getProvider(agent.provider as AgentProvider, {
-    displayName: agent.customDisplayName,
-    commandTemplate: agent.customCommandTemplate,
-    env: agent.customEnv,
-  });
-  const binaryPath = provider.resolveBinaryPath();
-  const envVars = provider.getPtyEnvVars(agent.id, cwd, agent.skills);
-  const githubEnvVars = getGitHubChildEnvVars();
-  const childEnv = {
-    ...envVars,
-    ...githubEnvVars,
-  };
-
   const settings = getSettings();
   const sandboxProvider =
     agent.disableSandbox
       ? "none"
       : (options?.sandboxProvider ?? agent.sandboxProvider ?? settings.sandboxProvider);
-  const sandboxEnabled = sandboxProvider !== "none";
-  const isolatedHome =
-    sandboxProvider === "docker" ? ensureTerminalIsolationHome(terminalId) : null;
-  const dockerRuntime =
-    sandboxProvider === "docker" ? ensureTerminalDockerRuntime(terminalId) : null;
-  const runtimeEnv = dockerRuntime
-    ? {
-        DOCKER_HOST: dockerRuntime.dockerHost,
-        DOCKER_BUILDKIT: "1",
-        COMPOSE_DOCKER_CLI_BUILD: "1",
-        COMPOSE_PROJECT_NAME: dockerRuntime.composeProjectName,
-      }
-    : {};
-  Object.assign(childEnv, runtimeEnv);
-
-  const command = provider.buildInteractiveCommand({
-    binaryPath,
-    prompt,
-    projectPath: cwd,
-    skipPermissions: agent.skipPermissions,
-    sandbox: sandboxEnabled,
-    mcpConfigPath: options?.mcpConfigPath,
-    secondaryProjectPaths: agent.secondaryProjectPaths,
-    skills: agent.skills,
+  const startupSteps = buildStartupSteps({
+    autoWorktree: agent.autoWorktree,
+    hasExistingWorktree: Boolean(agent.worktreePath),
+    syncRepo: options?.syncRepo !== false,
+    sandboxProvider,
   });
+  const currentTask = prompt.trim() ? prompt.slice(0, 200) : null;
 
   clearRuntimeTimers(rt);
   const persistedSnapshot = readTerminalSnapshot(terminalId);
@@ -540,173 +554,318 @@ export async function startTerminal(
   resetOutputBuffer(rt);
   prepareExitWaiter(rt);
 
-  const ptyInstance = spawnPty({
-    terminalId,
-    cwd,
-    env: childEnv,
-    homeDir: isolatedHome?.homeDir,
-    sandboxProvider,
-    readonlyMounts: agent.secondaryProjectPaths,
-    dockerExtraMounts: dockerRuntime ? [dockerRuntime.socketMount] : undefined,
-    onData: (data) => {
-      if (!terminalCanUseRuntime(terminalId, rt)) {
-        return;
+  try {
+    let startupStepIndex = 0;
+    setTerminalStartupStatus(
+      terminalId,
+      "waiting" as AgentStatus,
+      buildStartupStatus(startupSteps, startupStepIndex),
+      null,
+      currentTask
+    );
+
+    let cwd = agent.worktreePath || agent.projectPath;
+    if (agent.autoWorktree && !agent.worktreePath) {
+      if (!isGitRepo(agent.projectPath)) {
+        throw new Error("Auto-worktree requires the project to be a git repository");
       }
 
-      const seq = rt.nextOutputSeq++;
-      appendOutputChunk(rt, { seq, data });
+      const project = agent.projectId ? getProjectRecordById(agent.projectId) : null;
+      const startPoint =
+        options?.syncRepo === false
+          ? "HEAD"
+          : (
+              await resolveAutoWorktreeStartPoint({
+                projectId: agent.projectId,
+                projectPath: agent.projectPath,
+                preferredBranch: project?.defaultBranch ?? null,
+              })
+            ).ref;
 
-      deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
+      startupStepIndex += 1;
+      setTerminalStartupStatus(
         terminalId,
-        data,
-        seq,
+        "waiting" as AgentStatus,
+        buildStartupStatus(startupSteps, startupStepIndex),
+        null,
+        currentTask
+      );
+
+      const worktreePath = createTerminalWorktree(agent.projectPath, terminalId, startPoint);
+      updateTerminalRecord(terminalId, {
+        worktreePath,
+        lastActivity: new Date().toISOString(),
       });
+      cwd = worktreePath;
+    } else if (options?.syncRepo !== false) {
+      await syncProjectRepoBeforeSpawn({
+        projectId: agent.projectId,
+        projectPath: cwd,
+      });
+    }
 
-      void rt.replica.write(data, seq);
-      scheduleSnapshotPersist(terminalId, rt);
-      rt.pendingHistory.push(data);
-      scheduleHistoryFlush(terminalId, rt);
-    },
-    onExit: async (exitCode) => {
-      const newStatus: AgentStatus = exitCode === 0 ? "completed" : "error";
-      rt.ptyId = null;
-      const agent = getTerminalRecord(terminalId);
-      const ranForMs = rt.lastStartedAt ? Date.now() - rt.lastStartedAt : null;
-      const intentionalStop = rt.intentionalStop;
-      rt.lastStartedAt = null;
+    if (!fs.existsSync(cwd)) {
+      throw new Error(`Agent working directory does not exist: ${cwd}`);
+    }
 
-      try {
-        if (rt.deleting || rt.deleted) {
+    const provider = getProvider(agent.provider as AgentProvider, {
+      displayName: agent.customDisplayName,
+      commandTemplate: agent.customCommandTemplate,
+      env: agent.customEnv,
+    });
+    const binaryPath = provider.resolveBinaryPath();
+    const envVars = provider.getPtyEnvVars(agent.id, cwd, agent.skills);
+    const githubEnvVars = getGitHubChildEnvVars();
+    const childEnv = {
+      ...envVars,
+      ...githubEnvVars,
+    };
+
+    const sandboxEnabled = sandboxProvider !== "none";
+    let isolatedHome: ReturnType<typeof ensureTerminalIsolationHome> | null = null;
+    let dockerRuntime: ReturnType<typeof ensureTerminalDockerRuntime> | null = null;
+    if (sandboxProvider === "docker") {
+      startupStepIndex += 1;
+      setTerminalStartupStatus(
+        terminalId,
+        "waiting" as AgentStatus,
+        buildStartupStatus(startupSteps, startupStepIndex),
+        null,
+        currentTask
+      );
+      isolatedHome = ensureTerminalIsolationHome(terminalId);
+
+      startupStepIndex += 1;
+      setTerminalStartupStatus(
+        terminalId,
+        "waiting" as AgentStatus,
+        buildStartupStatus(startupSteps, startupStepIndex),
+        null,
+        currentTask
+      );
+      dockerRuntime = ensureTerminalDockerRuntime(terminalId);
+    }
+    const runtimeEnv = dockerRuntime
+      ? {
+          DOCKER_HOST: dockerRuntime.dockerHost,
+          DOCKER_BUILDKIT: "1",
+          COMPOSE_DOCKER_CLI_BUILD: "1",
+          COMPOSE_PROJECT_NAME: dockerRuntime.composeProjectName,
+        }
+      : {};
+    Object.assign(childEnv, runtimeEnv);
+
+    startupStepIndex = startupSteps.length - 1;
+    setTerminalStartupStatus(
+      terminalId,
+      "waiting" as AgentStatus,
+      buildStartupStatus(startupSteps, startupStepIndex),
+      null,
+      currentTask
+    );
+
+    const command = provider.buildInteractiveCommand({
+      binaryPath,
+      prompt,
+      projectPath: cwd,
+      skipPermissions: agent.skipPermissions,
+      sandbox: sandboxEnabled,
+      mcpConfigPath: options?.mcpConfigPath,
+      secondaryProjectPaths: agent.secondaryProjectPaths,
+      skills: agent.skills,
+    });
+
+    const ptyInstance = spawnPty({
+      terminalId,
+      cwd,
+      env: childEnv,
+      homeDir: isolatedHome?.homeDir,
+      sandboxProvider,
+      readonlyMounts: agent.secondaryProjectPaths,
+      dockerExtraMounts: dockerRuntime ? [dockerRuntime.socketMount] : undefined,
+      onData: (data) => {
+        if (!terminalCanUseRuntime(terminalId, rt)) {
           return;
         }
 
-        await flushRuntimePersistence(terminalId, rt);
+        const seq = rt.nextOutputSeq++;
+        appendOutputChunk(rt, { seq, data });
 
-        if (!agent) {
-          return;
-        }
+        deps.io.to(`terminal:${terminalId}`).emit("terminal:output", {
+          terminalId,
+          data,
+          seq,
+        });
 
-        if (intentionalStop) {
-          updateTerminalRecord(terminalId, {
-            status: "idle",
-            currentTask: null,
-            error: null,
-            lastActivity: new Date().toISOString(),
-          });
+        void rt.replica.write(data, seq);
+        scheduleSnapshotPersist(terminalId, rt);
+        rt.pendingHistory.push(data);
+        scheduleHistoryFlush(terminalId, rt);
+      },
+      onExit: async (exitCode) => {
+        const newStatus: AgentStatus = exitCode === 0 ? "completed" : "error";
+        rt.ptyId = null;
+        const agent = getTerminalRecord(terminalId);
+        const ranForMs = rt.lastStartedAt ? Date.now() - rt.lastStartedAt : null;
+        const intentionalStop = rt.intentionalStop;
+        rt.lastStartedAt = null;
 
-          emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
-        } else {
-          updateTerminalRecord(terminalId, {
-            status: newStatus,
-            currentTask: null,
-            error: exitCode !== 0 ? `Exited with code ${exitCode}` : null,
-            lastActivity: new Date().toISOString(),
-          });
+        try {
+          if (rt.deleting || rt.deleted) {
+            return;
+          }
 
-          emitTerminalStatus(
-            terminalId,
-            newStatus,
-            exitCode !== 0 ? `Exited with code ${exitCode}` : null
-          );
-        }
+          await flushRuntimePersistence(terminalId, rt);
 
-        const shouldAutoRestart =
-          !isShuttingDown &&
-          agent.kind !== "kanban" &&
-          agent.kind !== "automation" &&
-          agent.kind !== "scheduler" &&
-          !intentionalStop &&
-          (exitCode === 0 || ranForMs === null || ranForMs >= 5_000);
+          if (!agent) {
+            return;
+          }
 
-        rt.intentionalStop = false;
-
-        if (agent.kanbanTaskId) {
-          try {
-            const taskResult = await finalizeKanbanTaskAfterTerminalExit(
-              terminalId,
-              agent.kanbanTaskId,
-              exitCode === 0
-            );
-
+          if (intentionalStop) {
             updateTerminalRecord(terminalId, {
-              status: exitCode === 0 ? "idle" : newStatus,
+              status: "idle",
+              startupStatus: null,
               currentTask: null,
-              error: exitCode === 0 ? null : `Exited with code ${exitCode}`,
-              kanbanTaskId: null,
+              error: null,
+              lastActivity: new Date().toISOString(),
+            });
+
+            emitTerminalStatus(terminalId, "idle" as AgentStatus, null, null);
+          } else {
+            updateTerminalRecord(terminalId, {
+              status: newStatus,
+              startupStatus: null,
+              currentTask: null,
+              error: exitCode !== 0 ? `Exited with code ${exitCode}` : null,
               lastActivity: new Date().toISOString(),
             });
 
             emitTerminalStatus(
               terminalId,
-              exitCode === 0 ? "idle" : newStatus,
-              exitCode === 0 ? null : `Exited with code ${exitCode}`
+              newStatus,
+              exitCode !== 0 ? `Exited with code ${exitCode}` : null,
+              null
             );
-            deps.io.emit("kanban:updated", {
-              taskId: taskResult.taskId,
-              column: taskResult.column,
-              assignedTerminalId: terminalId,
-            });
-          } catch (error) {
-            console.error(`Failed to finalize kanban task for terminal ${terminalId}:`, error);
-            updateTerminalRecord(terminalId, {
-              kanbanTaskId: null,
-              lastActivity: new Date().toISOString(),
-            });
           }
-        }
 
-        if (shouldAutoRestart && getTerminalRecord(terminalId)) {
-          updateTerminalRecord(terminalId, {
-            status: "idle",
-            currentTask: null,
-            error: null,
-            lastActivity: new Date().toISOString(),
-          });
-          emitTerminalStatus(terminalId, "idle" as AgentStatus, null);
+          const shouldAutoRestart =
+            !isShuttingDown &&
+            agent.kind !== "kanban" &&
+            agent.kind !== "automation" &&
+            agent.kind !== "scheduler" &&
+            !intentionalStop &&
+            (exitCode === 0 || ranForMs === null || ranForMs >= 5_000);
 
-          rt.restartTimer = setTimeout(() => {
-            rt.restartTimer = null;
-            void startTerminal(terminalId, "", { syncRepo: false }).catch((error) => {
-              console.error(`Failed to auto-restart terminal ${terminalId}:`, error);
-              if (!getTerminalRecord(terminalId)) {
-                return;
-              }
+          rt.intentionalStop = false;
+
+          if (agent.kanbanTaskId) {
+            try {
+              const taskResult = await finalizeKanbanTaskAfterTerminalExit(
+                terminalId,
+                agent.kanbanTaskId,
+                exitCode === 0
+              );
+
               updateTerminalRecord(terminalId, {
-                status: "error",
-                error:
-                  error instanceof Error ? error.message : "Failed to auto-restart terminal",
+                status: exitCode === 0 ? "idle" : newStatus,
+                startupStatus: null,
+                currentTask: null,
+                error: exitCode === 0 ? null : `Exited with code ${exitCode}`,
+                kanbanTaskId: null,
                 lastActivity: new Date().toISOString(),
               });
+
               emitTerminalStatus(
                 terminalId,
-                "error" as AgentStatus,
-                error instanceof Error ? error.message : "Failed to auto-restart terminal"
+                exitCode === 0 ? "idle" : newStatus,
+                exitCode === 0 ? null : `Exited with code ${exitCode}`,
+                null
               );
+              deps.io.emit("kanban:updated", {
+                taskId: taskResult.taskId,
+                column: taskResult.column,
+                assignedTerminalId: terminalId,
+              });
+            } catch (error) {
+              console.error(`Failed to finalize kanban task for terminal ${terminalId}:`, error);
+              updateTerminalRecord(terminalId, {
+                kanbanTaskId: null,
+                lastActivity: new Date().toISOString(),
+              });
+            }
+          }
+
+          if (shouldAutoRestart && getTerminalRecord(terminalId)) {
+            updateTerminalRecord(terminalId, {
+              status: "idle",
+              startupStatus: null,
+              currentTask: null,
+              error: null,
+              lastActivity: new Date().toISOString(),
             });
-          }, 250);
+            emitTerminalStatus(terminalId, "idle" as AgentStatus, null, null);
+
+            rt.restartTimer = setTimeout(() => {
+              rt.restartTimer = null;
+              void startTerminal(terminalId, "", { syncRepo: false }).catch((error) => {
+                console.error(`Failed to auto-restart terminal ${terminalId}:`, error);
+                if (!getTerminalRecord(terminalId)) {
+                  return;
+                }
+                updateTerminalRecord(terminalId, {
+                  status: "error",
+                  startupStatus: null,
+                  error:
+                    error instanceof Error ? error.message : "Failed to auto-restart terminal",
+                  lastActivity: new Date().toISOString(),
+                });
+                emitTerminalStatus(
+                  terminalId,
+                  "error" as AgentStatus,
+                  error instanceof Error ? error.message : "Failed to auto-restart terminal",
+                  null
+                );
+              });
+            }, 250);
+          }
+        } finally {
+          resolveExitWaiter(rt);
         }
-      } finally {
-        resolveExitWaiter(rt);
-      }
-    },
-  });
+      },
+    });
 
-  rt.ptyId = ptyInstance.id;
+    rt.ptyId = ptyInstance.id;
 
-  updateTerminalRecord(terminalId, {
-    status: "running",
-    currentTask: prompt.trim() ? prompt.slice(0, 200) : null,
-    error: null,
-    lastActivity: new Date().toISOString(),
-  });
+    updateTerminalRecord(terminalId, {
+      status: "running",
+      startupStatus: null,
+      currentTask,
+      error: null,
+      lastActivity: new Date().toISOString(),
+    });
 
-  emitTerminalStatus(terminalId, "running" as AgentStatus, null);
+    emitTerminalStatus(terminalId, "running" as AgentStatus, null, null);
 
-  const shellCommand = prepareShellCommand(command, agent.kind);
-  if (shellCommand) {
-    writeCommandToPty(ptyInstance.id, shellCommand);
+    const shellCommand = prepareShellCommand(command, agent.kind);
+    if (shellCommand) {
+      writeCommandToPty(ptyInstance.id, shellCommand);
+    }
+    return { ptyId: ptyInstance.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to start terminal session";
+    if (getTerminalRecord(terminalId)) {
+      updateTerminalRecord(terminalId, {
+        status: "error",
+        startupStatus: null,
+        currentTask: null,
+        error: message,
+        lastActivity: new Date().toISOString(),
+      });
+      emitTerminalStatus(terminalId, "error" as AgentStatus, message, null);
+    }
+    resolveExitWaiter(rt);
+    throw error;
   }
-  return { ptyId: ptyInstance.id };
 }
 
 export async function stopTerminal(terminalId: string) {
@@ -735,6 +894,7 @@ export async function stopTerminal(terminalId: string) {
 
   updateTerminalRecord(terminalId, {
     status: "idle",
+    startupStatus: null,
     currentTask: null,
     error: null,
     lastActivity: new Date().toISOString(),
@@ -754,6 +914,7 @@ export async function deleteTerminal(terminalId: string) {
     updateTerminalRecord(terminalId, {
       kanbanTaskId: null,
       currentTask: null,
+      startupStatus: null,
       lastActivity: new Date().toISOString(),
     });
   }
@@ -888,6 +1049,7 @@ export async function restorePersistentTerminals() {
         console.error(`Failed to restore terminal ${terminal.id}:`, error);
         updateTerminalRecord(terminal.id, {
           status: "error",
+          startupStatus: null,
           error:
             error instanceof Error ? error.message : "Failed to restore terminal session",
           lastActivity: new Date().toISOString(),

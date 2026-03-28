@@ -13,6 +13,26 @@ export const AgentStatus = z.enum([
 ]);
 export type AgentStatus = z.infer<typeof AgentStatus>;
 
+export const TerminalStartupPhase = z.enum([
+  "preparing_workspace",
+  "resolving_worktree",
+  "creating_worktree",
+  "syncing_repository",
+  "preparing_sandbox",
+  "starting_docker",
+  "launching_terminal",
+]);
+export type TerminalStartupPhase = z.infer<typeof TerminalStartupPhase>;
+
+export const TerminalStartupStatus = z.object({
+  phase: TerminalStartupPhase,
+  label: z.string(),
+  step: z.number().int().positive(),
+  totalSteps: z.number().int().positive(),
+  progress: z.number().int().min(0).max(100),
+});
+export type TerminalStartupStatus = z.infer<typeof TerminalStartupStatus>;
+
 export const AgentSpawnOptions = z
   .object({
     name: z.string().optional(),
@@ -60,6 +80,7 @@ export const AgentInfo = z.object({
   customEnv: z.record(z.string()).nullable().optional(),
   sandboxProvider: SandboxProviderSchema.nullable().optional(),
   status: AgentStatus,
+  startupStatus: TerminalStartupStatus.nullable().optional(),
   currentTask: z.string().nullable(),
   error: z.string().nullable(),
   recentInputs: z.array(z.string()).default([]),

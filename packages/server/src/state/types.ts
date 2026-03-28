@@ -1,4 +1,4 @@
-import type { SandboxProvider } from "@maestro/wire";
+import type { SandboxProvider, TerminalStartupStatus } from "@maestro/wire";
 
 export interface ProjectRecord {
   id: string;
@@ -32,6 +32,7 @@ export interface TerminalRecord {
   autoWorktree: boolean;
   skills: string[];
   status: "idle" | "running" | "waiting" | "completed" | "error";
+  startupStatus: TerminalStartupStatus | null;
   currentTask: string | null;
   error: string | null;
   recentInputs: string[];

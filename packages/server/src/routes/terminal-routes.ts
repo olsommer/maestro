@@ -109,6 +109,7 @@ export async function registerTerminalRoutes(app: FastifyInstance) {
           err instanceof Error ? err.message : "Failed to start terminal session";
         updateTerminalRecord(createdAgent.id, {
           status: "error",
+          startupStatus: null,
           error: message,
           lastActivity: new Date().toISOString(),
         });

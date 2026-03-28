@@ -38,11 +38,13 @@ function SocketCore({ children }: { children: React.ReactNode }) {
       terminalId: string;
       status: string;
       error?: string | null;
+      startupStatus?: import("@maestro/wire").TerminalStartupStatus | null;
       recentInputs?: string[];
     }) => {
       updateAgent(data.terminalId, {
         status: data.status,
         error: data.error ?? null,
+        startupStatus: data.startupStatus ?? null,
         ...(data.recentInputs !== undefined ? { recentInputs: data.recentInputs } : {}),
       });
     };
