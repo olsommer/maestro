@@ -75,6 +75,19 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function formatGitHubSourceLabel(source: GitHubConnectionStatus["source"]): string {
+  switch (source) {
+    case "env":
+      return "Environment";
+    case "gh":
+      return "GitHub CLI";
+    case "stored":
+      return "Stored Token";
+    default:
+      return "Unknown";
+  }
+}
+
 function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
   const [status, setStatus] = useState<GitHubConnectionStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -126,8 +139,14 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
         </CardTitle>
         <CardDescription>
           {status?.connected
-            ? `Connected as ${status.login}${status.source === "env" ? " (via environment)" : ""}`
-            : "Connect with a Personal Access Token (classic) for issue sync and automations."}
+            ? `Connected as ${status.login}${
+                status.source === "env"
+                  ? " (via environment)"
+                  : status.source === "gh"
+                    ? " (via GitHub CLI)"
+                    : ""
+              }`
+            : "Connect with GitHub CLI or a Personal Access Token (classic) for issue sync and automations."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -155,7 +174,7 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
               <Field orientation="horizontal">
                 <FieldLabel>Source</FieldLabel>
                 <FieldContent className="items-end">
-                  <Badge variant="secondary">{status.source === "env" ? "Environment" : "Stored"}</Badge>
+                  <Badge variant="secondary">{formatGitHubSourceLabel(status.source)}</Badge>
                 </FieldContent>
               </Field>
             </FieldGroup>
@@ -169,7 +188,8 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
         ) : (
           <>
             <FieldDescription>
-              Create a classic PAT at{" "}
+              Run <code className="text-xs">gh auth login</code> on this machine, or create a
+              classic PAT at{" "}
               <a
                 href="https://github.com/settings/tokens/new"
                 target="_blank"
@@ -179,6 +199,10 @@ function GitHubConnectionCard({ refreshKey }: { refreshKey: number }) {
                 github.com/settings/tokens
               </a>{" "}
               with <code className="text-xs">repo</code> and <code className="text-xs">read:org</code> scopes.
+            </FieldDescription>
+            <FieldDescription>
+              Paste it below if you want Maestro to store its own token instead of using the
+              host GitHub CLI session.
             </FieldDescription>
             <div className="flex gap-2">
               <Input
@@ -271,32 +295,14 @@ function ClaudeConnectionCard({ refreshKey }: { refreshKey: number }) {
       <CardHeader>
         <CardTitle className="text-sm">Claude Code</CardTitle>
         <CardDescription>
-          {status?.loggedIn
-            ? `Connected as ${status.email ?? "unknown"}${status.orgName ? ` (${status.orgName})` : ""}`
-            : "Connect to Claude Code for AI-powered agents."}
+          {status?.loggedIn ? "Connected" : "Connect to Claude Code for AI-powered agents."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {status?.loggedIn ? (
-          <FieldGroup>
-            <Field orientation="horizontal">
-              <FieldLabel>Account</FieldLabel>
-              <FieldContent className="items-end">
-                <span className="text-sm">{status.email}</span>
-              </FieldContent>
-            </Field>
-            {status.authMethod && (
-              <>
-                <FieldSeparator />
-                <Field orientation="horizontal">
-                  <FieldLabel>Auth method</FieldLabel>
-                  <FieldContent className="items-end">
-                    <Badge variant="secondary">{status.authMethod}</Badge>
-                  </FieldContent>
-                </Field>
-              </>
-            )}
-          </FieldGroup>
+          <Badge variant="secondary" className="w-fit">
+            Connected
+          </Badge>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">

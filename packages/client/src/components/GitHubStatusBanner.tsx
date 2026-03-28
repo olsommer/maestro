@@ -46,11 +46,11 @@ export function GitHubStatusBanner() {
       <div className="mx-auto max-w-6xl">
         <Alert>
           <AlertTriangleIcon />
-          <AlertTitle>GitHub token missing</AlertTitle>
+          <AlertTitle>GitHub auth missing</AlertTitle>
           <AlertDescription>
-            {status.github.warningMessage} Add <code>GITHUB_TOKEN</code> or{" "}
-            <code>GH_TOKEN</code> to the server/container environment to enable private
-            issue sync and GitHub automations.
+            {status.github.warningMessage} Run <code>gh auth login</code> on the host or
+            add <code>GITHUB_TOKEN</code> or <code>GH_TOKEN</code> to the server
+            environment to enable private issue sync and GitHub automations.
           </AlertDescription>
         </Alert>
       </div>

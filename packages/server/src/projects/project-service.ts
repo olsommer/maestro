@@ -6,7 +6,7 @@ import type { ProjectCreateInput } from "@maestro/wire";
 import {
   deleteTerminal,
 } from "../agents/terminal-manager.js";
-import { resolveGitHubToken, runGhCommand } from "../integrations/github.js";
+import { hasGitHubAuth, runGhCommand } from "../integrations/github.js";
 import { unregisterJob } from "../scheduler/scheduler.js";
 import { listTerminalRecords } from "../state/terminals.js";
 import { deleteKanbanStateForProject, probeGitHubMirror } from "../state/kanban.js";
@@ -182,10 +182,9 @@ function cloneRepository(
   ensureProjectPathAvailable(localPath);
 
   const branch = defaultBranch?.trim();
-  const hasGitHubToken = Boolean(resolveGitHubToken().token);
   let ghCloneError: string | null = null;
 
-  if (repo.githubOwner && repo.githubRepo && hasGitHubToken) {
+  if (repo.githubOwner && repo.githubRepo && hasGitHubAuth()) {
     const ghArgs = ["repo", "clone", `${repo.githubOwner}/${repo.githubRepo}`, localPath];
     if (branch) {
       ghArgs.push("--", "--branch", branch);

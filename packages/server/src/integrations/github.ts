@@ -17,7 +17,7 @@ interface StoredGitHubConnectionRecord {
 
 export interface GitHubConnectionStatus {
   connected: boolean;
-  source: "stored" | "env" | null;
+  source: "stored" | "env" | "gh" | null;
   canDisconnect: boolean;
   login: string | null;
   name: string | null;
@@ -43,6 +43,24 @@ export interface ResolvedGitHubToken {
   source: "stored" | "env" | null;
 }
 
+interface GhAuthStatusResponse {
+  hosts?: Record<
+    string,
+    Array<{
+      state?: string;
+      active?: boolean;
+      login?: string;
+      scopes?: string;
+    }>
+  >;
+}
+
+interface GitHubCliSession {
+  loggedIn: boolean;
+  login: string | null;
+  scopes: string[];
+}
+
 interface GhRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   input?: unknown;
@@ -62,7 +80,7 @@ function readStoredGitHubConnection(): StoredGitHubConnectionRecord | null {
 
 function toConnectionStatus(
   record: StoredGitHubConnectionRecord | null,
-  source: "stored" | "env" | null
+  source: "stored" | "env" | "gh" | null
 ): GitHubConnectionStatus {
   return {
     connected: Boolean(source),
@@ -79,6 +97,76 @@ function toConnectionStatus(
 
 function getEnvGitHubToken(): string | null {
   return process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
+}
+
+function commandExists(binary: string): boolean {
+  try {
+    execFileSync("which", [binary], { stdio: "pipe", encoding: "utf8" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseScopes(raw: string | undefined): string[] {
+  return raw
+    ? raw
+        .split(",")
+        .map((scope) => scope.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function getGitHubCliSession(): GitHubCliSession {
+  if (!commandExists("gh")) {
+    return {
+      loggedIn: false,
+      login: null,
+      scopes: [],
+    };
+  }
+
+  try {
+    const raw = execFileSync(
+      "gh",
+      ["auth", "status", "--hostname", "github.com", "--active", "--json", "hosts"],
+      {
+        encoding: "utf8",
+        timeout: 15_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    ).trim();
+    const parsed = JSON.parse(raw) as GhAuthStatusResponse;
+    const accounts = parsed.hosts?.["github.com"];
+    const activeAccount = accounts?.find((account) => account.active) ?? accounts?.[0];
+
+    if (!activeAccount || activeAccount.state !== "success") {
+      return {
+        loggedIn: false,
+        login: activeAccount?.login ?? null,
+        scopes: parseScopes(activeAccount?.scopes),
+      };
+    }
+
+    return {
+      loggedIn: true,
+      login: activeAccount.login ?? null,
+      scopes: parseScopes(activeAccount.scopes),
+    };
+  } catch {
+    return {
+      loggedIn: false,
+      login: null,
+      scopes: [],
+    };
+  }
+}
+
+export function hasGitHubAuth(): boolean {
+  if (resolveGitHubToken().token) {
+    return true;
+  }
+  return getGitHubCliSession().loggedIn;
 }
 
 function getGhEnv(token?: string | null): NodeJS.ProcessEnv {
@@ -160,29 +248,43 @@ export function runGitHubApi<T>(endpoint: string, options?: GhRequestOptions): T
   return runGhApiWithHeaders<T>(endpoint, options).data;
 }
 
-async function fetchViewer(token: string): Promise<StoredGitHubConnectionRecord> {
+interface GitHubViewerRecord {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  scopes: string[];
+  verifiedAt: string;
+}
+
+function fetchViewerRecord(token?: string | null): GitHubViewerRecord {
   const { data, headers } = runGhApiWithHeaders<{
     login: string;
     name: string | null;
     avatar_url: string | null;
   }>("user", { token });
 
+  return {
+    login: data.login,
+    name: data.name,
+    avatarUrl: data.avatar_url,
+    scopes: parseScopes(headers["x-oauth-scopes"]),
+    verifiedAt: nowIso(),
+  };
+}
+
+async function fetchViewer(token: string): Promise<StoredGitHubConnectionRecord> {
+  const record = fetchViewerRecord(token);
   const now = nowIso();
   const current = readStoredGitHubConnection();
 
   return {
     token,
-    login: data.login,
-    name: data.name,
-    avatarUrl: data.avatar_url,
-    scopes: headers["x-oauth-scopes"]
-      ? headers["x-oauth-scopes"]
-          .split(",")
-          .map((scope) => scope.trim())
-          .filter(Boolean)
-      : [],
+    login: record.login,
+    name: record.name,
+    avatarUrl: record.avatarUrl,
+    scopes: record.scopes,
     connectedAt: current?.token === token ? current.connectedAt : now,
-    verifiedAt: now,
+    verifiedAt: record.verifiedAt,
   };
 }
 
@@ -232,11 +334,11 @@ export async function connectGitHubToken(token: string): Promise<GitHubConnectio
   return toConnectionStatus(record, "stored");
 }
 
-export function disconnectGitHubToken(): GitHubConnectionStatus {
+export async function disconnectGitHubToken(): Promise<GitHubConnectionStatus> {
   if (fs.existsSync(GITHUB_CONNECTION_PATH)) {
     fs.unlinkSync(GITHUB_CONNECTION_PATH);
   }
-  return toConnectionStatus(null, getEnvGitHubToken() ? "env" : null);
+  return getGitHubConnectionStatus();
 }
 
 export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatus> {
@@ -246,23 +348,52 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
   }
 
   const envToken = getEnvGitHubToken();
-  if (!envToken) {
+  if (envToken) {
+    try {
+      const record = await fetchViewer(envToken);
+      return toConnectionStatus(record, "env");
+    } catch {
+      return toConnectionStatus(null, "env");
+    }
+  }
+
+  const cliSession = getGitHubCliSession();
+  if (!cliSession.loggedIn) {
     return toConnectionStatus(null, null);
   }
 
   try {
-    const record = await fetchViewer(envToken);
-    return toConnectionStatus(record, "env");
+    const viewer = fetchViewerRecord();
+    return {
+      connected: true,
+      source: "gh",
+      canDisconnect: false,
+      login: viewer.login || cliSession.login,
+      name: viewer.name,
+      avatarUrl: viewer.avatarUrl,
+      scopes: viewer.scopes.length > 0 ? viewer.scopes : cliSession.scopes,
+      connectedAt: null,
+      verifiedAt: viewer.verifiedAt,
+    };
   } catch {
-    return toConnectionStatus(null, "env");
+    return {
+      connected: true,
+      source: "gh",
+      canDisconnect: false,
+      login: cliSession.login,
+      name: null,
+      avatarUrl: null,
+      scopes: cliSession.scopes,
+      connectedAt: null,
+      verifiedAt: null,
+    };
   }
 }
 
 export async function searchGitHubRepositories(
   query: string
 ): Promise<GitHubRepoSuggestion[]> {
-  const resolved = resolveGitHubToken();
-  if (!resolved.token) {
+  if (!hasGitHubAuth()) {
     throw new Error("GitHub is not connected");
   }
 
@@ -278,8 +409,7 @@ export async function searchGitHubRepositories(
       owner: { login: string };
     }>
   >(
-    "user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member",
-    { token: resolved.token }
+    "user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member"
   );
 
   const normalized = query.trim().toLowerCase();

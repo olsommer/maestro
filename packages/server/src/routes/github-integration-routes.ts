@@ -32,7 +32,7 @@ export async function registerGitHubIntegrationRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/integrations/github/connect", async () => {
-    const github = disconnectGitHubToken();
+    const github = await disconnectGitHubToken();
     return { ok: true, github };
   });
 

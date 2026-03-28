@@ -55,7 +55,7 @@ export interface Agent {
 
 export interface RuntimeStatus {
   github: {
-    tokenConfigured: boolean;
+    authConfigured: boolean;
     githubProjectCount: number;
     githubAutomationCount: number;
     featuresEnabled: boolean;
@@ -66,7 +66,7 @@ export interface RuntimeStatus {
 
 export interface GitHubConnectionStatus {
   connected: boolean;
-  source: "stored" | "env" | null;
+  source: "stored" | "env" | "gh" | null;
   canDisconnect: boolean;
   login: string | null;
   name: string | null;

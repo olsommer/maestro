@@ -118,7 +118,7 @@ async function main() {
   const runtimeStatus = getRuntimeStatus();
   if (runtimeStatus.github.needsAuthWarning) {
     console.warn(
-      "[startup] GitHub-backed features are configured, but GITHUB_TOKEN/GH_TOKEN is missing."
+      "[startup] GitHub-backed features are configured, but GitHub CLI is not authenticated and GITHUB_TOKEN/GH_TOKEN is missing."
     );
   }
 

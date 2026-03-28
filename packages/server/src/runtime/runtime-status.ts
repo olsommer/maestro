@@ -1,10 +1,10 @@
 import { listAutomationRecords } from "../state/sqlite.js";
 import { listProjectRecords } from "../state/projects.js";
-import { resolveGitHubToken } from "../integrations/github.js";
+import { hasGitHubAuth } from "../integrations/github.js";
 
 export interface RuntimeStatus {
   github: {
-    tokenConfigured: boolean;
+    authConfigured: boolean;
     githubProjectCount: number;
     githubAutomationCount: number;
     featuresEnabled: boolean;
@@ -20,19 +20,19 @@ export function getRuntimeStatus(): RuntimeStatus {
   const githubAutomationCount = listAutomationRecords().filter((automation) =>
     automation.sourceType === "github_issues" || automation.sourceType === "github_prs"
   ).length;
-  const tokenConfigured = Boolean(resolveGitHubToken().token);
+  const authConfigured = hasGitHubAuth();
   const featuresEnabled = githubProjectCount > 0 || githubAutomationCount > 0;
-  const needsAuthWarning = featuresEnabled && !tokenConfigured;
+  const needsAuthWarning = featuresEnabled && !authConfigured;
 
   return {
     github: {
-      tokenConfigured,
+      authConfigured,
       githubProjectCount,
       githubAutomationCount,
       featuresEnabled,
       needsAuthWarning,
       warningMessage: needsAuthWarning
-        ? "GitHub-backed projects or automations are configured, but GITHUB_TOKEN/GH_TOKEN is missing."
+        ? "GitHub-backed projects or automations are configured, but GitHub CLI is not authenticated and GITHUB_TOKEN/GH_TOKEN is missing."
         : null,
     },
   };
