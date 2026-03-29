@@ -697,6 +697,7 @@ export async function startTerminal(
       binaryPath,
       prompt,
       projectPath: cwd,
+      kind: agent.kind,
       skipPermissions: agent.skipPermissions,
       sandbox: sandboxEnabled,
       mcpConfigPath: options?.mcpConfigPath,
