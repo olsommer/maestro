@@ -48,7 +48,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   const projects = useStore((s) => s.projects);
 
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<"none" | "claude" | "codex">("none");
   const [sandboxProvider, setSandboxProvider] = useState<"none" | "docker" | "gvisor">("docker");
   const [sandboxAvailability, setSandboxAvailability] = useState({
     dockerAvailable: true,
@@ -56,7 +55,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   });
   const [projectId, setProjectId] = useState("");
   const [autoWorktree, setAutoWorktree] = useState(false);
-  const [skipPermissions, setSkipPermissions] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -76,7 +74,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 : "none"
               : settings.sandboxProvider;
           setSandboxProvider(preferredProvider);
-          setSkipPermissions(settings.agentDefaultSkipPermissions);
         }
         if (runtimeStatus) {
           setSandboxAvailability(runtimeStatus.sandbox);
@@ -84,16 +81,13 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       })
       .catch(() => {
         setSandboxProvider("docker");
-        setSkipPermissions(true);
       });
     setName(generateDefaultTerminalName());
     setProjectId("__root__");
-    setProvider("none");
     setAutoWorktree(false);
     setError("");
   }, [open]);
 
-  const hasCodingAgent = provider !== "none";
   const disableSandbox = sandboxProvider === "none";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,11 +106,11 @@ export function NewTerminalDialog({ open, onClose }: Props) {
     try {
       const { terminal } = await api.createTerminal({
         name: name || undefined,
-        provider,
+        provider: "none",
         projectId: trimmedProjectId,
         projectPath: isRoot ? "/" : undefined,
         autoWorktree: !isRoot && autoWorktree ? true : undefined,
-        skipPermissions: hasCodingAgent && !disableSandbox ? skipPermissions : false,
+        skipPermissions: false,
         disableSandbox,
         sandboxProvider: !disableSandbox ? sandboxProvider : undefined,
       });
@@ -125,9 +119,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
       onClose();
       setName(generateDefaultTerminalName());
       setProjectId("__root__");
-      setProvider("none");
       setAutoWorktree(false);
-      setSkipPermissions(true);
       setSandboxProvider("docker");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create terminal");
@@ -145,7 +137,7 @@ export function NewTerminalDialog({ open, onClose }: Props) {
         <DialogHeader>
           <DialogTitle>New Terminal</DialogTitle>
           <DialogDescription>
-            Configure a coding terminal. It starts immediately and stays available until deleted.
+            Configure a terminal. It starts immediately and stays available until deleted.
           </DialogDescription>
         </DialogHeader>
 
@@ -237,9 +229,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                       ? value
                       : "docker";
                   setSandboxProvider(nextProvider);
-                  if (nextProvider === "none") {
-                    setSkipPermissions(false);
-                  }
                 }}
               >
                 <SelectTrigger id="sandbox-enabled" className="w-full @md/field-group:w-48">
@@ -265,48 +254,6 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 </SelectContent>
               </Select>
             </Field>
-
-            <Field>
-              <FieldLabel htmlFor="provider">Spawn Coding Agent</FieldLabel>
-              <Select
-                value={provider}
-                onValueChange={(value) =>
-                  setProvider((value as "none" | "claude" | "codex") ?? "none")
-                }
-              >
-                <SelectTrigger id="provider" className="w-full">
-                  <SelectValue placeholder="Select an agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="codex">Codex</SelectItem>
-                    <SelectItem value="claude">Claude Code</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                {provider === "none"
-                  ? "Launch a plain terminal without starting a coding agent."
-                  : "Launch the terminal and start the selected coding agent inside it."}
-              </FieldDescription>
-            </Field>
-
-            {hasCodingAgent && !disableSandbox && (
-              <Field orientation="responsive">
-                <FieldContent>
-                  <FieldLabel htmlFor="skip-permissions">YOLO mode</FieldLabel>
-                  <FieldDescription>
-                    Run without approval prompts for the selected coding agent.
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="skip-permissions"
-                  checked={skipPermissions}
-                  onCheckedChange={setSkipPermissions}
-                />
-              </Field>
-            )}
           </FieldGroup>
 
           <DialogFooter>
