@@ -7,6 +7,7 @@ export interface InteractiveCommandParams {
   binaryPath: string;
   prompt: string;
   projectPath: string;
+  kind?: "terminal" | "kanban" | "automation" | "scheduler";
   skipPermissions?: boolean;
   sandbox?: boolean;
   secondaryProjectPaths?: string[];
@@ -78,12 +79,16 @@ export class ClaudeProvider implements CLIProvider {
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let cmd = quoteShell(params.binaryPath);
+    const forceSkipPermissions =
+      params.kind === "kanban" || params.kind === "scheduler";
+    const shouldSkipPermissions =
+      params.skipPermissions && (params.sandbox || forceSkipPermissions);
 
     if (params.mcpConfigPath && fs.existsSync(params.mcpConfigPath)) {
       cmd += ` --mcp-config ${quoteShell(params.mcpConfigPath)}`;
     }
 
-    if (params.skipPermissions && params.sandbox) {
+    if (shouldSkipPermissions) {
       cmd += " --dangerously-skip-permissions";
     }
 
@@ -132,8 +137,12 @@ export class CodexProvider implements CLIProvider {
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let cmd = `${quoteShell(params.binaryPath)} exec`;
+    const forceSkipPermissions =
+      params.kind === "kanban" || params.kind === "scheduler";
+    const shouldSkipPermissions =
+      params.skipPermissions && (params.sandbox || forceSkipPermissions);
 
-    if (params.skipPermissions) {
+    if (shouldSkipPermissions) {
       cmd += " --yolo";
     }
 
