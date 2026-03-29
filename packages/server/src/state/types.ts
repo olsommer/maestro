@@ -155,6 +155,7 @@ export interface AutomationRunRecord {
   itemsProcessed: number;
   error: string | null;
   agentId: string | null;
+  itemContext: Record<string, unknown> | null;
   startedAt: string;
   completedAt: string | null;
 }

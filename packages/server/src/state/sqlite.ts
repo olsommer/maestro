@@ -77,6 +77,12 @@ db.exec(`
 
 `);
 
+try {
+  db.exec("ALTER TABLE automation_runs ADD COLUMN item_context_json TEXT");
+} catch {
+  // Existing installs already have the column.
+}
+
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
   try {
@@ -153,6 +159,10 @@ function toAutomationRun(row: Record<string, unknown>): AutomationRunRecord {
     itemsProcessed: Number(row.items_processed),
     error: row.error ? String(row.error) : null,
     agentId: row.agent_id ? String(row.agent_id) : null,
+    itemContext: parseJson<Record<string, unknown> | null>(
+      row.item_context_json as string | null,
+      null
+    ),
     startedAt: String(row.started_at),
     completedAt: row.completed_at ? String(row.completed_at) : null,
   };
@@ -386,6 +396,29 @@ export function listAutomationRunRecords(
   return rows.map(toAutomationRun);
 }
 
+export function listAutomationRunRecordsByStatus(
+  automationId: string,
+  status: string,
+  limit = 100
+): AutomationRunRecord[] {
+  const rows = db
+    .prepare(`
+      SELECT * FROM automation_runs
+      WHERE automation_id = ? AND status = ?
+      ORDER BY started_at ASC
+      LIMIT ?
+    `)
+    .all(automationId, status, limit) as Record<string, unknown>[];
+  return rows.map(toAutomationRun);
+}
+
+export function getAutomationRunRecordByAgentId(agentId: string): AutomationRunRecord | null {
+  const row = db
+    .prepare("SELECT * FROM automation_runs WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1")
+    .get(agentId) as Record<string, unknown> | undefined;
+  return row ? toAutomationRun(row) : null;
+}
+
 export function createAutomationRunRecord(
   input: Omit<AutomationRunRecord, "id">
 ): AutomationRunRecord {
@@ -397,8 +430,8 @@ export function createAutomationRunRecord(
   db.prepare(`
     INSERT INTO automation_runs (
       id, automation_id, status, items_found, items_processed, error,
-      agent_id, started_at, completed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      agent_id, item_context_json, started_at, completed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     run.id,
     run.automationId,
@@ -407,6 +440,7 @@ export function createAutomationRunRecord(
     run.itemsProcessed,
     run.error,
     run.agentId,
+    JSON.stringify(run.itemContext),
     run.startedAt,
     run.completedAt
   );
@@ -460,7 +494,8 @@ export function updateAutomationRunRecord(
 
   db.prepare(`
     UPDATE automation_runs SET
-      status = ?, items_found = ?, items_processed = ?, error = ?, agent_id = ?, completed_at = ?
+      status = ?, items_found = ?, items_processed = ?, error = ?, agent_id = ?,
+      item_context_json = ?, completed_at = ?
     WHERE id = ?
   `).run(
     next.status,
@@ -468,6 +503,7 @@ export function updateAutomationRunRecord(
     next.itemsProcessed,
     next.error,
     next.agentId,
+    JSON.stringify(next.itemContext),
     next.completedAt,
     id
   );

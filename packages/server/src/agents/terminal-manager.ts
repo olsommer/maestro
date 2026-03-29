@@ -55,6 +55,7 @@ import {
 import { finalizeKanbanTaskAfterTerminalExit } from "../state/kanban.js";
 import { getProjectRecordById } from "../state/projects.js";
 import { getGitHubChildEnvVars } from "../integrations/github.js";
+import { finalizeAutomationRunAfterTerminalExit } from "../scheduler/automation-runner.js";
 import {
   resolveAutoWorktreeStartPoint,
   syncProjectRepoBeforeSpawn,
@@ -823,6 +824,14 @@ export async function startTerminal(
                 kanbanTaskId: null,
                 lastActivity: new Date().toISOString(),
               });
+            }
+          }
+
+          if (agent.kind === "automation") {
+            try {
+              await finalizeAutomationRunAfterTerminalExit(terminalId, exitCode === 0);
+            } catch (error) {
+              console.error(`Failed to finalize automation run for terminal ${terminalId}:`, error);
             }
           }
 
