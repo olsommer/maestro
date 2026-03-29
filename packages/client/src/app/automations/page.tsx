@@ -48,6 +48,35 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 
+function defaultPromptForSourceType(sourceType: string): string {
+  if (sourceType === "github_mentions") {
+    return [
+      "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
+      "",
+      "Repository: {{ item.repoFullName }}",
+      "Type: {{ item.issueKind }}",
+      "Title: {{ item.title }}",
+      "URL: {{ item.url }}",
+      "Triggered by: {{ item.triggerType }} from {{ item.triggerAuthor }}",
+      "Trigger URL: {{ item.triggerUrl }}",
+      "",
+      "Trigger text:",
+      "{{ item.triggerBody }}",
+      "",
+      "Full thread:",
+      "{{ item.thread }}",
+    ].join("\n");
+  }
+
+  return [
+    "Review this GitHub issue and provide a fix:",
+    "",
+    "Title: {{ item.title }}",
+    "Body: {{ item.body }}",
+    "URL: {{ item.url }}",
+  ].join("\n");
+}
+
 interface AutomationRun {
   id: string;
   status: string;
@@ -84,6 +113,7 @@ interface Automation {
 const SOURCE_TYPES = [
   { value: "github_issues", label: "GitHub Issues" },
   { value: "github_prs", label: "GitHub PRs" },
+  { value: "github_mentions", label: "GitHub Mentions" },
   { value: "rss", label: "RSS Feed" },
 ];
 
@@ -119,7 +149,7 @@ function AutomationsView() {
   const [projectId, setProjectId] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [promptTemplate, setPromptTemplate] = useState(
-    "Review this GitHub issue and provide a fix:\n\nTitle: {{ item.title }}\nBody: {{ item.body }}\nURL: {{ item.url }}"
+    defaultPromptForSourceType("github_issues")
   );
   const [pollInterval, setPollInterval] = useState(5);
   const [pendingAction, setPendingAction] = useState<{
@@ -141,6 +171,17 @@ function AutomationsView() {
     if (!showNew) return;
     setProjectId(selectedProjectId ?? projects[0]?.id ?? "");
   }, [showNew, projects, selectedProjectId]);
+
+  useEffect(() => {
+    setPromptTemplate((current) => {
+      const issueDefault = defaultPromptForSourceType("github_issues");
+      const mentionDefault = defaultPromptForSourceType("github_mentions");
+      if (current === issueDefault || current === mentionDefault || !current.trim()) {
+        return defaultPromptForSourceType(sourceType);
+      }
+      return current;
+    });
+  }, [sourceType]);
 
   function parseCustomEnv(raw: string): Record<string, string> {
     return Object.fromEntries(
@@ -199,7 +240,11 @@ function AutomationsView() {
     setError("");
 
     let sourceConfig: Record<string, string> = {};
-    if (sourceType === "github_issues" || sourceType === "github_prs") {
+    if (
+      sourceType === "github_issues" ||
+      sourceType === "github_prs" ||
+      sourceType === "github_mentions"
+    ) {
       if (!owner.trim() || !repo.trim()) {
         setError("Owner and repo required");
         setLoading(false);
@@ -255,6 +300,7 @@ function AutomationsView() {
       setCustomEnvText("");
       setProjectId(selectedProjectId ?? projects[0]?.id ?? "");
       setProjectPath("");
+      setPromptTemplate(defaultPromptForSourceType("github_issues"));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -407,7 +453,9 @@ function AutomationsView() {
                   </Select>
                 </Field>
 
-                {(sourceType === "github_issues" || sourceType === "github_prs") && (
+                {(sourceType === "github_issues" ||
+                  sourceType === "github_prs" ||
+                  sourceType === "github_mentions") && (
                   <>
                     <Field>
                       <FieldLabel htmlFor="automation-owner">GitHub Owner</FieldLabel>

@@ -23,7 +23,9 @@ export function getRuntimeStatus(): RuntimeStatus {
     (project) => Boolean(project.githubOwner && project.githubRepo)
   ).length;
   const githubAutomationCount = listAutomationRecords().filter((automation) =>
-    automation.sourceType === "github_issues" || automation.sourceType === "github_prs"
+    automation.sourceType === "github_issues" ||
+    automation.sourceType === "github_prs" ||
+    automation.sourceType === "github_mentions"
   ).length;
   const authConfigured = hasGitHubAuth();
   const featuresEnabled = githubProjectCount > 0 || githubAutomationCount > 0;
