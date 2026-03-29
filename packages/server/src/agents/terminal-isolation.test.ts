@@ -10,6 +10,10 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
   const previousHome = process.env.HOME;
   const previousStateBase = process.env.MAESTRO_TERMINAL_STATE_BASE;
 
+  fs.writeFileSync(path.join(tempHome, ".bashrc"), "PS1='> '\n");
+  fs.writeFileSync(path.join(tempHome, ".bash_profile"), "source ~/.bashrc\n");
+  fs.writeFileSync(path.join(tempHome, ".profile"), "export TEST_PROFILE=1\n");
+  fs.writeFileSync(path.join(tempHome, ".inputrc"), "set editing-mode vi\n");
   fs.writeFileSync(path.join(tempHome, ".gitconfig"), "[user]\n\tname = Test User\n");
   fs.writeFileSync(path.join(tempHome, ".claude.json"), '{"hasCompletedOnboarding":true}');
   fs.mkdirSync(path.join(tempHome, ".config", "gh"), { recursive: true });
@@ -30,6 +34,19 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
     const paths = ensureTerminalIsolationHome("terminal-123");
     const expectedRoot = path.join(tempState, "terminal-123");
 
+    assert.equal(fs.readFileSync(path.join(paths.homeDir, ".bashrc"), "utf-8"), "PS1='> '\n");
+    assert.equal(
+      fs.readFileSync(path.join(paths.homeDir, ".bash_profile"), "utf-8"),
+      "source ~/.bashrc\n"
+    );
+    assert.equal(
+      fs.readFileSync(path.join(paths.homeDir, ".profile"), "utf-8"),
+      "export TEST_PROFILE=1\n"
+    );
+    assert.equal(
+      fs.readFileSync(path.join(paths.homeDir, ".inputrc"), "utf-8"),
+      "set editing-mode vi\n"
+    );
     assert.equal(
       fs.readFileSync(path.join(paths.homeDir, ".gitconfig"), "utf-8"),
       "[user]\n\tname = Test User\n"

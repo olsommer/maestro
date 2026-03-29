@@ -52,6 +52,10 @@ function bootstrapTerminalHome(homeDir: string): void {
 
   const globalHome = getGlobalHome();
   const copies: Array<[string, string]> = [
+    [path.join(globalHome, ".bashrc"), path.join(homeDir, ".bashrc")],
+    [path.join(globalHome, ".bash_profile"), path.join(homeDir, ".bash_profile")],
+    [path.join(globalHome, ".profile"), path.join(homeDir, ".profile")],
+    [path.join(globalHome, ".inputrc"), path.join(homeDir, ".inputrc")],
     [path.join(globalHome, ".gitconfig"), path.join(homeDir, ".gitconfig")],
     [path.join(globalHome, ".claude.json"), path.join(homeDir, ".claude.json")],
     [path.join(globalHome, ".config", "gh"), path.join(homeDir, ".config", "gh")],
