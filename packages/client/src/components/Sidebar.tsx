@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BoltIcon,
   BotIcon,
   ClockIcon,
   FolderGit2Icon,
@@ -34,6 +35,7 @@ const nav = [
   { href: "/terminals", label: "Terminals", icon: BotIcon },
   { href: "/kanban", label: "Kanban", icon: KanbanIcon },
   { href: "/scheduler", label: "Scheduler", icon: ClockIcon },
+  { href: "/automations", label: "Automations", icon: BoltIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
