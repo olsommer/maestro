@@ -10,6 +10,71 @@ export function getWorktreeBasePath(): string {
   return WORKTREE_BASE;
 }
 
+function readGitdirPointer(worktreePath: string): string | null {
+  const gitPath = path.join(worktreePath, ".git");
+  try {
+    const stat = fs.statSync(gitPath);
+    if (stat.isDirectory()) {
+      return gitPath;
+    }
+    if (!stat.isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const contents = fs.readFileSync(gitPath, "utf8");
+  const match = /^gitdir:\s*(.+)\s*$/im.exec(contents);
+  if (!match) {
+    return null;
+  }
+
+  const resolved = path.resolve(worktreePath, match[1]);
+  return fs.existsSync(resolved) ? resolved : null;
+}
+
+function readCommonDir(gitdir: string): string | null {
+  const commondirPath = path.join(gitdir, "commondir");
+  if (!fs.existsSync(commondirPath)) {
+    return null;
+  }
+
+  try {
+    const contents = fs.readFileSync(commondirPath, "utf8").trim();
+    if (!contents) {
+      return null;
+    }
+
+    const resolved = path.resolve(gitdir, contents);
+    return fs.existsSync(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getWorktreeGitMountPaths(worktreePath: string): string[] {
+  const gitdir = readGitdirPointer(worktreePath);
+  if (!gitdir) {
+    return [];
+  }
+
+  const mountPaths = new Set<string>([gitdir]);
+  const commonDir = readCommonDir(gitdir);
+  if (commonDir) {
+    mountPaths.add(commonDir);
+  }
+
+  const resolvedWorktreePath = path.resolve(worktreePath);
+  return Array.from(mountPaths).filter((mountPath) => {
+    const resolvedMountPath = path.resolve(mountPath);
+    if (resolvedMountPath === resolvedWorktreePath) {
+      return false;
+    }
+    return !resolvedMountPath.startsWith(`${resolvedWorktreePath}${path.sep}`);
+  });
+}
+
 /**
  * Create a git worktree for a terminal.
  * Creates a new branch `agent/<terminalId>` from the requested git ref.

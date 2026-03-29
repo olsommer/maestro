@@ -27,6 +27,7 @@ import {
 import { createTerminalReplica, type TerminalReplica } from "./terminal-replica.js";
 import {
   createTerminalWorktree,
+  getWorktreeGitMountPaths,
   isGitRepo,
   removeTerminalWorktree,
 } from "./worktree.js";
@@ -681,6 +682,8 @@ export async function startTerminal(
       : {};
     Object.assign(childEnv, runtimeEnv);
 
+    const writableMounts = sandboxEnabled ? getWorktreeGitMountPaths(cwd) : undefined;
+
     startupStepIndex = startupSteps.length - 1;
     setTerminalStartupStatus(
       terminalId,
@@ -708,6 +711,7 @@ export async function startTerminal(
       homeDir: isolatedHome?.homeDir,
       sandboxProvider,
       readonlyMounts: agent.secondaryProjectPaths,
+      writableMounts,
       dockerExtraMounts: dockerRuntime ? [dockerRuntime.socketMount] : undefined,
       onData: (data) => {
         if (!terminalCanUseRuntime(terminalId, rt)) {
