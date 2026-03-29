@@ -5,7 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Terminal } from "@/components/Terminal";
 import { NewTerminalDialog } from "@/components/NewTerminalDialog";
-import { StatusBadge, StatusDot } from "@/components/StatusBadge";
+import { StatusDot } from "@/components/StatusBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,11 +42,13 @@ import {
   BotIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  GitBranchIcon,
   HistoryIcon,
   PlusIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
   Trash2Icon,
+  VaultIcon,
 } from "lucide-react";
 
 type GridPreset = "auto" | "1x1" | "2x1" | "2x2" | "3x2" | "3x3";
@@ -71,6 +73,47 @@ function resolvePreset(terminalCount: number, preset: GridPreset) {
   return GRID_PRESETS["3x3"];
 }
 
+function getSandboxBadge(terminal: TerminalRecord) {
+  const sandboxEnabled =
+    !terminal.disableSandbox &&
+    terminal.sandboxProvider != null &&
+    terminal.sandboxProvider !== "none";
+
+  return {
+    label: sandboxEnabled ? "Sandbox" : "No Sandbox",
+    title: sandboxEnabled
+      ? `Sandbox: ${terminal.sandboxProvider}`
+      : "Sandbox disabled",
+    className: sandboxEnabled
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+      : "text-muted-foreground",
+  };
+}
+
+function getWorktreeBadge(terminal: TerminalRecord) {
+  if (terminal.worktreePath) {
+    return {
+      label: "Worktree",
+      title: terminal.worktreePath,
+      className: "border-sky-500/30 bg-sky-500/10 text-sky-400",
+    };
+  }
+
+  if (terminal.autoWorktree) {
+    return {
+      label: "Worktree Pending",
+      title: "Auto worktree will be created on start",
+      className: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+    };
+  }
+
+  return {
+    label: "Project Tree",
+    title: terminal.projectPath,
+    className: "text-muted-foreground",
+  };
+}
+
 function TerminalPanel({
   terminal,
   isSelected,
@@ -85,6 +128,8 @@ function TerminalPanel({
   onSwipeNavigate?: (dir: -1 | 1) => void;
 }) {
   const recentInputs = terminal.recentInputs ?? [];
+  const sandboxBadge = getSandboxBadge(terminal);
+  const worktreeBadge = getWorktreeBadge(terminal);
 
   return (
     <section
@@ -102,16 +147,35 @@ function TerminalPanel({
           <StatusDot
             status={terminal.status}
             startupStatus={terminal.startupStatus}
-            className="md:hidden"
           />
-          <span className="hidden md:inline-flex">
-            <StatusBadge status={terminal.status} startupStatus={terminal.startupStatus} />
-          </span>
           <Badge
             variant="outline"
             className="max-w-[120px] truncate px-1 py-0 text-[9px] md:max-w-[220px] md:px-2 md:py-0.5 md:text-[10px]"
+            title={terminal.project?.name || terminal.projectPath}
           >
             {terminal.project?.name || terminal.projectPath}
+          </Badge>
+          <Badge
+            variant="outline"
+            title={sandboxBadge.title}
+            className={cn(
+              "hidden shrink-0 items-center gap-1 px-1 py-0 text-[9px] md:inline-flex md:px-2 md:py-0.5 md:text-[10px]",
+              sandboxBadge.className
+            )}
+          >
+            <VaultIcon className="size-3" />
+            <span>{sandboxBadge.label}</span>
+          </Badge>
+          <Badge
+            variant="outline"
+            title={worktreeBadge.title}
+            className={cn(
+              "hidden shrink-0 items-center gap-1 px-1 py-0 text-[9px] md:inline-flex md:px-2 md:py-0.5 md:text-[10px]",
+              worktreeBadge.className
+            )}
+          >
+            <GitBranchIcon className="size-3" />
+            <span>{worktreeBadge.label}</span>
           </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-1">
