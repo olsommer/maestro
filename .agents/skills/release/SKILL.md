@@ -14,9 +14,12 @@ The release source of truth is `packages/cli/package.json`. The GitHub release w
 
 Before doing anything:
 
-1. Confirm the git worktree is clean. If not, stop.
+1. Check the current branch and worktree state first.
 2. Confirm `gh` is available and authenticated. Prefer `gh` for PRs, checks, runs, and merge operations.
-3. Release from the current branch. Do not create a separate release branch unless the user explicitly asks.
+3. Never open the release PR directly from `main`.
+4. If the current branch is `main`, create or switch to a non-`main` branch first, then do the version bump work there and open the PR against `main`.
+5. If the worktree is dirty, do not discard changes. Commit everything currently in the worktree before continuing.
+6. If handling the dirty worktree or switching branches causes hard conflicts or another situation where the intended release diff is no longer clear, stop and come back to the user with the conflict details.
 
 ## Version Bump
 
@@ -28,15 +31,17 @@ For now, releases are patch-only.
 
 ## Commit And Push
 
-1. Review the diff to ensure only intended release changes are included.
-2. Commit with git using a clear release message such as `release: bump cli to v0.1.X`.
-3. Push the current branch to `origin`.
+1. If the worktree was already dirty before the release work started, commit those existing changes first so the release work starts from a committed state.
+2. Review the diff to ensure the release commit contains the intended release changes.
+3. Commit with git using a clear release message such as `release: bump cli to v0.1.X`.
+4. Push the current non-`main` branch to `origin`.
 
 ## Pull Request
 
 1. Create a PR targeting `main` with `gh pr create`.
 2. Use a clear title such as `release: v0.1.X`.
 3. Include a short body that states this bumps the CLI package version for release.
+4. The PR branch must be a non-`main` branch, even if the release work started while checked out on `main`.
 
 ## Checks And Release Validation
 
@@ -85,4 +90,5 @@ gh run list --branch "$(git branch --show-current)"
 - Keep the release focused on the CLI package unless the repo changes require more.
 - Prefer `gh` and `git` over manual browser steps.
 - Do not merge while checks are failing or pending.
-- Do not proceed with a dirty worktree.
+- Do not discard unrelated dirty worktree changes just to make the release easier.
+- If branch creation, rebasing, stashing, or committing runs into hard conflicts, stop and ask the user how to proceed.
