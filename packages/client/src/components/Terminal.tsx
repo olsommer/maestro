@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type FormEvent as ReactFormEvent,
+} from "react";
 import { getSocket } from "@/lib/socket";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -11,6 +19,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronUpIcon,
+  ClipboardIcon,
   CornerDownLeftIcon,
   EllipsisIcon,
   MicIcon,
@@ -24,6 +33,7 @@ import {
   TerminalAttachResponse as TerminalAttachResponseSchema,
   type TerminalAttachResponse,
 } from "@maestro/wire";
+import { toast } from "sonner";
 
 interface StoredTerminalSnapshot {
   cursor: number;
@@ -154,6 +164,59 @@ function trimPreview(value: string, maxLength = 240): string {
   return chars.slice(chars.length - maxLength).join("");
 }
 
+function skipAnsiSequence(data: string, startIndex: number): number {
+  const nextChar = data[startIndex + 1];
+  if (!nextChar) return startIndex;
+
+  // CSI: ESC [ ... final-byte
+  if (nextChar === "[") {
+    let index = startIndex + 2;
+    while (index < data.length) {
+      const char = data[index];
+      if (char && char >= "@" && char <= "~") {
+        return index;
+      }
+      index += 1;
+    }
+    return data.length - 1;
+  }
+
+  // OSC: ESC ] ... BEL or ST
+  if (nextChar === "]") {
+    let index = startIndex + 2;
+    while (index < data.length) {
+      const char = data[index];
+      if (char === "\u0007") {
+        return index;
+      }
+      if (char === "\x1b" && data[index + 1] === "\\") {
+        return index + 1;
+      }
+      index += 1;
+    }
+    return data.length - 1;
+  }
+
+  // DCS, SOS, PM, APC: ESC P/X/^/_ ... ST
+  if (nextChar === "P" || nextChar === "X" || nextChar === "^" || nextChar === "_") {
+    let index = startIndex + 2;
+    while (index < data.length) {
+      if (data[index] === "\x1b" && data[index + 1] === "\\") {
+        return index + 1;
+      }
+      index += 1;
+    }
+    return data.length - 1;
+  }
+
+  // Two-byte ESC sequences such as ESC O A for application cursor keys.
+  if (nextChar === "O" && startIndex + 2 < data.length) {
+    return startIndex + 2;
+  }
+
+  return startIndex + 1;
+}
+
 function applyMobilePreviewInput(currentPreview: string, data: string): string {
   let nextPreview = currentPreview;
 
@@ -163,19 +226,7 @@ function applyMobilePreviewInput(currentPreview: string, data: string): string {
     if (!char) continue;
 
     if (char === "\x1b") {
-      while (index + 1 < data.length) {
-        const nextChar = data[index + 1];
-        if (!nextChar) break;
-        if (/[A-Za-z~]/.test(nextChar)) {
-          index += 1;
-          break;
-        }
-        if (nextChar === "[" || nextChar === "]" || /[0-9;?]/.test(nextChar)) {
-          index += 1;
-          continue;
-        }
-        break;
-      }
+      index = skipAnsiSequence(data, index);
       continue;
     }
 
@@ -214,6 +265,31 @@ function applyMobilePreviewInput(currentPreview: string, data: string): string {
   return nextPreview;
 }
 
+function mapBeforeInputToTerminalData(event: InputEvent): string | null {
+  switch (event.inputType) {
+    case "insertText":
+    case "insertCompositionText":
+    case "insertReplacementText":
+      return event.data ?? "";
+    case "insertParagraph":
+    case "insertLineBreak":
+      return "\r";
+    case "deleteContentBackward":
+      return "\u007f";
+    case "deleteWordBackward":
+      return "\u0017";
+    case "deleteHardLineBackward":
+    case "deleteSoftLineBackward":
+      return "\u0015";
+    case "deleteContentForward":
+      return "\x1b[3~";
+    case "insertTab":
+      return "\t";
+    default:
+      return null;
+  }
+}
+
 function MobileTerminalControls({
   onToggleTextOverlay,
   onTranscript,
@@ -248,6 +324,19 @@ function MobileTerminalControls({
   const voiceStatusOffset = moreOpen
     ? "calc(env(safe-area-inset-bottom) + 6.5rem)"
     : "calc(env(safe-area-inset-bottom) + 3.4rem)";
+
+  const handlePasteFromClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        toast.error("Clipboard is empty.");
+        return;
+      }
+      send(text);
+    } catch {
+      toast.error("Clipboard paste is unavailable in this browser.");
+    }
+  }, [send]);
 
   return (
     <div
@@ -317,7 +406,7 @@ function MobileTerminalControls({
           </div>
         )}
 
-        <div className="pointer-events-auto grid grid-cols-5 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
+        <div className="pointer-events-auto grid grid-cols-6 gap-1.5 rounded-lg border bg-card/95 p-1.5 shadow-lg backdrop-blur-md">
           <Button
             size="xs"
             variant="secondary"
@@ -335,6 +424,15 @@ function MobileTerminalControls({
             aria-label="Tab"
           >
             <ArrowRightToLineIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            className={toolbarButtonClassName}
+            onClick={handlePasteFromClipboard}
+            aria-label="Paste clipboard"
+          >
+            <ClipboardIcon className="size-3.5" />
           </Button>
           <Button
             size="xs"
@@ -397,10 +495,12 @@ export function Terminal({
   terminalId,
   isActive,
   onSwipeNavigate,
+  registerRefit,
 }: {
   terminalId: string;
   isActive?: boolean;
   onSwipeNavigate?: (dir: -1 | 1) => void;
+  registerRefit?: ((refit: () => void) => void) | null;
 }) {
   const isMobile = useIsMobile();
   const { keyboardInset, keyboardOpen } = useMobileKeyboard();
@@ -420,6 +520,7 @@ export function Terminal({
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
   const [mobileComposingText, setMobileComposingText] = useState("");
   const [mobileInputPreview, setMobileInputPreview] = useState("");
+  const mobileInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useLayoutEffect(() => {
     setTextOverlay(null);
@@ -957,6 +1058,24 @@ export function Terminal({
     return () => clearTimeout(id);
   }, [isActive]);
 
+  useEffect(() => {
+    const refit = () => {
+      fitAddonRef.current?.fit();
+      const term = termRef.current;
+      const socket = socketRef.current;
+      if (term && socket) {
+        socket.emit("terminal:resize", {
+          terminalId,
+          cols: term.cols,
+          rows: term.rows,
+        });
+      }
+    };
+
+    registerRefit?.(refit);
+    return () => registerRefit?.(() => {});
+  }, [registerRefit, terminalId]);
+
   const handleShowText = useCallback(() => {
     if (termRef.current) {
       setTextOverlay(extractBufferText(termRef.current));
@@ -975,6 +1094,54 @@ export function Terminal({
     ? trimPreview(`${mobileInputPreview}${mobileComposingText}`)
     : mobileInputPreview;
 
+  const handleMobileTextareaBeforeInput = useCallback(
+    (event: ReactFormEvent<HTMLTextAreaElement>) => {
+      const nativeEvent = event.nativeEvent as InputEvent;
+      const data = mapBeforeInputToTerminalData(nativeEvent);
+      if (!data) {
+        return;
+      }
+
+      event.preventDefault();
+      sendToTerminal(data);
+    },
+    [sendToTerminal]
+  );
+
+  const handleMobileTextareaPaste = useCallback(
+    (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+      const text = event.clipboardData.getData("text");
+      if (!text) return;
+      event.preventDefault();
+      sendToTerminal(text);
+    },
+    [sendToTerminal]
+  );
+
+  const handleMobileTextareaCompositionStart = useCallback(() => {
+    mobileCompositionActiveRef.current = true;
+    setMobileComposingText("");
+  }, []);
+
+  const handleMobileTextareaCompositionUpdate = useCallback(
+    (event: React.CompositionEvent<HTMLTextAreaElement>) => {
+      setMobileComposingText(event.data ?? "");
+    },
+    []
+  );
+
+  const handleMobileTextareaCompositionEnd = useCallback(() => {
+    mobileCompositionActiveRef.current = false;
+    setMobileComposingText("");
+    requestAnimationFrame(() => {
+      const element = mobileInputRef.current;
+      if (element) {
+        element.selectionStart = element.value.length;
+        element.selectionEnd = element.value.length;
+      }
+    });
+  }, []);
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
@@ -985,11 +1152,23 @@ export function Terminal({
           style={{ bottom: `${keyboardInset + 8}px` }}
         >
           <textarea
-            readOnly
+            ref={mobileInputRef}
             value={mobilePreviewValue}
-            placeholder="Typing preview"
-            aria-label="Typing preview"
-            className="h-14 w-full resize-none rounded-lg border border-border bg-card/95 px-3 py-2 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            placeholder="Type or paste into terminal"
+            aria-label="Terminal input"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            enterKeyHint="send"
+            onBeforeInput={handleMobileTextareaBeforeInput}
+            onPaste={handleMobileTextareaPaste}
+            onCompositionStart={handleMobileTextareaCompositionStart}
+            onCompositionUpdate={handleMobileTextareaCompositionUpdate}
+            onCompositionEnd={handleMobileTextareaCompositionEnd}
+            onChange={() => {
+              // Controlled bridge input: terminal writes are handled in beforeinput/paste.
+            }}
+            className="pointer-events-auto h-14 w-full resize-none rounded-lg border border-border bg-card/95 px-3 py-2 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
           />
         </div>
       )}
