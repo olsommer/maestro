@@ -105,6 +105,7 @@ export interface PtySpawnOptions {
   cwd: string;
   homeDir?: string;
   startupCommand?: string;
+  keepShellOpen?: boolean;
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
@@ -124,11 +125,31 @@ export interface PtySpawnOptions {
   memoryLimit?: number;
 }
 
+function quoteShell(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export function buildStartupShellCommand(
+  startupCommand: string,
+  loginShellPath: string,
+  keepShellOpen: boolean
+): string {
+  if (!keepShellOpen) {
+    return startupCommand;
+  }
+
+  return `${startupCommand}
+__maestro_exit_status=$?
+if [ $__maestro_exit_status -eq 0 ]; then
+  exec ${quoteShell(loginShellPath)} -l
+fi
+exit $__maestro_exit_status`;
+}
+
 export function spawnPty(options: PtySpawnOptions): PtyInstance {
   ensureSpawnHelperExecutable();
 
   const shell = getShellPath(options.env);
-  const shellArgs = options.startupCommand ? ["-lc", options.startupCommand] : ["-l"];
   const cwd = options.cwd || os.homedir();
   const requestedSandboxProvider =
     options.sandboxProvider ?? (options.sandbox ? "docker" : "none");
@@ -140,6 +161,15 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   let cleanup: (() => void) | null = null;
 
   if (sandboxProvider === "docker" || sandboxProvider === "gvisor") {
+    const loginShellPath = "/bin/bash";
+    const startupShellCommand = options.startupCommand
+      ? buildStartupShellCommand(
+          options.startupCommand,
+          loginShellPath,
+          options.keepShellOpen === true
+        )
+      : null;
+    const shellArgs = startupShellCommand ? ["-lc", startupShellCommand] : ["-l"];
     const sandboxConfig: SandboxConfig = {
       cwd,
       homeDir: options.homeDir,
@@ -178,6 +208,15 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       );
     }
 
+    const loginShellPath = shell;
+    const startupShellCommand = options.startupCommand
+      ? buildStartupShellCommand(
+          options.startupCommand,
+          loginShellPath,
+          options.keepShellOpen === true
+        )
+      : null;
+    const shellArgs = startupShellCommand ? ["-lc", startupShellCommand] : ["-l"];
     ptyProcess = pty.spawn(shell, shellArgs, {
       name: "xterm-256color",
       cols: options.cols ?? 120,

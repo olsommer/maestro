@@ -10,7 +10,6 @@ import type {
 import {
   spawnPty,
   writeToPty,
-  writeCommandToPty,
   killPty,
   resizePty,
 } from "./pty-manager.js";
@@ -713,7 +712,8 @@ export async function startTerminal(
     const ptyInstance = spawnPty({
       terminalId,
       cwd,
-      startupCommand: agent.kind === "terminal" ? undefined : shellCommand || undefined,
+      startupCommand: shellCommand || undefined,
+      keepShellOpen: agent.kind === "terminal" && Boolean(shellCommand),
       env: childEnv,
       homeDir: isolatedHome?.homeDir,
       sandboxProvider,
@@ -890,10 +890,6 @@ export async function startTerminal(
     });
 
     emitTerminalStatus(terminalId, "running" as AgentStatus, null, null);
-
-    if (agent.kind === "terminal" && shellCommand) {
-      writeCommandToPty(ptyInstance.id, shellCommand);
-    }
     return { ptyId: ptyInstance.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to start terminal session";

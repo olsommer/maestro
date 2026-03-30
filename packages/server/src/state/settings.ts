@@ -15,6 +15,17 @@ const DEFAULTS: Settings = {
   agentDefaultWorktreeMode: "none",
 };
 
+export function normalizeAutoSpawnSandboxProvider(
+  provider: Settings["agentDefaultProvider"],
+  sandboxProvider: Settings["sandboxProvider"]
+): Settings["sandboxProvider"] {
+  if (provider === "codex" && sandboxProvider === "gvisor") {
+    return "docker";
+  }
+
+  return sandboxProvider;
+}
+
 export function getSettings(): Settings {
   const enabled = getSetting("autoUpdateEnabled");
   const interval = getSetting("autoUpdateIntervalHours");
@@ -26,7 +37,12 @@ export function getSettings(): Settings {
   const agentDefaultDisableSandbox = getSetting("agentDefaultDisableSandbox");
   const agentDefaultSkipPermissions = getSetting("agentDefaultSkipPermissions");
   const agentDefaultWorktreeMode = getSetting("agentDefaultWorktreeMode");
-  const resolvedSandboxProvider = normalizeSandboxProvider(sandboxProvider, sandbox === "true");
+  const resolvedAgentDefaultProvider =
+    agentDefaultProvider === "codex" ? "codex" : DEFAULTS.agentDefaultProvider;
+  const resolvedSandboxProvider = normalizeAutoSpawnSandboxProvider(
+    resolvedAgentDefaultProvider,
+    normalizeSandboxProvider(sandboxProvider, sandbox === "true")
+  );
 
   return {
     autoUpdateEnabled: enabled !== null ? enabled === "true" : DEFAULTS.autoUpdateEnabled,
@@ -35,8 +51,7 @@ export function getSettings(): Settings {
     sandboxEnabled: resolvedSandboxProvider !== "none",
     sandboxProvider: resolvedSandboxProvider,
     deepgramApiKey: deepgramKey !== null ? deepgramKey : DEFAULTS.deepgramApiKey,
-    agentDefaultProvider:
-      agentDefaultProvider === "codex" ? "codex" : DEFAULTS.agentDefaultProvider,
+    agentDefaultProvider: resolvedAgentDefaultProvider,
     agentDefaultDisableSandbox:
       agentDefaultDisableSandbox !== null
         ? agentDefaultDisableSandbox === "true"
@@ -51,6 +66,14 @@ export function getSettings(): Settings {
 }
 
 export function updateSettings(patch: SettingsUpdate): Settings {
+  const current = getSettings();
+  const nextAgentDefaultProvider =
+    patch.agentDefaultProvider ?? current.agentDefaultProvider;
+  const nextSandboxProvider = normalizeAutoSpawnSandboxProvider(
+    nextAgentDefaultProvider,
+    patch.sandboxProvider ?? current.sandboxProvider
+  );
+
   if (patch.autoUpdateEnabled !== undefined) {
     setSetting("autoUpdateEnabled", String(patch.autoUpdateEnabled));
   }
@@ -66,15 +89,15 @@ export function updateSettings(patch: SettingsUpdate): Settings {
       setSetting("sandboxProvider", patch.sandboxEnabled ? "docker" : "none");
     }
   }
-  if (patch.sandboxProvider !== undefined) {
-    setSetting("sandboxProvider", patch.sandboxProvider);
-    setSetting("sandboxEnabled", String(patch.sandboxProvider !== "none"));
+  if (patch.sandboxProvider !== undefined || nextSandboxProvider !== current.sandboxProvider) {
+    setSetting("sandboxProvider", nextSandboxProvider);
+    setSetting("sandboxEnabled", String(nextSandboxProvider !== "none"));
   }
   if (patch.deepgramApiKey !== undefined) {
     setSetting("deepgramApiKey", patch.deepgramApiKey);
   }
   if (patch.agentDefaultProvider !== undefined) {
-    setSetting("agentDefaultProvider", patch.agentDefaultProvider);
+    setSetting("agentDefaultProvider", nextAgentDefaultProvider);
   }
   if (patch.agentDefaultDisableSandbox !== undefined) {
     setSetting("agentDefaultDisableSandbox", String(patch.agentDefaultDisableSandbox));

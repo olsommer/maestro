@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { prepareShellCommand, shouldDeleteTerminalDuringRestore } from "./terminal-manager.js";
+import { buildStartupShellCommand } from "./pty-manager.js";
 
 test("leaves manual terminal commands attached to the shell", () => {
   assert.equal(
@@ -32,6 +33,24 @@ test("exits the shell after scheduler and automation commands finish", () => {
 
 test("keeps empty commands empty", () => {
   assert.equal(prepareShellCommand("   ", "kanban"), "");
+});
+
+test("keeps manual startup shells open after a successful startup command", () => {
+  assert.equal(
+    buildStartupShellCommand("'codex' exec 'ship it'", "/bin/bash", true),
+    "'codex' exec 'ship it'\n__maestro_exit_status=$?\nif [ $__maestro_exit_status -eq 0 ]; then\n  exec '/bin/bash' -l\nfi\nexit $__maestro_exit_status"
+  );
+});
+
+test("uses startup commands unchanged when the shell should not stay open", () => {
+  assert.equal(
+    buildStartupShellCommand(
+      "'codex' exec 'ship it'\n__maestro_exit_status=$?\nexit $__maestro_exit_status",
+      "/bin/bash",
+      false
+    ),
+    "'codex' exec 'ship it'\n__maestro_exit_status=$?\nexit $__maestro_exit_status"
+  );
 });
 
 test("deletes auto-worktree terminals during restore when the worktree path is missing", () => {

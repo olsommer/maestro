@@ -525,14 +525,27 @@ function AgentDefaultsCard({
   const [codexStatus, setCodexStatus] = useState<CodexAuthStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<{ sandbox: { dockerAvailable: boolean; gvisorAvailable: boolean } } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(true);
+  const gvisorAvailable = Boolean(runtimeStatus?.sandbox.gvisorAvailable);
+  const dockerAvailable = runtimeStatus?.sandbox.dockerAvailable ?? true;
+  const normalizeSandboxForProvider = useCallback(
+    (nextProvider: "claude" | "codex", nextSandboxProvider: "none" | "docker" | "gvisor") => {
+      if (nextProvider === "codex" && nextSandboxProvider === "gvisor") {
+        return dockerAvailable ? "docker" : "none";
+      }
+      return nextSandboxProvider;
+    },
+    [dockerAvailable]
+  );
 
   useEffect(() => {
     if (!settings) return;
     setProvider(settings.agentDefaultProvider);
-    setSandboxProvider(settings.sandboxProvider);
+    setSandboxProvider(
+      normalizeSandboxForProvider(settings.agentDefaultProvider, settings.sandboxProvider)
+    );
     setSkipPermissions(settings.agentDefaultSkipPermissions);
     setWorktreeMode(settings.agentDefaultWorktreeMode);
-  }, [settings]);
+  }, [normalizeSandboxForProvider, settings]);
 
   useEffect(() => {
     setLoadingProviders(true);
@@ -557,8 +570,11 @@ function AgentDefaultsCard({
   const selectedProviderAvailable =
     provider === "claude" ? claudeAvailable : codexAvailable;
   const hasAvailableProvider = claudeAvailable || codexAvailable;
-  const gvisorAvailable = Boolean(runtimeStatus?.sandbox.gvisorAvailable);
-  const dockerAvailable = runtimeStatus?.sandbox.dockerAvailable ?? true;
+  useEffect(() => {
+    setSandboxProvider((currentSandboxProvider) =>
+      normalizeSandboxForProvider(provider, currentSandboxProvider)
+    );
+  }, [normalizeSandboxForProvider, provider]);
   const isDirty =
     provider !== (settings?.agentDefaultProvider ?? "claude") ||
     sandboxProvider !== (settings?.sandboxProvider ?? "none") ||
@@ -568,11 +584,13 @@ function AgentDefaultsCard({
   async function handleSave() {
     setSaving(true);
     try {
+      const normalizedSandboxProvider = normalizeSandboxForProvider(provider, sandboxProvider);
       const updated = await api.updateSettings({
         agentDefaultProvider: provider,
-        sandboxProvider,
-        agentDefaultDisableSandbox: sandboxProvider === "none",
-        agentDefaultSkipPermissions: sandboxProvider === "none" ? false : skipPermissions,
+        sandboxProvider: normalizedSandboxProvider,
+        agentDefaultDisableSandbox: normalizedSandboxProvider === "none",
+        agentDefaultSkipPermissions:
+          normalizedSandboxProvider === "none" ? false : skipPermissions,
         agentDefaultWorktreeMode: worktreeMode,
       });
       onSettingsUpdate(updated);
@@ -588,7 +606,7 @@ function AgentDefaultsCard({
       <CardHeader>
         <CardTitle className="text-sm">Agents</CardTitle>
         <CardDescription>
-          Defaults for coding agents that Maestro spawns automatically from kanban and scheduler.
+          Defaults for coding agents that Maestro spawns automatically from kanban, scheduler, and automations.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -639,19 +657,25 @@ function AgentDefaultsCard({
               <FieldDescription>
                 {sandboxProvider === "none"
                   ? "Auto-spawned agents will run without sandboxing."
-                  : "Run automatically spawned agents inside the selected sandbox provider."}
+                  : provider === "codex" && sandboxProvider === "docker"
+                    ? "Codex auto-spawned agents run in Docker or without sandboxing. gVisor is disabled."
+                    : "Run automatically spawned agents inside the selected sandbox provider."}
               </FieldDescription>
             </FieldContent>
             <Select
               id="agent-default-sandbox"
               value={sandboxProvider}
               onValueChange={(value) => {
-                const nextProvider =
+                const nextSandboxProvider =
                   value === "gvisor" || value === "docker" || value === "none"
                     ? value
                     : "docker";
-                setSandboxProvider(nextProvider);
-                if (nextProvider === "none") {
+                const normalizedSandboxProvider = normalizeSandboxForProvider(
+                  provider,
+                  nextSandboxProvider
+                );
+                setSandboxProvider(normalizedSandboxProvider);
+                if (normalizedSandboxProvider === "none") {
                   setSkipPermissions(false);
                 }
               }}
@@ -661,8 +685,12 @@ function AgentDefaultsCard({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="gvisor" disabled={!gvisorAvailable}>
-                    {gvisorAvailable ? "gVisor" : "gVisor (unavailable)"}
+                  <SelectItem value="gvisor" disabled={!gvisorAvailable || provider === "codex"}>
+                    {provider === "codex"
+                      ? "gVisor (disabled for Codex)"
+                      : gvisorAvailable
+                        ? "gVisor"
+                        : "gVisor (unavailable)"}
                   </SelectItem>
                   <SelectItem value="docker" disabled={!dockerAvailable}>
                     {dockerAvailable ? "Docker" : "Docker (unavailable)"}
