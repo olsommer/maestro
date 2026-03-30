@@ -2,7 +2,35 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ClaudeProvider, CodexProvider } from "./providers.js";
 
-test("codex kanban and scheduler spawns use the yolo alias before the prompt", () => {
+test("codex scheduler and automation spawns add yolo/json before the prompt", () => {
+  const provider = new CodexProvider();
+
+  assert.equal(
+    provider.buildInteractiveCommand({
+      binaryPath: "codex",
+      prompt: "ship it",
+      projectPath: "/tmp/project",
+      kind: "scheduler",
+      skipPermissions: true,
+      sandbox: false,
+    }),
+    "'codex' exec --yolo --json 'ship it'"
+  );
+
+  assert.equal(
+    provider.buildInteractiveCommand({
+      binaryPath: "codex",
+      prompt: "ship it",
+      projectPath: "/tmp/project",
+      kind: "automation",
+      skipPermissions: true,
+      sandbox: false,
+    }),
+    "'codex' exec --json 'ship it'"
+  );
+});
+
+test("codex kanban spawns keep the current non-json command shape", () => {
   const provider = new CodexProvider();
 
   assert.equal(
@@ -11,18 +39,6 @@ test("codex kanban and scheduler spawns use the yolo alias before the prompt", (
       prompt: "ship it",
       projectPath: "/tmp/project",
       kind: "kanban",
-      skipPermissions: true,
-      sandbox: false,
-    }),
-    "'codex' exec --yolo 'ship it'"
-  );
-
-  assert.equal(
-    provider.buildInteractiveCommand({
-      binaryPath: "codex",
-      prompt: "ship it",
-      projectPath: "/tmp/project",
-      kind: "scheduler",
       skipPermissions: true,
       sandbox: false,
     }),

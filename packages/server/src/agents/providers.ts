@@ -141,9 +141,15 @@ export class CodexProvider implements CLIProvider {
       params.kind === "kanban" || params.kind === "scheduler";
     const shouldSkipPermissions =
       params.skipPermissions && (params.sandbox || forceSkipPermissions);
+    const shouldUseJson =
+      params.kind === "scheduler" || params.kind === "automation";
 
     if (shouldSkipPermissions) {
       cmd += " --yolo";
+    }
+
+    if (shouldUseJson) {
+      cmd += " --json";
     }
 
     if (params.prompt) {
