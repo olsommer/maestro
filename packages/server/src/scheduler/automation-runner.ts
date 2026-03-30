@@ -15,7 +15,7 @@ import {
   updateAutomationRecord,
   updateAutomationRunRecord,
 } from "../state/sqlite.js";
-import { runGitHubApi, getGitHubConnectionStatus } from "../integrations/github.js";
+import { runGitHubApi } from "../integrations/github.js";
 import type { AutomationRecord, AutomationRunRecord } from "../state/types.js";
 import { extractTerminalTailForComment } from "../state/kanban.js";
 import { readTerminalHistory } from "../state/terminals.js";
@@ -489,8 +489,6 @@ async function fetchGitHubMentions(
     return [];
   }
 
-  const auth = await getGitHubConnectionStatus();
-  const botLogin = auth.login?.toLowerCase() ?? null;
   const since = lastPollAt ? new URLSearchParams({ since: lastPollAt }).toString() : "";
   const suffix = since ? `&${since}` : "";
   const repoFullName = `${owner}/${repo}`;
@@ -502,12 +500,21 @@ async function fetchGitHubMentions(
     `repos/${owner}/${repo}/issues/comments?sort=updated&direction=asc&per_page=100${suffix}`
   );
 
-  const bodyMentions = issues.flatMap((issue) => {
+  return collectGitHubMentionSourceItems({
+    issues,
+    comments,
+    repoFullName,
+  });
+}
+
+export function collectGitHubMentionSourceItems(input: {
+  issues: GitHubIssueListItem[];
+  comments: GitHubIssueComment[];
+  repoFullName: string;
+}): SourceItem[] {
+  const bodyMentions = input.issues.flatMap((issue) => {
     const body = issue.body || "";
     if (!MAESTRO_MENTION_REGEX.test(body)) {
-      return [];
-    }
-    if (botLogin && issue.user.login.toLowerCase() === botLogin) {
       return [];
     }
 
@@ -521,7 +528,7 @@ async function fetchGitHubMentions(
         url: issue.html_url,
         author: issue.user.login,
         labels: issue.labels?.map((label) => label.name) ?? [],
-        repoFullName,
+        repoFullName: input.repoFullName,
         issueNumber: String(issue.number),
         issueKind: kind,
         triggerType,
@@ -533,12 +540,9 @@ async function fetchGitHubMentions(
     ];
   });
 
-  const commentMentions = comments.flatMap((comment) => {
+  const commentMentions = input.comments.flatMap((comment) => {
     const body = comment.body || "";
     if (!MAESTRO_MENTION_REGEX.test(body)) {
-      return [];
-    }
-    if (botLogin && comment.user.login.toLowerCase() === botLogin) {
       return [];
     }
 
@@ -550,11 +554,11 @@ async function fetchGitHubMentions(
     return [
       {
         id: `comment:${comment.id}`,
-        title: `GitHub mention in ${repoFullName}#${issueNumber}`,
+        title: `GitHub mention in ${input.repoFullName}#${issueNumber}`,
         body,
         url: comment.html_url,
         author: comment.user.login,
-        repoFullName,
+        repoFullName: input.repoFullName,
         issueNumber: String(issueNumber),
         issueKind: "issue",
         triggerType: "comment",
