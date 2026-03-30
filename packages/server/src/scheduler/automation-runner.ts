@@ -22,9 +22,9 @@ import { readTerminalHistory } from "../state/terminals.js";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const MAESTRO_MENTION_REGEX = /@maestro\b/i;
+const MAESTRO_INVOKE_REGEX = /^\s{0,2}@maestro:\s*/i;
 const MAESTRO_MENTION_TEXT_REGEX = /@maestro\b/gi;
-const LEADING_MAESTRO_MENTION_REGEX = /^\s*@maestro\b[,:-]?\s*/i;
+const LEADING_MAESTRO_MENTION_REGEX = /^\s{0,2}@maestro:\s*/i;
 const LEGACY_GITHUB_MENTION_PROMPT_TEMPLATE = [
   "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
   "",
@@ -539,7 +539,7 @@ export function collectGitHubMentionSourceItems(input: {
 }): SourceItem[] {
   const bodyMentions = input.issues.flatMap((issue) => {
     const body = issue.body || "";
-    if (!MAESTRO_MENTION_REGEX.test(body)) {
+    if (!isMaestroInvocation(body)) {
       return [];
     }
 
@@ -567,7 +567,7 @@ export function collectGitHubMentionSourceItems(input: {
 
   const commentMentions = input.comments.flatMap((comment) => {
     const body = comment.body || "";
-    if (!MAESTRO_MENTION_REGEX.test(body)) {
+    if (!isMaestroInvocation(body)) {
       return [];
     }
 
@@ -734,6 +734,10 @@ export function buildGitHubMentionPromptFields(input: {
 
 function stripLeadingMaestroMention(text: string): string {
   return text.replace(LEADING_MAESTRO_MENTION_REGEX, "").trim();
+}
+
+function isMaestroInvocation(text: string): boolean {
+  return MAESTRO_INVOKE_REGEX.test(text);
 }
 
 function commentsForPromptContext(

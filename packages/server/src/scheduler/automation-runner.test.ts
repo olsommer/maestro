@@ -13,7 +13,7 @@ test("collectGitHubMentionSourceItems includes self-authored issue and comment m
       {
         number: 103,
         title: "Mention in issue body",
-        body: "@maestro please handle this",
+        body: "@maestro: please handle this",
         html_url: "https://github.com/olsommer/maestro/issues/103",
         updated_at: "2026-03-30T09:44:25Z",
         user: { login: "olsommer" },
@@ -23,7 +23,7 @@ test("collectGitHubMentionSourceItems includes self-authored issue and comment m
     comments: [
       {
         id: 9001,
-        body: '@maestro this is just a test. answer with "hello".',
+        body: '@maestro: this is just a test. answer with "hello".',
         html_url: "https://github.com/olsommer/maestro/issues/103#issuecomment-9001",
         issue_url: "https://api.github.com/repos/olsommer/maestro/issues/103",
         created_at: "2026-03-30T09:45:16Z",
@@ -47,13 +47,13 @@ test("collectGitHubMentionSourceItems includes self-authored issue and comment m
         triggerType: "issue_body",
         triggerAuthor: "olsommer",
         issueNumber: "103",
-        body: "@maestro please handle this",
+        body: "@maestro: please handle this",
       },
       {
         triggerType: "comment",
         triggerAuthor: "olsommer",
         issueNumber: "103",
-        body: '@maestro this is just a test. answer with "hello".',
+        body: '@maestro: this is just a test. answer with "hello".',
       },
     ]
   );
@@ -81,6 +81,54 @@ test("collectGitHubMentionSourceItems ignores non-mentions", () => {
         issue_url: "https://api.github.com/repos/olsommer/maestro/issues/104",
         created_at: "2026-03-30T10:01:00Z",
         updated_at: "2026-03-30T10:01:00Z",
+        user: { login: "someone" },
+      },
+    ],
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("collectGitHubMentionSourceItems ignores non-command maestro mentions", () => {
+  const items = collectGitHubMentionSourceItems({
+    repoFullName: "olsommer/maestro",
+    issues: [
+      {
+        number: 105,
+        title: "Body mention without command form",
+        body: "Please ask @maestro to handle this",
+        html_url: "https://github.com/olsommer/maestro/issues/105",
+        updated_at: "2026-03-30T10:00:00Z",
+        user: { login: "someone" },
+        labels: [],
+      },
+      {
+        number: 106,
+        title: "Body mention without colon",
+        body: "@maestro please handle this",
+        html_url: "https://github.com/olsommer/maestro/issues/106",
+        updated_at: "2026-03-30T10:01:00Z",
+        user: { login: "someone" },
+        labels: [],
+      },
+    ],
+    comments: [
+      {
+        id: 9003,
+        body: 'heads up: @maestro: this should not run',
+        html_url: "https://github.com/olsommer/maestro/issues/105#issuecomment-9003",
+        issue_url: "https://api.github.com/repos/olsommer/maestro/issues/105",
+        created_at: "2026-03-30T10:02:00Z",
+        updated_at: "2026-03-30T10:02:00Z",
+        user: { login: "someone" },
+      },
+      {
+        id: 9004,
+        body: '@maestro this is just a test. answer with "hello".',
+        html_url: "https://github.com/olsommer/maestro/issues/106#issuecomment-9004",
+        issue_url: "https://api.github.com/repos/olsommer/maestro/issues/106",
+        created_at: "2026-03-30T10:03:00Z",
+        updated_at: "2026-03-30T10:03:00Z",
         user: { login: "someone" },
       },
     ],
@@ -126,7 +174,7 @@ test("buildGitHubMentionPromptFields uses the mention text as the prompt and pri
       },
       {
         id: 2,
-        body: '@maestro this is just a test. answer with "hello"',
+        body: '@maestro: this is just a test. answer with "hello"',
         html_url: "https://github.com/olsommer/maestro/issues/103#issuecomment-2",
         created_at: "2026-03-30T10:32:00Z",
         updated_at: "2026-03-30T10:32:00Z",
@@ -142,7 +190,7 @@ test("buildGitHubMentionPromptFields uses the mention text as the prompt and pri
       },
     ],
     triggerType: "comment",
-    triggerBody: '@maestro this is just a test. answer with "hello"',
+    triggerBody: '@maestro: this is just a test. answer with "hello"',
     triggerUrl: "https://github.com/olsommer/maestro/issues/103#issuecomment-2",
     triggerAuthor: "olsommer",
   });

@@ -28,14 +28,11 @@ function hardenShellHistory(env: Record<string, string>): Record<string, string>
 
   if (shellName === "bash") {
     const existingPromptCommand = hardened.PROMPT_COMMAND?.trim();
-    const bashOpts = new Set((hardened.BASHOPTS || "").split(":").filter(Boolean));
-    const promptParts = ["history -a", "history -n"];
+    const promptParts = ["shopt -s histappend", "history -a", "history -n"];
     if (existingPromptCommand) {
       promptParts.push(existingPromptCommand);
     }
 
-    bashOpts.add("histappend");
-    hardened.BASHOPTS = Array.from(bashOpts).join(":");
     hardened.PROMPT_COMMAND = promptParts.join("; ");
     hardened.HISTCONTROL = hardened.HISTCONTROL || "ignoredups:erasedups";
     hardened.HISTSIZE = hardened.HISTSIZE || "100000";
