@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { resolveProjectContext } from "../projects/project-service.js";
+import { getSettings } from "../state/settings.js";
 import {
   createAutomationRecord,
   deleteAutomationRecord,
@@ -10,6 +11,29 @@ import {
 } from "../state/sqlite.js";
 import { getProjectRecordById } from "../state/projects.js";
 
+function defaultAutomationPromptTemplate(sourceType: string): string {
+  if (sourceType === "github_mentions") {
+    return [
+      "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
+      "",
+      "Repository: {{ item.repoFullName }}",
+      "Type: {{ item.issueKind }}",
+      "Title: {{ item.title }}",
+      "URL: {{ item.url }}",
+      "Triggered by: {{ item.triggerType }} from {{ item.triggerAuthor }}",
+      "Trigger URL: {{ item.triggerUrl }}",
+      "",
+      "Trigger text:",
+      "{{ item.triggerBody }}",
+      "",
+      "Full thread:",
+      "{{ item.thread }}",
+    ].join("\n");
+  }
+
+  return "";
+}
+
 function withProject(automation: ReturnType<typeof getAutomationRecord>) {
   if (!automation) return null;
   const project = automation.agentProjectId
@@ -17,7 +41,14 @@ function withProject(automation: ReturnType<typeof getAutomationRecord>) {
     : null;
   return {
     ...automation,
-    project: project ? { id: project.id, name: project.name } : null,
+    project: project
+      ? {
+          id: project.id,
+          name: project.name,
+          githubOwner: project.githubOwner,
+          githubRepo: project.githubRepo,
+        }
+      : null,
     runs: listAutomationRunRecords(automation.id, 5),
   };
 }
@@ -46,53 +77,49 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
     try {
       const body = req.body as {
         name: string;
-        description?: string;
-        sourceType: string;
-        sourceConfig: Record<string, string>;
-        triggerType?: string;
         agentProjectId?: string;
-        agentProjectPath?: string;
-        agentPromptTemplate: string;
-        agentProvider?: string;
-        agentCustomDisplayName?: string;
-        agentCustomCommandTemplate?: string;
-        agentCustomEnv?: Record<string, string>;
-        agentSkipPermissions?: boolean;
         pollIntervalMinutes?: number;
       };
 
-      if (
-        !body.name ||
-        !body.sourceType ||
-        !body.sourceConfig ||
-        !body.agentPromptTemplate
-      ) {
+      if (!body.name || !body.agentProjectId) {
         return reply.status(400).send({
-          error:
-            "name, sourceType, sourceConfig, agentProjectId/agentProjectPath, and agentPromptTemplate are required",
+          error: "name and agentProjectId are required",
         });
       }
 
-      const projectContext = await resolveProjectContext({
-        projectId: body.agentProjectId,
-        projectPath: body.agentProjectPath,
-      });
+      const projectContext = await resolveProjectContext({ projectId: body.agentProjectId });
+      const project = projectContext.project;
+
+      if (!project) {
+        return reply.status(400).send({ error: "Project not found" });
+      }
+      if (!project.githubOwner || !project.githubRepo) {
+        return reply.status(400).send({
+          error: "Automations currently require a GitHub-linked project",
+        });
+      }
+
+      const settings = getSettings();
+      const sourceType = "github_mentions";
 
       const automation = createAutomationRecord({
         name: body.name,
-        description: body.description || null,
+        description: null,
         enabled: true,
-        sourceType: body.sourceType,
-        sourceConfig: body.sourceConfig,
-        triggerType: body.triggerType || "on_new",
+        sourceType,
+        sourceConfig: {
+          owner: project.githubOwner,
+          repo: project.githubRepo,
+        },
+        triggerType: "on_new",
         agentProjectId: projectContext.projectId,
         agentProjectPath: projectContext.projectPath,
-        agentPromptTemplate: body.agentPromptTemplate,
-        agentProvider: body.agentProvider || "claude",
-        agentCustomDisplayName: body.agentCustomDisplayName || null,
-        agentCustomCommandTemplate: body.agentCustomCommandTemplate || null,
-        agentCustomEnv: body.agentCustomEnv || null,
-        agentSkipPermissions: body.agentSkipPermissions ?? true,
+        agentPromptTemplate: defaultAutomationPromptTemplate(sourceType),
+        agentProvider: settings.agentDefaultProvider,
+        agentCustomDisplayName: null,
+        agentCustomCommandTemplate: null,
+        agentCustomEnv: null,
+        agentSkipPermissions: settings.agentDefaultSkipPermissions,
         pollIntervalMinutes: body.pollIntervalMinutes || 5,
         lastPollAt: null,
         processedHashes: [],

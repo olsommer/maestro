@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  GithubIcon,
   PlusIcon,
   RotateCcwIcon,
   Trash2Icon,
@@ -34,7 +35,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,36 +46,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
-
-function defaultPromptForSourceType(sourceType: string): string {
-  if (sourceType === "github_mentions") {
-    return [
-      "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
-      "",
-      "Repository: {{ item.repoFullName }}",
-      "Type: {{ item.issueKind }}",
-      "Title: {{ item.title }}",
-      "URL: {{ item.url }}",
-      "Triggered by: {{ item.triggerType }} from {{ item.triggerAuthor }}",
-      "Trigger URL: {{ item.triggerUrl }}",
-      "",
-      "Trigger text:",
-      "{{ item.triggerBody }}",
-      "",
-      "Full thread:",
-      "{{ item.thread }}",
-    ].join("\n");
-  }
-
-  return [
-    "Review this GitHub issue and provide a fix:",
-    "",
-    "Title: {{ item.title }}",
-    "Body: {{ item.body }}",
-    "URL: {{ item.url }}",
-  ].join("\n");
-}
 
 interface AutomationRun {
   id: string;
@@ -97,7 +67,12 @@ interface Automation {
   triggerType: string;
   agentProjectId: string | null;
   agentProjectPath: string;
-  project?: { id: string; name: string } | null;
+  project?: {
+    id: string;
+    name: string;
+    githubOwner: string | null;
+    githubRepo: string | null;
+  } | null;
   agentPromptTemplate: string;
   agentProvider: string;
   agentModel: string | null;
@@ -110,18 +85,7 @@ interface Automation {
   createdAt: string;
 }
 
-const SOURCE_TYPES = [
-  { value: "github_issues", label: "GitHub Issues" },
-  { value: "github_prs", label: "GitHub PRs" },
-  { value: "github_mentions", label: "GitHub Mentions" },
-  { value: "rss", label: "RSS Feed" },
-];
-
-const PROVIDERS = [
-  { value: "claude", label: "Claude Code" },
-  { value: "codex", label: "Codex" },
-  { value: "custom", label: "Custom CLI" },
-];
+const MENTIONS_SOURCE_LABEL = "GitHub Mentions";
 
 function runBadgeVariant(status: string): "secondary" | "destructive" | "outline" {
   if (status === "error") return "destructive";
@@ -138,25 +102,16 @@ function AutomationsView() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
-  const [sourceType, setSourceType] = useState("github_issues");
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [rssUrl, setRssUrl] = useState("");
-  const [provider, setProvider] = useState("claude");
-  const [customDisplayName, setCustomDisplayName] = useState("");
-  const [customCommandTemplate, setCustomCommandTemplate] = useState("");
-  const [customEnvText, setCustomEnvText] = useState("");
   const [projectId, setProjectId] = useState("");
-  const [projectPath, setProjectPath] = useState("");
-  const [promptTemplate, setPromptTemplate] = useState(
-    defaultPromptForSourceType("github_issues")
-  );
   const [pollInterval, setPollInterval] = useState(5);
   const [pendingAction, setPendingAction] = useState<{
     id: string;
     type: "reset" | "delete";
   } | null>(null);
 
+  const githubProjects = projects.filter((project) => project.githubOwner && project.githubRepo);
+  const selectedGithubProject =
+    githubProjects.find((project) => project.id === projectId) ?? null;
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
   const visibleAutomations = selectedProjectId
     ? automations.filter(
@@ -165,40 +120,15 @@ function AutomationsView() {
           automation.agentProjectPath === selectedProject?.localPath
       )
     : automations;
-  const isCustomProvider = provider === "custom";
 
   useEffect(() => {
     if (!showNew) return;
-    setProjectId(selectedProjectId ?? projects[0]?.id ?? "");
-  }, [showNew, projects, selectedProjectId]);
-
-  useEffect(() => {
-    setPromptTemplate((current) => {
-      const issueDefault = defaultPromptForSourceType("github_issues");
-      const mentionDefault = defaultPromptForSourceType("github_mentions");
-      if (current === issueDefault || current === mentionDefault || !current.trim()) {
-        return defaultPromptForSourceType(sourceType);
-      }
-      return current;
-    });
-  }, [sourceType]);
-
-  function parseCustomEnv(raw: string): Record<string, string> {
-    return Object.fromEntries(
-      raw
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const separatorIndex = line.indexOf("=");
-          if (separatorIndex === -1) throw new Error(`Invalid: ${line}`);
-          return [
-            line.slice(0, separatorIndex).trim(),
-            line.slice(separatorIndex + 1).trim(),
-          ] as const;
-        })
-    );
-  }
+    const defaultProjectId =
+      githubProjects.find((project) => project.id === selectedProjectId)?.id ??
+      githubProjects[0]?.id ??
+      "";
+    setProjectId(defaultProjectId);
+  }, [githubProjects, selectedProjectId, showNew]);
 
   async function getJsonOrThrow<T>(res: Response): Promise<T> {
     const data = (await res.json().catch(() => ({}))) as T & { error?: string };
@@ -224,66 +154,23 @@ function AutomationsView() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const trimmedProjectId = projectId.trim() || undefined;
-    const trimmedProjectPath = projectPath.trim() || undefined;
+    const trimmedProjectId = projectId.trim();
 
-    if (!name.trim() || (!trimmedProjectId && !trimmedProjectPath)) {
+    if (!name.trim() || !trimmedProjectId) {
       setError("Name and project are required");
-      return;
-    }
-    if (isCustomProvider && !customCommandTemplate.trim()) {
-      setError("Custom command template is required");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    let sourceConfig: Record<string, string> = {};
-    if (
-      sourceType === "github_issues" ||
-      sourceType === "github_prs" ||
-      sourceType === "github_mentions"
-    ) {
-      if (!owner.trim() || !repo.trim()) {
-        setError("Owner and repo required");
-        setLoading(false);
-        return;
-      }
-      sourceConfig = { owner: owner.trim(), repo: repo.trim() };
-    } else if (sourceType === "rss") {
-      if (!rssUrl.trim()) {
-        setError("RSS URL required");
-        setLoading(false);
-        return;
-      }
-      sourceConfig = { url: rssUrl.trim() };
-    }
-
     try {
-      const customEnv =
-        isCustomProvider && customEnvText.trim()
-          ? parseCustomEnv(customEnvText)
-          : undefined;
-
       const res = await authFetch("/api/automations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          sourceType,
-          sourceConfig,
-          agentProvider: provider,
-          agentCustomDisplayName: isCustomProvider
-            ? customDisplayName.trim() || undefined
-            : undefined,
-          agentCustomCommandTemplate: isCustomProvider
-            ? customCommandTemplate.trim()
-            : undefined,
-          agentCustomEnv: customEnv,
           agentProjectId: trimmedProjectId,
-          agentProjectPath: trimmedProjectId ? undefined : trimmedProjectPath,
-          agentPromptTemplate: promptTemplate,
           pollIntervalMinutes: pollInterval,
         }),
       });
@@ -291,16 +178,11 @@ function AutomationsView() {
       await getJsonOrThrow<{ automation: Automation }>(res);
       setShowNew(false);
       setName("");
-      setOwner("");
-      setRepo("");
-      setRssUrl("");
-      setProvider("claude");
-      setCustomDisplayName("");
-      setCustomCommandTemplate("");
-      setCustomEnvText("");
-      setProjectId(selectedProjectId ?? projects[0]?.id ?? "");
-      setProjectPath("");
-      setPromptTemplate(defaultPromptForSourceType("github_issues"));
+      setProjectId(
+        githubProjects.find((project) => project.id === selectedProjectId)?.id ??
+          githubProjects[0]?.id ??
+          ""
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -385,7 +267,7 @@ function AutomationsView() {
           <CardHeader>
             <CardTitle>Create Automation</CardTitle>
             <CardDescription>
-              Configure a source, project, and prompt template for automated agent runs.
+              Create a GitHub mentions automation for a linked project.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -410,103 +292,28 @@ function AutomationsView() {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="automation-source">Source</FieldLabel>
-                  <Select
-                    value={sourceType}
-                    onValueChange={(value) =>
-                      setSourceType(String(value ?? "github_issues"))
-                    }
-                  >
-                    <SelectTrigger id="automation-source" className="w-full">
-                      <SelectValue placeholder="Select a source" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {SOURCE_TYPES.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  <FieldLabel>Source</FieldLabel>
+                  <div className="flex h-9 items-center rounded-md border px-3 text-sm">
+                    {MENTIONS_SOURCE_LABEL}
+                  </div>
+                  <FieldDescription>
+                    Automations currently trigger only from GitHub mentions.
+                  </FieldDescription>
                 </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="automation-provider">Provider</FieldLabel>
-                  <Select
-                    value={provider}
-                    onValueChange={(value) => setProvider(String(value ?? "claude"))}
-                  >
-                    <SelectTrigger id="automation-provider" className="w-full">
-                      <SelectValue placeholder="Select a provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {PROVIDERS.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                {(sourceType === "github_issues" ||
-                  sourceType === "github_prs" ||
-                  sourceType === "github_mentions") && (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor="automation-owner">GitHub Owner</FieldLabel>
-                      <Input
-                        id="automation-owner"
-                        value={owner}
-                        onChange={(e) => setOwner(e.target.value)}
-                        placeholder="org"
-                      />
-                    </Field>
-
-                    <Field>
-                      <FieldLabel htmlFor="automation-repo">GitHub Repo</FieldLabel>
-                      <Input
-                        id="automation-repo"
-                        value={repo}
-                        onChange={(e) => setRepo(e.target.value)}
-                        placeholder="repo"
-                      />
-                    </Field>
-                  </>
-                )}
-
-                {sourceType === "rss" && (
-                  <Field>
-                    <FieldLabel htmlFor="automation-rss-url">RSS URL</FieldLabel>
-                    <Input
-                      id="automation-rss-url"
-                      value={rssUrl}
-                      onChange={(e) => setRssUrl(e.target.value)}
-                      placeholder="https://..."
-                    />
-                  </Field>
-                )}
-
-                {projects.length > 0 && (
+                {githubProjects.length > 0 ? (
                   <Field>
                     <FieldLabel htmlFor="automation-project">Project</FieldLabel>
                     <Select
-                      value={projectId || "manual"}
-                      onValueChange={(value) =>
-                        setProjectId(value === "manual" ? "" : String(value ?? ""))
-                      }
+                      value={projectId}
+                      onValueChange={(value) => setProjectId(String(value ?? ""))}
                     >
                       <SelectTrigger id="automation-project" className="w-full">
                         <SelectValue placeholder="Select a project" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value="manual">Manual path</SelectItem>
-                          {projects.map((project) => (
+                          {githubProjects.map((project) => (
                             <SelectItem key={project.id} value={project.id}>
                               {project.name}
                             </SelectItem>
@@ -514,24 +321,28 @@ function AutomationsView() {
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                    {selectedGithubProject && (
+                      <FieldDescription>
+                        {selectedGithubProject.githubOwner}/{selectedGithubProject.githubRepo}
+                      </FieldDescription>
+                    )}
+                    <FieldDescription>
+                      Automations are scoped to a GitHub-linked project and use that repository
+                      for mentions.
+                    </FieldDescription>
+                  </Field>
+                ) : (
+                  <Field>
+                    <FieldLabel>Project</FieldLabel>
+                    <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                      Link a project to a GitHub repository before creating an automation.
+                    </div>
+                    <FieldDescription>
+                      Automations are scoped to a GitHub-linked project and use that repository
+                      for mentions.
+                    </FieldDescription>
                   </Field>
                 )}
-
-                <Field>
-                  <FieldLabel htmlFor="automation-project-path">Path</FieldLabel>
-                  <Input
-                    id="automation-project-path"
-                    value={projectPath}
-                    onChange={(e) => setProjectPath(e.target.value)}
-                    placeholder="Agent project path"
-                    disabled={Boolean(projectId)}
-                  />
-                  <FieldDescription>
-                    {projectId
-                      ? "Using the selected project path."
-                      : "Use this when the automation should target a path not stored in Maestro."}
-                  </FieldDescription>
-                </Field>
 
                 <Field>
                   <FieldLabel htmlFor="automation-poll-interval">
@@ -548,59 +359,6 @@ function AutomationsView() {
                   />
                   <FieldDescription>Interval in minutes.</FieldDescription>
                 </Field>
-
-                {isCustomProvider && (
-                  <>
-                    <FieldSeparator>Custom CLI</FieldSeparator>
-
-                    <Field>
-                      <FieldLabel htmlFor="automation-cli-label">CLI Label</FieldLabel>
-                      <Input
-                        id="automation-cli-label"
-                        value={customDisplayName}
-                        onChange={(e) => setCustomDisplayName(e.target.value)}
-                        placeholder="CLI label"
-                      />
-                    </Field>
-
-                    <Field>
-                      <FieldLabel htmlFor="automation-command-template">
-                        Command Template
-                      </FieldLabel>
-                      <Textarea
-                        id="automation-command-template"
-                        value={customCommandTemplate}
-                        onChange={(e) => setCustomCommandTemplate(e.target.value)}
-                        rows={3}
-                        className="font-mono"
-                      />
-                    </Field>
-
-                    <Field>
-                      <FieldLabel htmlFor="automation-env">Env Vars</FieldLabel>
-                      <Textarea
-                        id="automation-env"
-                        value={customEnvText}
-                        onChange={(e) => setCustomEnvText(e.target.value)}
-                        rows={3}
-                        className="font-mono"
-                      />
-                    </Field>
-                  </>
-                )}
-
-                <Field>
-                  <FieldLabel htmlFor="automation-prompt-template">
-                    Prompt Template
-                  </FieldLabel>
-                  <Textarea
-                    id="automation-prompt-template"
-                    value={promptTemplate}
-                    onChange={(e) => setPromptTemplate(e.target.value)}
-                    rows={5}
-                    className="font-mono"
-                  />
-                </Field>
               </FieldGroup>
 
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -611,7 +369,7 @@ function AutomationsView() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loading}>
+                <Button type="submit" disabled={loading || githubProjects.length === 0}>
                   {loading ? "Creating..." : "Create"}
                 </Button>
               </div>
@@ -645,8 +403,9 @@ function AutomationsView() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{automation.name}</span>
                     <Badge variant="secondary">
-                      {SOURCE_TYPES.find((item) => item.value === automation.sourceType)?.label ||
-                        automation.sourceType}
+                      {automation.sourceType === "github_mentions"
+                        ? MENTIONS_SOURCE_LABEL
+                        : automation.sourceType}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       every {automation.pollIntervalMinutes}m
@@ -694,14 +453,17 @@ function AutomationsView() {
                 )}
 
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="secondary" className="text-[10px]">
-                    {automation.agentProvider === "custom"
-                      ? automation.agentCustomDisplayName || "Custom CLI"
-                      : automation.agentProvider}
-                  </Badge>
                   <Badge variant="outline" className="max-w-full truncate text-[10px]">
                     {automation.project?.name || automation.agentProjectPath}
                   </Badge>
+                  {(automation.project?.githubOwner || automation.sourceConfig.owner) &&
+                    (automation.project?.githubRepo || automation.sourceConfig.repo) && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        <GithubIcon className="size-3" />
+                        {(automation.project?.githubOwner || automation.sourceConfig.owner)}/
+                        {(automation.project?.githubRepo || automation.sourceConfig.repo)}
+                      </Badge>
+                    )}
                   {automation.lastPollAt && (
                     <Badge variant="outline" className="text-[10px]">
                       Last poll: {new Date(automation.lastPollAt).toLocaleString()}
