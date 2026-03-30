@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
 import {
+  AlignHorizontalSpaceAroundIcon,
   BotIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -120,12 +121,16 @@ function TerminalPanel({
   onSelect,
   onDelete,
   onSwipeNavigate,
+  onRegisterRefit,
+  onRefit,
 }: {
   terminal: TerminalRecord;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onSwipeNavigate?: (dir: -1 | 1) => void;
+  onRegisterRefit?: (terminalId: string, refit: () => void) => void;
+  onRefit?: () => void;
 }) {
   const recentInputs = terminal.recentInputs ?? [];
   const sandboxBadge = getSandboxBadge(terminal);
@@ -194,7 +199,7 @@ function TerminalPanel({
             </PopoverTrigger>
             <PopoverContent
               align="end"
-              className="w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl p-0"
+              className="flex max-h-[min(26rem,calc(100vh-4rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl p-0"
             >
               <div className="border-b px-3 py-2.5">
                 <PopoverTitle>Recent Commands</PopoverTitle>
@@ -202,13 +207,13 @@ function TerminalPanel({
                   Last submitted inputs sent to this terminal.
                 </PopoverDescription>
               </div>
-              <div className="px-3 py-2.5">
+              <div className="flex min-h-0 flex-1 flex-col px-3 py-2.5">
                 <div className="mb-2 flex items-center justify-between text-[10px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
                   <span>Command history</span>
                   <span>{recentInputs.length}/10</span>
                 </div>
                 {recentInputs.length > 0 ? (
-                  <ScrollArea className="max-h-52 pr-3">
+                  <ScrollArea className="min-h-0 flex-1 pr-3">
                     <div className="space-y-2">
                       {[...recentInputs].reverse().map((input, index) => (
                         <div
@@ -233,6 +238,19 @@ function TerminalPanel({
               </div>
             </PopoverContent>
           </Popover>
+          <Button
+            size="icon-xs"
+            variant="outline"
+            className="hidden md:inline-flex"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRefit?.();
+            }}
+            title="Refit terminal to panel"
+          >
+            <AlignHorizontalSpaceAroundIcon />
+            <span className="sr-only">Refit terminal to panel</span>
+          </Button>
           <Button
             size="icon-xs"
             variant="destructive"
@@ -276,6 +294,11 @@ function TerminalPanel({
           terminalId={terminal.id}
           isActive={isSelected}
           onSwipeNavigate={onSwipeNavigate}
+          registerRefit={
+            onRegisterRefit
+              ? (refit) => onRegisterRefit(terminal.id, refit)
+              : undefined
+          }
         />
       </div>
     </section>
@@ -292,6 +315,7 @@ function TerminalPagePanel() {
   const [gridPreset, setGridPreset] = useState<GridPreset>("auto");
   const [projectFilterId, setProjectFilterId] = useState("all");
   const isMobile = useIsMobile();
+  const [refitHandlers, setRefitHandlers] = useState<Record<string, () => void>>({});
   const [pendingDeleteTerminal, setPendingDeleteTerminal] =
     useState<TerminalRecord | null>(null);
 
@@ -401,6 +425,22 @@ function TerminalPagePanel() {
     },
     [selectedIndex, visibleTerminals, selectTerminal]
   );
+
+  const registerRefitHandler = useCallback((terminalId: string, refit: () => void) => {
+    setRefitHandlers((current) => {
+      if (current[terminalId] === refit) {
+        return current;
+      }
+      return {
+        ...current,
+        [terminalId]: refit,
+      };
+    });
+  }, []);
+
+  const handleRefitTerminal = useCallback((terminalId: string) => {
+    refitHandlers[terminalId]?.();
+  }, [refitHandlers]);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
@@ -523,6 +563,8 @@ function TerminalPagePanel() {
                 onSelect={() => selectTerminal(terminal.id)}
                 onDelete={() => setPendingDeleteTerminal(terminal)}
                 onSwipeNavigate={isMobile ? navigateTerminal : undefined}
+                onRegisterRefit={registerRefitHandler}
+                onRefit={() => handleRefitTerminal(terminal.id)}
               />
             ))}
           </div>
