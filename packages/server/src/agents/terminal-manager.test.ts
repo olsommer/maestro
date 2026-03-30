@@ -15,18 +15,18 @@ test("leaves manual terminal commands attached to the shell", () => {
 test("exits the shell after kanban commands finish", () => {
   assert.equal(
     prepareShellCommand("'codex' exec 'ship it'", "kanban"),
-    "stty -echo\n'codex' exec 'ship it'\n__maestro_exit_status=$?\nstty echo\nexit $__maestro_exit_status"
+    "'codex' exec 'ship it'\n__maestro_exit_status=$?\nexit $__maestro_exit_status"
   );
 });
 
 test("exits the shell after scheduler and automation commands finish", () => {
   assert.equal(
     prepareShellCommand("'codex' exec 'ship it'", "scheduler"),
-    "stty -echo\n'codex' exec 'ship it'\n__maestro_exit_status=$?\nstty echo\nexit $__maestro_exit_status"
+    "'codex' exec 'ship it'\n__maestro_exit_status=$?\nexit $__maestro_exit_status"
   );
   assert.equal(
     prepareShellCommand("'codex' exec 'ship it'", "automation"),
-    "stty -echo\n'codex' exec 'ship it'\n__maestro_exit_status=$?\nstty echo\nexit $__maestro_exit_status"
+    "'codex' exec 'ship it'\n__maestro_exit_status=$?\nexit $__maestro_exit_status"
   );
 });
 

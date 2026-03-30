@@ -104,6 +104,7 @@ export interface PtySpawnOptions {
   terminalId: string;
   cwd: string;
   homeDir?: string;
+  startupCommand?: string;
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
@@ -127,6 +128,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
   ensureSpawnHelperExecutable();
 
   const shell = getShellPath(options.env);
+  const shellArgs = options.startupCommand ? ["-lc", options.startupCommand] : ["-l"];
   const cwd = options.cwd || os.homedir();
   const requestedSandboxProvider =
     options.sandboxProvider ?? (options.sandbox ? "docker" : "none");
@@ -150,7 +152,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
 
     const dockerArgs = buildDockerRunArgs(
       sandboxConfig,
-      ["/bin/bash", "-l"],
+      ["/bin/bash", ...shellArgs],
       ensureDockerSandboxImage(),
       sandboxProvider === "gvisor" ? "runsc" : undefined
     );
@@ -176,7 +178,7 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       );
     }
 
-    ptyProcess = pty.spawn(shell, ["-l"], {
+    ptyProcess = pty.spawn(shell, shellArgs, {
       name: "xterm-256color",
       cols: options.cols ?? 120,
       rows: options.rows ?? 30,

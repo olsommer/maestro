@@ -132,10 +132,8 @@ export function prepareShellCommand(
   }
 
   if (kind === "kanban" || kind === "automation" || kind === "scheduler") {
-    return `stty -echo
-${trimmed}
+    return `${trimmed}
 __maestro_exit_status=$?
-stty echo
 exit $__maestro_exit_status`;
   }
 
@@ -710,9 +708,12 @@ export async function startTerminal(
       skills: agent.skills,
     });
 
+    const shellCommand = prepareShellCommand(command, agent.kind);
+
     const ptyInstance = spawnPty({
       terminalId,
       cwd,
+      startupCommand: agent.kind === "terminal" ? undefined : shellCommand || undefined,
       env: childEnv,
       homeDir: isolatedHome?.homeDir,
       sandboxProvider,
@@ -890,8 +891,7 @@ export async function startTerminal(
 
     emitTerminalStatus(terminalId, "running" as AgentStatus, null, null);
 
-    const shellCommand = prepareShellCommand(command, agent.kind);
-    if (shellCommand) {
+    if (agent.kind === "terminal" && shellCommand) {
       writeCommandToPty(ptyInstance.id, shellCommand);
     }
     return { ptyId: ptyInstance.id };
