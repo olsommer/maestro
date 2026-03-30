@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ClaudeProvider, CodexProvider } from "./providers.js";
 
-test("codex scheduler and automation spawns add yolo/json before the prompt", () => {
+test("codex scheduler and automation spawns add non-interactive flags before the prompt", () => {
   const provider = new CodexProvider();
 
   assert.equal(
@@ -14,7 +14,7 @@ test("codex scheduler and automation spawns add yolo/json before the prompt", ()
       skipPermissions: true,
       sandbox: false,
     }),
-    "'codex' exec --yolo --json 'ship it'"
+    "'codex' exec --yolo --json --ephemeral 'ship it'"
   );
 
   assert.equal(
@@ -26,7 +26,7 @@ test("codex scheduler and automation spawns add yolo/json before the prompt", ()
       skipPermissions: true,
       sandbox: false,
     }),
-    "'codex' exec --json 'ship it'"
+    "'codex' exec --json --ephemeral 'ship it'"
   );
 });
 
