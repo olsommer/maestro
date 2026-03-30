@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import { nowIso } from "../state/files.js";
-import { createTerminal, startTerminal } from "../agents/terminal-manager.js";
+import {
+  createAutoSpawnTerminal,
+  createTerminal,
+  startTerminal,
+} from "../agents/terminal-manager.js";
 import type { AgentProvider } from "@maestro/wire";
 import {
   createAutomationRunRecord,
@@ -159,17 +163,7 @@ async function runAutomation(auto: AutomationRecord) {
       }
 
       const prompt = renderTemplate(auto.agentPromptTemplate, item);
-      const agent = await createTerminal({
-        name: `auto-${auto.name}-${Date.now()}`,
-        kind: "automation",
-        provider: auto.agentProvider as AgentProvider,
-        projectId: auto.agentProjectId || undefined,
-        projectPath: auto.agentProjectPath,
-        customDisplayName: auto.agentCustomDisplayName || undefined,
-        customCommandTemplate: auto.agentCustomCommandTemplate || undefined,
-        customEnv: auto.agentCustomEnv || undefined,
-        skipPermissions: auto.agentSkipPermissions,
-      });
+      const agent = await createAutomationTerminal(auto);
 
       await startTerminal(agent.id, prompt);
 
@@ -285,17 +279,7 @@ async function startNextQueuedAutomationRun(automationId: string) {
     }
 
     const prompt = renderTemplate(automation.agentPromptTemplate, promptItem);
-    const agent = await createTerminal({
-      name: `auto-${automation.name}-${Date.now()}`,
-      kind: "automation",
-      provider: automation.agentProvider as AgentProvider,
-      projectId: automation.agentProjectId || undefined,
-      projectPath: automation.agentProjectPath,
-      customDisplayName: automation.agentCustomDisplayName || undefined,
-      customCommandTemplate: automation.agentCustomCommandTemplate || undefined,
-      customEnv: automation.agentCustomEnv || undefined,
-      skipPermissions: automation.agentSkipPermissions,
-    });
+    const agent = await createAutomationTerminal(automation);
 
     updateAutomationRunRecord(nextRun.id, {
       status: "running",
@@ -318,6 +302,33 @@ async function startNextQueuedAutomationRun(automationId: string) {
     await postAutomationRunResult(nextRun, false, message);
     await startNextQueuedAutomationRun(automationId);
   }
+}
+
+async function createAutomationTerminal(automation: AutomationRecord) {
+  const commonOptions = {
+    name: `auto-${automation.name}-${Date.now()}`,
+    kind: "automation" as const,
+    projectId: automation.agentProjectId || undefined,
+    projectPath: automation.agentProjectPath,
+  };
+
+  if (
+    automation.agentProvider === "custom" ||
+    automation.agentCustomCommandTemplate ||
+    automation.agentCustomDisplayName ||
+    automation.agentCustomEnv
+  ) {
+    return createTerminal({
+      ...commonOptions,
+      provider: automation.agentProvider as AgentProvider,
+      customDisplayName: automation.agentCustomDisplayName || undefined,
+      customCommandTemplate: automation.agentCustomCommandTemplate || undefined,
+      customEnv: automation.agentCustomEnv || undefined,
+      skipPermissions: automation.agentSkipPermissions,
+    });
+  }
+
+  return createAutoSpawnTerminal(commonOptions);
 }
 
 export async function finalizeAutomationRunAfterTerminalExit(
