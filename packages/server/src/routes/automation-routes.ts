@@ -14,20 +14,9 @@ import { getProjectRecordById } from "../state/projects.js";
 function defaultAutomationPromptTemplate(sourceType: string): string {
   if (sourceType === "github_mentions") {
     return [
-      "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
+      "{{ item.promptBody }}",
       "",
-      "Repository: {{ item.repoFullName }}",
-      "Type: {{ item.issueKind }}",
-      "Title: {{ item.title }}",
-      "URL: {{ item.url }}",
-      "Triggered by: {{ item.triggerType }} from {{ item.triggerAuthor }}",
-      "Trigger URL: {{ item.triggerUrl }}",
-      "",
-      "Trigger text:",
-      "{{ item.triggerBody }}",
-      "",
-      "Full thread:",
-      "{{ item.thread }}",
+      "{{ item.promptContextBlock }}",
     ].join("\n");
   }
 

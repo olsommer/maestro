@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collectGitHubMentionSourceItems } from "./automation-runner.js";
+import {
+  buildGitHubMentionCompletionComment,
+  buildGitHubMentionPromptFields,
+  collectGitHubMentionSourceItems,
+} from "./automation-runner.js";
 
 test("collectGitHubMentionSourceItems includes self-authored issue and comment mentions", () => {
   const items = collectGitHubMentionSourceItems({
@@ -83,4 +87,70 @@ test("collectGitHubMentionSourceItems ignores non-mentions", () => {
   });
 
   assert.deepEqual(items, []);
+});
+
+test("buildGitHubMentionCompletionComment neutralizes maestro mentions in terminal output", () => {
+  const comment = buildGitHubMentionCompletionComment({
+    successful: false,
+    triggerType: "comment",
+    triggerAuthor: "olsommer",
+    triggerUrl: "https://github.com/olsommer/maestro/issues/103#issuecomment-9001",
+    resultText:
+      "'codex' exec --yolo 'Review this GitHub thread where @maestro was mentioned'\n@maestro this is just a test.",
+  });
+
+  assert.match(comment, /@\u200Bmaestro/);
+  assert.doesNotMatch(comment, /@maestro\b/);
+});
+
+test("buildGitHubMentionPromptFields uses the mention text as the prompt and prior comments as context", () => {
+  const fields = buildGitHubMentionPromptFields({
+    repoFullName: "olsommer/maestro",
+    issue: {
+      number: 103,
+      title: "test",
+      body: "issue body",
+      html_url: "https://github.com/olsommer/maestro/issues/103",
+      created_at: "2026-03-30T10:30:00Z",
+      updated_at: "2026-03-30T10:30:00Z",
+      user: { login: "olsommer" },
+    },
+    comments: [
+      {
+        id: 1,
+        body: "first comment",
+        html_url: "https://github.com/olsommer/maestro/issues/103#issuecomment-1",
+        created_at: "2026-03-30T10:31:00Z",
+        updated_at: "2026-03-30T10:31:00Z",
+        user: { login: "alice" },
+      },
+      {
+        id: 2,
+        body: '@maestro this is just a test. answer with "hello"',
+        html_url: "https://github.com/olsommer/maestro/issues/103#issuecomment-2",
+        created_at: "2026-03-30T10:32:00Z",
+        updated_at: "2026-03-30T10:32:00Z",
+        user: { login: "olsommer" },
+      },
+      {
+        id: 3,
+        body: "later comment",
+        html_url: "https://github.com/olsommer/maestro/issues/103#issuecomment-3",
+        created_at: "2026-03-30T10:33:00Z",
+        updated_at: "2026-03-30T10:33:00Z",
+        user: { login: "bob" },
+      },
+    ],
+    triggerType: "comment",
+    triggerBody: '@maestro this is just a test. answer with "hello"',
+    triggerUrl: "https://github.com/olsommer/maestro/issues/103#issuecomment-2",
+    triggerAuthor: "olsommer",
+  });
+
+  assert.equal(fields.promptBody, 'this is just a test. answer with "hello"');
+  assert.match(fields.promptContextBlock || "", /<context>/);
+  assert.match(fields.promptContextBlock || "", /Issue body:\nissue body/);
+  assert.match(fields.promptContextBlock || "", /Comment by alice/);
+  assert.doesNotMatch(fields.promptContextBlock || "", /issuecomment-2/);
+  assert.doesNotMatch(fields.promptContextBlock || "", /later comment/);
 });

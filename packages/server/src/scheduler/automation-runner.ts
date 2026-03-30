@@ -23,6 +23,29 @@ import { readTerminalHistory } from "../state/terminals.js";
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const MAESTRO_MENTION_REGEX = /@maestro\b/i;
+const MAESTRO_MENTION_TEXT_REGEX = /@maestro\b/gi;
+const LEADING_MAESTRO_MENTION_REGEX = /^\s*@maestro\b[,:-]?\s*/i;
+const LEGACY_GITHUB_MENTION_PROMPT_TEMPLATE = [
+  "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
+  "",
+  "Repository: {{ item.repoFullName }}",
+  "Type: {{ item.issueKind }}",
+  "Title: {{ item.title }}",
+  "URL: {{ item.url }}",
+  "Triggered by: {{ item.triggerType }} from {{ item.triggerAuthor }}",
+  "Trigger URL: {{ item.triggerUrl }}",
+  "",
+  "Trigger text:",
+  "{{ item.triggerBody }}",
+  "",
+  "Full thread:",
+  "{{ item.thread }}",
+].join("\n");
+const DEFAULT_GITHUB_MENTION_PROMPT_TEMPLATE = [
+  "{{ item.promptBody }}",
+  "",
+  "{{ item.promptContextBlock }}",
+].join("\n");
 
 interface SourceItem {
   id: string;
@@ -39,6 +62,8 @@ interface SourceItem {
   triggerBody?: string;
   triggerUrl?: string;
   triggerAuthor?: string;
+  promptBody?: string;
+  promptContextBlock?: string;
   [key: string]: unknown;
 }
 
@@ -278,7 +303,7 @@ async function startNextQueuedAutomationRun(automationId: string) {
       throw new Error("Missing automation run context");
     }
 
-    const prompt = renderTemplate(automation.agentPromptTemplate, promptItem);
+    const prompt = renderTemplate(resolveAutomationPromptTemplate(automation), promptItem);
     const agent = await createAutomationTerminal(automation);
 
     updateAutomationRunRecord(nextRun.id, {
@@ -604,7 +629,33 @@ async function buildGitHubMentionPromptItem(
     triggerUrl: context.triggerUrl,
     triggerAuthor: context.triggerAuthor,
     thread: buildGitHubThread(issue, comments),
+    ...buildGitHubMentionPromptFields({
+      repoFullName: `${context.owner}/${context.repo}`,
+      issue,
+      comments,
+      triggerType: context.triggerType,
+      triggerBody: context.triggerBody,
+      triggerUrl: context.triggerUrl,
+      triggerAuthor: context.triggerAuthor,
+    }),
   };
+}
+
+function resolveAutomationPromptTemplate(automation: AutomationRecord): string {
+  if (automation.sourceType !== "github_mentions") {
+    return automation.agentPromptTemplate;
+  }
+
+  const template = automation.agentPromptTemplate.trim();
+  if (
+    !template ||
+    template === LEGACY_GITHUB_MENTION_PROMPT_TEMPLATE ||
+    template === DEFAULT_GITHUB_MENTION_PROMPT_TEMPLATE
+  ) {
+    return DEFAULT_GITHUB_MENTION_PROMPT_TEMPLATE;
+  }
+
+  return automation.agentPromptTemplate;
 }
 
 function buildGitHubThread(
@@ -630,6 +681,76 @@ function buildGitHubThread(
   }
 
   return lines.join("\n").trim();
+}
+
+export function buildGitHubMentionPromptFields(input: {
+  repoFullName: string;
+  issue: GitHubIssueDetail;
+  comments: GitHubIssueThreadComment[];
+  triggerType: GitHubMentionRunContext["triggerType"];
+  triggerBody: string;
+  triggerUrl: string;
+  triggerAuthor: string;
+}): Pick<SourceItem, "promptBody" | "promptContextBlock"> {
+  const promptBody = stripLeadingMaestroMention(input.triggerBody) || input.triggerBody.trim();
+  const contextComments = commentsForPromptContext(
+    input.comments,
+    input.triggerType,
+    input.triggerUrl
+  );
+
+  const lines = [
+    `<context>`,
+    `Repository: ${input.repoFullName}`,
+    `Type: ${input.issue.pull_request ? "pull_request" : "issue"}`,
+    `Title: ${input.issue.title}`,
+    `URL: ${input.issue.html_url}`,
+    `Triggered by: ${input.triggerType} from ${input.triggerAuthor}`,
+  ];
+
+  const issueBody = (input.issue.body || "").trim();
+  if (issueBody) {
+    lines.push("", "Issue body:", issueBody);
+  }
+
+  if (contextComments.length > 0) {
+    lines.push("", "Previous comments:");
+    for (const comment of contextComments) {
+      lines.push(
+        "",
+        `Comment by ${comment.user.login} at ${comment.created_at}:`,
+        comment.body?.trim() || "(empty)"
+      );
+    }
+  }
+
+  lines.push(`</context>`);
+
+  return {
+    promptBody,
+    promptContextBlock: lines.join("\n"),
+  };
+}
+
+function stripLeadingMaestroMention(text: string): string {
+  return text.replace(LEADING_MAESTRO_MENTION_REGEX, "").trim();
+}
+
+function commentsForPromptContext(
+  comments: GitHubIssueThreadComment[],
+  triggerType: GitHubMentionRunContext["triggerType"],
+  triggerUrl: string
+): GitHubIssueThreadComment[] {
+  if (triggerType !== "comment") {
+    return comments;
+  }
+
+  const triggerIndex = comments.findIndex((comment) => comment.html_url === triggerUrl);
+  if (triggerIndex === -1) {
+    return comments;
+  }
+
+  return comments.slice(0, triggerIndex);
 }
 
 async function fetchRSS(
@@ -766,7 +887,7 @@ function parseMentionRunContext(
   };
 }
 
-function buildGitHubMentionCompletionComment(input: {
+export function buildGitHubMentionCompletionComment(input: {
   successful: boolean;
   triggerType: GitHubMentionRunContext["triggerType"];
   triggerAuthor: string;
@@ -786,9 +907,13 @@ function buildGitHubMentionCompletionComment(input: {
   const resultText = input.resultText.trim();
   if (resultText) {
     lines.push("", "Last terminal output:", "", "```text");
-    lines.push(resultText.replace(/```/g, "'''"));
+    lines.push(sanitizeAutomationCommentText(resultText).replace(/```/g, "'''"));
     lines.push("```");
   }
 
   return lines.join("\n").trim();
+}
+
+function sanitizeAutomationCommentText(text: string): string {
+  return text.replace(MAESTRO_MENTION_TEXT_REGEX, "@\u200Bmaestro");
 }

@@ -132,7 +132,9 @@ export function prepareShellCommand(
   }
 
   if (kind === "kanban" || kind === "automation" || kind === "scheduler") {
-    return `${trimmed}; exit $?`;
+    return `${trimmed}
+__maestro_exit_status=$?
+exit $__maestro_exit_status`;
   }
 
   return trimmed;
