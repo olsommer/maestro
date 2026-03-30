@@ -132,8 +132,10 @@ export function prepareShellCommand(
   }
 
   if (kind === "kanban" || kind === "automation" || kind === "scheduler") {
-    return `${trimmed}
+    return `stty -echo
+${trimmed}
 __maestro_exit_status=$?
+stty echo
 exit $__maestro_exit_status`;
   }
 
