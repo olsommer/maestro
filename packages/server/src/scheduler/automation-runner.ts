@@ -24,6 +24,79 @@ let timer: ReturnType<typeof setInterval> | null = null;
 
 const MAESTRO_INVOKE_REGEX = /^\s{0,2}@maestro:\s*/i;
 const MAESTRO_MENTION_TEXT_REGEX = /@maestro\b/gi;
+
+function stripAnsiSequences(input: string): string {
+  return input
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\r/g, "")
+    .replace(/\0/g, "");
+}
+
+export function extractStructuredAutomationResult(transcript: string): string {
+  const cleaned = stripAnsiSequences(transcript).trim();
+  if (!cleaned) {
+    return "";
+  }
+
+  const messageTexts: string[] = [];
+  const errorTexts: string[] = [];
+
+  for (const line of cleaned.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) {
+      continue;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    if (parsed.type === "item.completed") {
+      const item =
+        parsed.item && typeof parsed.item === "object"
+          ? (parsed.item as Record<string, unknown>)
+          : null;
+      const itemText = typeof item?.text === "string" ? item.text.trim() : "";
+      if (item?.type === "agent_message" && itemText) {
+        messageTexts.push(itemText);
+      }
+      continue;
+    }
+
+    if (parsed.type === "turn.failed") {
+      const error =
+        parsed.error && typeof parsed.error === "object"
+          ? (parsed.error as Record<string, unknown>)
+          : null;
+      const message = typeof error?.message === "string" ? error.message.trim() : "";
+      if (message) {
+        errorTexts.push(message);
+      }
+      continue;
+    }
+
+    if (parsed.type === "error") {
+      const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
+      if (message) {
+        errorTexts.push(message);
+      }
+    }
+  }
+
+  if (messageTexts.length > 0) {
+    return messageTexts.join("\n\n");
+  }
+
+  if (errorTexts.length > 0) {
+    return errorTexts[errorTexts.length - 1];
+  }
+
+  return "";
+}
 const LEADING_MAESTRO_MENTION_REGEX = /^\s{0,2}@maestro:\s*/i;
 const LEGACY_GITHUB_MENTION_PROMPT_TEMPLATE = [
   "Review this GitHub thread where @maestro was mentioned and carry out the requested work.",
@@ -365,7 +438,9 @@ export async function finalizeAutomationRunAfterTerminalExit(
     return;
   }
 
-  const terminalTail = extractTerminalTailForComment(readTerminalHistory(terminalId));
+  const transcript = readTerminalHistory(terminalId);
+  const structuredResult = extractStructuredAutomationResult(transcript);
+  const terminalTail = extractTerminalTailForComment(transcript);
   const error = successful ? null : "Terminal run failed.";
 
   updateAutomationRunRecord(run.id, {
@@ -374,7 +449,11 @@ export async function finalizeAutomationRunAfterTerminalExit(
     completedAt: nowIso(),
   });
 
-  await postAutomationRunResult(run, successful, terminalTail || error || "");
+  await postAutomationRunResult(
+    run,
+    successful,
+    structuredResult || terminalTail || error || ""
+  );
   await startNextQueuedAutomationRun(run.automationId);
 }
 

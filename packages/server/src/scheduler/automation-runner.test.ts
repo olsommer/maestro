@@ -4,6 +4,7 @@ import {
   buildGitHubMentionCompletionComment,
   buildGitHubMentionPromptFields,
   collectGitHubMentionSourceItems,
+  extractStructuredAutomationResult,
 } from "./automation-runner.js";
 
 test("collectGitHubMentionSourceItems includes self-authored issue and comment mentions", () => {
@@ -201,4 +202,25 @@ test("buildGitHubMentionPromptFields uses the mention text as the prompt and pri
   assert.match(fields.promptContextBlock || "", /Comment by alice/);
   assert.doesNotMatch(fields.promptContextBlock || "", /issuecomment-2/);
   assert.doesNotMatch(fields.promptContextBlock || "", /later comment/);
+});
+
+test("extractStructuredAutomationResult prefers completed agent messages from codex json output", () => {
+  const result = extractStructuredAutomationResult([
+    '{"type":"thread.started","thread_id":"abc"}',
+    '{"type":"turn.started"}',
+    '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}',
+    '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}',
+  ].join("\n"));
+
+  assert.equal(result, "hello");
+});
+
+test("extractStructuredAutomationResult falls back to structured error messages", () => {
+  const result = extractStructuredAutomationResult([
+    '{"type":"thread.started","thread_id":"abc"}',
+    '{"type":"error","message":"Reconnecting... 5/5"}',
+    '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized"}}',
+  ].join("\n"));
+
+  assert.equal(result, "unexpected status 401 Unauthorized");
 });
