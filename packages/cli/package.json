@@ -1,6 +1,6 @@
 {
   "name": "@isarai/maestro",
-  "version": "0.1.45",
+  "version": "0.1.46",
   "description": "Standalone CLI for running the Maestro server",
   "license": "MIT",
   "repository": {
