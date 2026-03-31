@@ -521,6 +521,13 @@ export function Terminal({
   const [mobileComposingText, setMobileComposingText] = useState("");
   const [mobileInputPreview, setMobileInputPreview] = useState("");
   const mobileInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastHandledMobileInputRef = useRef<string | null>(null);
+
+  const blurMobileInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      mobileInputRef.current?.blur();
+    });
+  }, []);
 
   useLayoutEffect(() => {
     setTextOverlay(null);
@@ -1094,18 +1101,41 @@ export function Terminal({
     ? trimPreview(`${mobileInputPreview}${mobileComposingText}`)
     : mobileInputPreview;
 
-  const handleMobileTextareaBeforeInput = useCallback(
-    (event: ReactFormEvent<HTMLTextAreaElement>) => {
-      const nativeEvent = event.nativeEvent as InputEvent;
+  const processMobileTextareaInput = useCallback(
+    (nativeEvent: InputEvent, preventDefault?: () => void) => {
       const data = mapBeforeInputToTerminalData(nativeEvent);
       if (!data) {
         return;
       }
 
-      event.preventDefault();
+      const inputKey = `${nativeEvent.inputType}:${nativeEvent.data ?? ""}:${nativeEvent.isComposing ? "1" : "0"}`;
+      if (lastHandledMobileInputRef.current === inputKey) {
+        lastHandledMobileInputRef.current = null;
+        return;
+      }
+
+      lastHandledMobileInputRef.current = inputKey;
+      preventDefault?.();
       sendToTerminal(data);
+      if (data === "\r") {
+        blurMobileInput();
+      }
     },
-    [sendToTerminal]
+    [blurMobileInput, sendToTerminal]
+  );
+
+  const handleMobileTextareaBeforeInput = useCallback(
+    (event: ReactFormEvent<HTMLTextAreaElement>) => {
+      processMobileTextareaInput(event.nativeEvent as InputEvent, () => event.preventDefault());
+    },
+    [processMobileTextareaInput]
+  );
+
+  const handleMobileTextareaInput = useCallback(
+    (event: ReactFormEvent<HTMLTextAreaElement>) => {
+      processMobileTextareaInput(event.nativeEvent as InputEvent);
+    },
+    [processMobileTextareaInput]
   );
 
   const handleMobileTextareaPaste = useCallback(
@@ -1148,8 +1178,8 @@ export function Terminal({
 
       {isActive && isMobile && keyboardOpen && (
         <div
-          className="pointer-events-none absolute inset-x-0 z-[100] px-2"
-          style={{ bottom: `${keyboardInset + 8}px` }}
+          className="pointer-events-none absolute inset-x-0 z-[100]"
+          style={{ bottom: `${keyboardInset + 4}px` }}
         >
           <textarea
             ref={mobileInputRef}
@@ -1162,6 +1192,7 @@ export function Terminal({
             autoCapitalize="off"
             enterKeyHint="send"
             onBeforeInput={handleMobileTextareaBeforeInput}
+            onInput={handleMobileTextareaInput}
             onPaste={handleMobileTextareaPaste}
             onCompositionStart={handleMobileTextareaCompositionStart}
             onCompositionUpdate={handleMobileTextareaCompositionUpdate}
@@ -1169,7 +1200,7 @@ export function Terminal({
             onChange={() => {
               // Controlled bridge input: terminal writes are handled in beforeinput/paste.
             }}
-            className="pointer-events-auto min-h-[7.5rem] w-full resize-none rounded-lg border border-border bg-card/95 px-3 py-2 font-mono text-[10px] leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            className="pointer-events-auto min-h-[7.25rem] w-full resize-none rounded-lg border border-border bg-card/95 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
           />
         </div>
       )}
