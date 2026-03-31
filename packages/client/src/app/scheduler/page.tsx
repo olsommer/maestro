@@ -99,6 +99,7 @@ function SchedulerView() {
       )
     : tasks;
   const isCustomProvider = agentMode === "custom";
+  const schedulerSelectedProject = projects.find((project) => project.id === projectId) ?? null;
 
   useEffect(() => {
     if (!showNew) return;
@@ -339,7 +340,10 @@ function SchedulerView() {
                   </Select>
                   {!isCustomProvider && (
                     <FieldDescription>
-                      Provider, sandbox, YOLO mode, and worktrees come from Settings &gt; Agents.
+                      Provider, sandbox, and YOLO mode come from Settings &gt; Agents.
+                      {schedulerSelectedProject && !schedulerSelectedProject.repoUrl
+                        ? " Worktrees are skipped automatically for projects without a git repo."
+                        : " Worktrees follow your agent settings when the project is a git repo."}
                     </FieldDescription>
                   )}
                 </Field>
