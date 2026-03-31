@@ -1186,7 +1186,7 @@ export function Terminal({
             value={mobilePreviewValue}
             placeholder="Type or paste into terminal"
             aria-label="Terminal input"
-            rows={5}
+            rows={2}
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"
@@ -1200,7 +1200,7 @@ export function Terminal({
             onChange={() => {
               // Controlled bridge input: terminal writes are handled in beforeinput/paste.
             }}
-            className="pointer-events-auto min-h-[7.25rem] w-full resize-none rounded-lg border border-border bg-card/95 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            className="pointer-events-auto min-h-[2.75rem] w-full resize-none rounded-lg border border-border bg-muted px-2 py-1.5 font-mono text-[10px] leading-tight text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
           />
         </div>
       )}
