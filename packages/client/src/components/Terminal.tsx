@@ -829,6 +829,12 @@ export function Terminal({
       term.onData((data: string) => {
         if (isMobileRef.current) {
           setMobileInputPreview((current) => applyMobilePreviewInput(current, data));
+          if (data.includes("\r")) {
+            requestAnimationFrame(() => {
+              helperTextarea?.blur();
+              mobileInputRef.current?.blur();
+            });
+          }
         }
         socket.emit("terminal:input", { terminalId, data });
       });
@@ -1172,6 +1178,27 @@ export function Terminal({
     });
   }, []);
 
+  useLayoutEffect(() => {
+    const element = mobileInputRef.current;
+    if (!element) {
+      return;
+    }
+
+    const computedStyle = window.getComputedStyle(element);
+    const lineHeight = Number.parseFloat(computedStyle.lineHeight) || 10;
+    const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
+    const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
+    const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
+    const minHeight = lineHeight * 2 + paddingTop + paddingBottom + borderTop + borderBottom;
+
+    element.style.height = `${minHeight}px`;
+    element.style.height = `${Math.max(minHeight, element.scrollHeight)}px`;
+    element.scrollTop = element.scrollHeight;
+    element.selectionStart = element.value.length;
+    element.selectionEnd = element.value.length;
+  }, [mobilePreviewValue, keyboardOpen]);
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="w-full min-h-0 flex-1 touch-none pt-1" />
@@ -1201,6 +1228,7 @@ export function Terminal({
               // Controlled bridge input: terminal writes are handled in beforeinput/paste.
             }}
             className="pointer-events-auto min-h-[2.75rem] w-full resize-none rounded-lg border border-border bg-muted px-2 py-1.5 font-mono text-[10px] leading-tight text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            style={{ fontSize: "9px", lineHeight: 1.05 }}
           />
         </div>
       )}
