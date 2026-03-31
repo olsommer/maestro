@@ -1205,31 +1205,33 @@ export function Terminal({
 
       {isActive && isMobile && keyboardOpen && (
         <div
-          className="pointer-events-none absolute inset-x-0 z-[100] p-4"
+          className="pointer-events-none absolute inset-x-0 z-[100]"
           style={{ bottom: `${keyboardInset + 4}px` }}
         >
-          <textarea
-            ref={mobileInputRef}
-            value={mobilePreviewValue}
-            placeholder="Type or paste into terminal"
-            aria-label="Terminal input"
-            rows={2}
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            enterKeyHint="send"
-            onBeforeInput={handleMobileTextareaBeforeInput}
-            onInput={handleMobileTextareaInput}
-            onPaste={handleMobileTextareaPaste}
-            onCompositionStart={handleMobileTextareaCompositionStart}
-            onCompositionUpdate={handleMobileTextareaCompositionUpdate}
-            onCompositionEnd={handleMobileTextareaCompositionEnd}
-            onChange={() => {
-              // Controlled bridge input: terminal writes are handled in beforeinput/paste.
-            }}
-            className="pointer-events-auto min-h-[2.75rem] w-full resize-none border-y border-x-0 border-border bg-muted px-2 py-1.5 font-mono leading-tight text-foreground shadow-lg outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground"
-            style={{ fontSize: "10px", lineHeight: 1.05 }}
-          />
+          <div className="pointer-events-auto border-y border-border bg-muted px-4 py-4 shadow-lg">
+            <textarea
+              ref={mobileInputRef}
+              value={mobilePreviewValue}
+              placeholder="Type or paste into terminal"
+              aria-label="Terminal input"
+              rows={2}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              enterKeyHint="send"
+              onBeforeInput={handleMobileTextareaBeforeInput}
+              onInput={handleMobileTextareaInput}
+              onPaste={handleMobileTextareaPaste}
+              onCompositionStart={handleMobileTextareaCompositionStart}
+              onCompositionUpdate={handleMobileTextareaCompositionUpdate}
+              onCompositionEnd={handleMobileTextareaCompositionEnd}
+              onChange={() => {
+                // Controlled bridge input: terminal writes are handled in beforeinput/paste.
+              }}
+              className="min-h-[2.75rem] w-full resize-none border-0 bg-transparent p-0 font-mono leading-tight text-foreground outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground"
+              style={{ fontSize: "10px", lineHeight: 1.05 }}
+            />
+          </div>
         </div>
       )}
 
