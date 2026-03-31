@@ -1227,8 +1227,8 @@ export function Terminal({
             onChange={() => {
               // Controlled bridge input: terminal writes are handled in beforeinput/paste.
             }}
-            className="pointer-events-auto min-h-[2.75rem] w-full resize-none rounded-lg border border-border bg-muted px-2 py-1.5 font-mono text-[10px] leading-tight text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
-            style={{ fontSize: "9px", lineHeight: 1.05 }}
+            className="pointer-events-auto min-h-[2.75rem] w-full resize-none rounded-lg border border-border bg-muted px-2 py-1.5 font-mono text-xs leading-tight text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            style={{ lineHeight: 1.05 }}
           />
         </div>
       )}
