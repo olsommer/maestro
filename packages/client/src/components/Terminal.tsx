@@ -1205,7 +1205,7 @@ export function Terminal({
 
       {isActive && isMobile && keyboardOpen && (
         <div
-          className="pointer-events-none absolute inset-x-0 z-[100]"
+          className="pointer-events-none absolute inset-x-0 z-[100] p-4"
           style={{ bottom: `${keyboardInset + 4}px` }}
         >
           <textarea
@@ -1227,7 +1227,7 @@ export function Terminal({
             onChange={() => {
               // Controlled bridge input: terminal writes are handled in beforeinput/paste.
             }}
-            className="pointer-events-auto min-h-[2.75rem] w-full resize-none rounded-lg border border-border bg-muted px-2 py-1.5 font-mono leading-tight text-foreground shadow-lg backdrop-blur-sm placeholder:text-muted-foreground"
+            className="pointer-events-auto min-h-[2.75rem] w-full resize-none border-y border-x-0 border-border bg-muted px-2 py-1.5 font-mono leading-tight text-foreground shadow-lg outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground"
             style={{ fontSize: "10px", lineHeight: 1.05 }}
           />
         </div>
