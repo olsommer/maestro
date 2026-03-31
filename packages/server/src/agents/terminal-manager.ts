@@ -513,6 +513,8 @@ export async function createAutoSpawnTerminal(options: {
 }) {
   const settings = getSettings();
   const provider = assertAutoSpawnProviderReady();
+  const enableAutoWorktree =
+    settings.agentDefaultWorktreeMode === "new" && isGitRepo(options.projectPath);
   return createTerminal({
     name: options.name,
     kind: options.kind ?? "kanban",
@@ -521,7 +523,7 @@ export async function createAutoSpawnTerminal(options: {
     projectPath: options.projectPath,
     skipPermissions: settings.agentDefaultSkipPermissions,
     disableSandbox: settings.agentDefaultDisableSandbox,
-    autoWorktree: settings.agentDefaultWorktreeMode === "new",
+    autoWorktree: enableAutoWorktree,
   });
 }
 

@@ -129,7 +129,9 @@ export function NewTerminalDialog({ open, onClose }: Props) {
   };
 
   const selectedProject = projects.find((project) => project.id === projectId);
-  const worktreeDisabled = projectId === "__root__";
+  const selectedProjectSupportsWorktree = Boolean(selectedProject?.repoUrl);
+  const worktreeDisabled =
+    projectId === "__root__" || (selectedProject != null && !selectedProjectSupportsWorktree);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -168,7 +170,8 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 onValueChange={(value) => {
                   const nextProjectId = String(value ?? "");
                   setProjectId(nextProjectId);
-                  if (nextProjectId === "__root__") {
+                  const nextProject = projects.find((project) => project.id === nextProjectId);
+                  if (nextProjectId === "__root__" || !nextProject?.repoUrl) {
                     setAutoWorktree(false);
                   }
                 }}
@@ -200,7 +203,9 @@ export function NewTerminalDialog({ open, onClose }: Props) {
                 <FieldLabel htmlFor="auto-worktree">Fresh Git Worktree</FieldLabel>
                 <FieldDescription>
                   {worktreeDisabled
-                    ? "Unavailable for Root (/). Select a project to create a fresh worktree."
+                    ? projectId === "__root__"
+                      ? "Unavailable for Root (/). Select a project to create a fresh worktree."
+                      : "Unavailable for projects without a linked git repository."
                     : "Create a fresh git worktree for this terminal. Requires the selected project to be a git repository."}
                 </FieldDescription>
               </FieldContent>
