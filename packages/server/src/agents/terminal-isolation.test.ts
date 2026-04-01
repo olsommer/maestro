@@ -75,3 +75,34 @@ test("isolated terminal home bootstrap copies shared CLI config into the isolate
     }
   }
 });
+
+test("migrates legacy isolated terminal homes into the terminal state tree", async () => {
+  const tempState = fs.mkdtempSync(path.join(os.tmpdir(), "maestro-terminal-state-"));
+  const legacyBase = path.join(tempState, "sandboxes", "terminals");
+  const legacyRoot = path.join(legacyBase, "terminal-legacy");
+  const legacyHome = path.join(legacyRoot, "home");
+  const previousStateBase = process.env.MAESTRO_TERMINAL_STATE_BASE;
+
+  fs.mkdirSync(legacyHome, { recursive: true });
+  fs.writeFileSync(path.join(legacyHome, ".bashrc"), "legacy\n");
+  process.env.MAESTRO_TERMINAL_STATE_BASE = path.join(tempState, "terminals");
+
+  try {
+    const { ensureTerminalIsolationHome } = await import(
+      `./terminal-isolation.js?test=${Date.now()}`
+    );
+
+    const paths = ensureTerminalIsolationHome("terminal-legacy");
+
+    assert.equal(paths.rootDir, path.join(tempState, "terminals", "terminal-legacy"));
+    assert.equal(fs.readFileSync(path.join(paths.homeDir, ".bashrc"), "utf-8"), "legacy\n");
+    assert.equal(fs.existsSync(legacyRoot), false);
+  } finally {
+    if (previousStateBase === undefined) {
+      delete process.env.MAESTRO_TERMINAL_STATE_BASE;
+    } else {
+      process.env.MAESTRO_TERMINAL_STATE_BASE = previousStateBase;
+    }
+    fs.rmSync(tempState, { recursive: true, force: true });
+  }
+});

@@ -982,7 +982,7 @@ export async function deleteTerminal(terminalId: string) {
   // Clean up auto-created worktree
   if (agent?.autoWorktree && agent.worktreePath) {
     try {
-      removeTerminalWorktree(agent.projectPath, terminalId);
+      removeTerminalWorktree(agent.projectPath, terminalId, agent.worktreePath);
     } catch (err) {
       console.warn(`Failed to remove worktree for terminal ${terminalId}:`, err);
     }

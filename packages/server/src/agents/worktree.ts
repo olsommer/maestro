@@ -1,13 +1,21 @@
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import { MAESTRO_SANDBOX_WORKTREES_DIR } from "../state/files.js";
+import { MAESTRO_TERMINALS_DIR } from "../state/files.js";
 
-const DEFAULT_WORKTREE_BASE = MAESTRO_SANDBOX_WORKTREES_DIR;
+const DEFAULT_WORKTREE_BASE = MAESTRO_TERMINALS_DIR;
 const WORKTREE_BASE = process.env.MAESTRO_WORKTREE_BASE?.trim() || DEFAULT_WORKTREE_BASE;
 
 export function getWorktreeBasePath(): string {
   return WORKTREE_BASE;
+}
+
+export function getTerminalWorktreePath(terminalId: string): string {
+  return path.join(WORKTREE_BASE, terminalId, "worktree");
+}
+
+function getLegacyTerminalWorktreePath(terminalId: string): string {
+  return path.join(path.dirname(WORKTREE_BASE), "sandboxes", "worktrees", terminalId);
 }
 
 function readGitdirPointer(worktreePath: string): string | null {
@@ -85,11 +93,12 @@ export function createTerminalWorktree(
   terminalId: string,
   startPoint = "HEAD"
 ): string {
-  const worktreeDir = path.join(WORKTREE_BASE, terminalId);
+  const worktreeDir = getTerminalWorktreePath(terminalId);
   const branchName = `agent/${terminalId}`;
+  const legacyWorktreeDir = getLegacyTerminalWorktreePath(terminalId);
 
   // Ensure base directory exists
-  fs.mkdirSync(WORKTREE_BASE, { recursive: true });
+  fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
   // Drop stale worktree metadata first so missing /tmp directories don't block recovery.
   try {
@@ -108,6 +117,17 @@ export function createTerminalWorktree(
     } catch {
       // May fail if the main repo moved; force-remove the directory
       fs.rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  }
+
+  if (legacyWorktreeDir !== worktreeDir && fs.existsSync(legacyWorktreeDir)) {
+    try {
+      execSync(`git worktree remove --force ${JSON.stringify(legacyWorktreeDir)}`, {
+        cwd: projectPath,
+        stdio: "ignore",
+      });
+    } catch {
+      fs.rmSync(legacyWorktreeDir, { recursive: true, force: true });
     }
   }
 
@@ -140,10 +160,12 @@ export function createTerminalWorktree(
  */
 export function removeTerminalWorktree(
   projectPath: string,
-  terminalId: string
+  terminalId: string,
+  worktreePath?: string | null
 ): void {
-  const worktreeDir = path.join(WORKTREE_BASE, terminalId);
+  const worktreeDir = worktreePath?.trim() || getTerminalWorktreePath(terminalId);
   const branchName = `agent/${terminalId}`;
+  const legacyWorktreeDir = getLegacyTerminalWorktreePath(terminalId);
 
   // Remove the worktree
   if (fs.existsSync(worktreeDir)) {
@@ -155,6 +177,17 @@ export function removeTerminalWorktree(
     } catch {
       // Fallback: just delete the directory
       fs.rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  }
+
+  if (legacyWorktreeDir !== worktreeDir && fs.existsSync(legacyWorktreeDir)) {
+    try {
+      execSync(
+        `git worktree remove --force ${JSON.stringify(legacyWorktreeDir)}`,
+        { cwd: projectPath, stdio: "ignore" }
+      );
+    } catch {
+      fs.rmSync(legacyWorktreeDir, { recursive: true, force: true });
     }
   }
 

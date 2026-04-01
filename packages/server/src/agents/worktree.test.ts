@@ -4,15 +4,21 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-test("defaults auto-worktrees under the sandbox state tree", async () => {
+test("defaults auto-worktrees under the terminal state tree", async () => {
   const previousBase = process.env.MAESTRO_WORKTREE_BASE;
   delete process.env.MAESTRO_WORKTREE_BASE;
 
   try {
-    const { getWorktreeBasePath } = await import(`./worktree.js?test=${Date.now()}`);
+    const { getWorktreeBasePath, getTerminalWorktreePath } = await import(
+      `./worktree.js?test=${Date.now()}`
+    );
     assert.equal(
       getWorktreeBasePath(),
-      path.join(os.homedir(), ".maestro", "sandboxes", "worktrees")
+      path.join(os.homedir(), ".maestro", "terminals")
+    );
+    assert.equal(
+      getTerminalWorktreePath("terminal-123"),
+      path.join(os.homedir(), ".maestro", "terminals", "terminal-123", "worktree")
     );
   } finally {
     if (previousBase === undefined) {
