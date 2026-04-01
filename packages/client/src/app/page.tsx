@@ -17,10 +17,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { useStore } from "@/lib/store";
+import { selectAgents, useStore } from "@/lib/store";
 
 function Dashboard() {
-  const agents = useStore((s) => s.agents);
+  const agents = useStore(selectAgents);
   const projects = useStore((s) => s.projects);
   const running = agents.filter((a) => a.status === "running").length;
   const completed = agents.filter((a) => a.status === "completed").length;

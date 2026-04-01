@@ -3,8 +3,16 @@
 import { create } from "zustand";
 import type { Agent, Project } from "./api";
 
-interface AppState {
-  agents: Agent[];
+interface AgentSummary {
+  id: string;
+  projectId: string | null;
+  projectLabel: string;
+  status: string;
+}
+
+export interface AppState {
+  agentIds: string[];
+  agentsById: Record<string, Agent>;
   projects: Project[];
   selectedAgentId: string | null;
   selectedProjectId: string | null;
@@ -20,13 +28,29 @@ interface AppState {
   selectProject: (id: string | null) => void;
 }
 
+function normalizeAgents(agents: Agent[]): {
+  agentIds: string[];
+  agentsById: Record<string, Agent>;
+} {
+  const agentsById: Record<string, Agent> = {};
+  const agentIds: string[] = [];
+
+  for (const agent of agents) {
+    agentsById[agent.id] = agent;
+    agentIds.push(agent.id);
+  }
+
+  return { agentIds, agentsById };
+}
+
 export const useStore = create<AppState>((set) => ({
-  agents: [],
+  agentIds: [],
+  agentsById: {},
   projects: [],
   selectedAgentId: null,
   selectedProjectId: null,
 
-  setAgents: (agents) => set({ agents }),
+  setAgents: (agents) => set(normalizeAgents(agents)),
   setProjects: (projects) =>
     set((state) => ({
       projects,
@@ -37,11 +61,19 @@ export const useStore = create<AppState>((set) => ({
     })),
 
   updateAgent: (id, patch) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === id ? { ...a, ...patch } : a
-      ),
-    })),
+    set((state) => {
+      const agent = state.agentsById[id];
+      if (!agent) {
+        return state;
+      }
+
+      return {
+        agentsById: {
+          ...state.agentsById,
+          [id]: { ...agent, ...patch },
+        },
+      };
+    }),
   updateProject: (id, patch) =>
     set((state) => ({
       projects: state.projects.map((project) =>
@@ -51,7 +83,11 @@ export const useStore = create<AppState>((set) => ({
 
   addAgent: (agent) =>
     set((state) => ({
-      agents: [agent, ...state.agents],
+      agentIds: state.agentsById[agent.id] ? state.agentIds : [agent.id, ...state.agentIds],
+      agentsById: {
+        ...state.agentsById,
+        [agent.id]: agent,
+      },
     })),
   addProject: (project) =>
     set((state) => ({
@@ -60,10 +96,19 @@ export const useStore = create<AppState>((set) => ({
     })),
 
   removeAgent: (id) =>
-    set((state) => ({
-      agents: state.agents.filter((a) => a.id !== id),
-      selectedAgentId: state.selectedAgentId === id ? null : state.selectedAgentId,
-    })),
+    set((state) => {
+      if (!state.agentsById[id]) {
+        return state;
+      }
+
+      const agentsById = { ...state.agentsById };
+      delete agentsById[id];
+      return {
+        agentIds: state.agentIds.filter((agentId) => agentId !== id),
+        agentsById,
+        selectedAgentId: state.selectedAgentId === id ? null : state.selectedAgentId,
+      };
+    }),
   removeProject: (id) =>
     set((state) => {
       const projects = state.projects.filter((project) => project.id !== id);
@@ -79,3 +124,25 @@ export const useStore = create<AppState>((set) => ({
   selectAgent: (id) => set({ selectedAgentId: id }),
   selectProject: (id) => set({ selectedProjectId: id }),
 }));
+
+export function selectAgents(state: AppState): Agent[] {
+  return state.agentIds
+    .map((id) => state.agentsById[id])
+    .filter((agent): agent is Agent => Boolean(agent));
+}
+
+export function selectAgentById(id: string) {
+  return (state: AppState): Agent | null => state.agentsById[id] ?? null;
+}
+
+export function selectAgentSummaries(state: AppState): AgentSummary[] {
+  return state.agentIds
+    .map((id) => state.agentsById[id])
+    .filter((agent): agent is Agent => Boolean(agent))
+    .map((agent) => ({
+      id: agent.id,
+      projectId: agent.projectId ?? null,
+      projectLabel: agent.project?.name || agent.projectPath,
+      status: agent.status,
+    }));
+}
