@@ -28,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -761,6 +762,303 @@ function AgentDefaultsCard({
   );
 }
 
+function SandboxImageCard({
+  settings,
+  onSettingsUpdate,
+}: {
+  settings: Settings | null;
+  onSettingsUpdate: (s: Settings) => void;
+}) {
+  const [mode, setMode] = useState<"builtin" | "dockerfile">("builtin");
+  const [dockerfile, setDockerfile] = useState("");
+  const [memoryLimitMb, setMemoryLimitMb] = useState("2048");
+  const [maxProcesses, setMaxProcesses] = useState("256");
+  const [saving, setSaving] = useState(false);
+  const [building, setBuilding] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!settings) return;
+    setMode(settings.sandboxImage.mode);
+    setDockerfile(settings.sandboxImage.customDockerfile);
+    setMemoryLimitMb(String(settings.sandboxResources.memoryLimitMb));
+    setMaxProcesses(String(settings.sandboxResources.maxProcesses));
+  }, [settings]);
+
+  const savedSandboxImage = settings?.sandboxImage;
+  const parsedMemoryLimitMb = Number(memoryLimitMb);
+  const parsedMaxProcesses = Number(maxProcesses);
+  const resourceValuesValid =
+    Number.isInteger(parsedMemoryLimitMb) &&
+    parsedMemoryLimitMb >= 256 &&
+    parsedMemoryLimitMb <= 16384 &&
+    Number.isInteger(parsedMaxProcesses) &&
+    parsedMaxProcesses >= 64 &&
+    parsedMaxProcesses <= 4096;
+  const isDirty =
+    mode !== (savedSandboxImage?.mode ?? "builtin") ||
+    dockerfile !== (savedSandboxImage?.customDockerfile ?? "") ||
+    memoryLimitMb !== String(settings?.sandboxResources.memoryLimitMb ?? 2048) ||
+    maxProcesses !== String(settings?.sandboxResources.maxProcesses ?? 256);
+
+  async function handleSave() {
+    if (!settings) return;
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await api.updateSettings({
+        sandboxImage: {
+          ...settings.sandboxImage,
+          mode,
+          customDockerfile: dockerfile,
+        },
+        sandboxResources: {
+          memoryLimitMb: parsedMemoryLimitMb,
+          maxProcesses: parsedMaxProcesses,
+        },
+      });
+      onSettingsUpdate(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save sandbox image settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleBuild() {
+    setBuilding(true);
+    setError("");
+    try {
+      if (isDirty) {
+        const updated = await api.updateSettings({
+          sandboxImage: {
+            ...(settings?.sandboxImage ?? {
+              mode,
+              builtinImage: "maestro-sandbox:latest",
+              customDockerfile: dockerfile,
+              customImageTag: "maestro-sandbox:user-custom",
+              customBuildStatus: "idle",
+              customBuildError: null,
+              customBuiltAt: null,
+            }),
+            mode,
+            customDockerfile: dockerfile,
+          },
+          sandboxResources: {
+            memoryLimitMb: parsedMemoryLimitMb,
+            maxProcesses: parsedMaxProcesses,
+          },
+        });
+        onSettingsUpdate(updated);
+      }
+
+      const result = await api.buildSandboxImage();
+      onSettingsUpdate(result.settings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to build custom sandbox image");
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  const buildStatus = settings?.sandboxImage.customBuildStatus ?? "idle";
+  const buildError = settings?.sandboxImage.customBuildError;
+  const builtAt = settings?.sandboxImage.customBuiltAt;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Sandbox Image</CardTitle>
+        <CardDescription>
+          Choose the Docker image used for sandboxed terminals. Custom mode builds a local image from your Dockerfile.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="sandbox-image-mode">Source</FieldLabel>
+            <Select
+              value={mode}
+              onValueChange={(value) =>
+                setMode(value === "dockerfile" ? "dockerfile" : "builtin")
+              }
+            >
+              <SelectTrigger id="sandbox-image-mode" className="w-full">
+                <SelectValue placeholder="Select a source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="builtin">Built-in image</SelectItem>
+                  <SelectItem value="dockerfile">Custom Dockerfile</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field>
+            <FieldLabel>Built-in image</FieldLabel>
+            <Input value={settings?.sandboxImage.builtinImage ?? "maestro-sandbox:latest"} readOnly />
+            <FieldDescription>
+              Custom Dockerfiles must extend this image.
+            </FieldDescription>
+          </Field>
+
+          {mode === "dockerfile" && (
+            <Field>
+              <FieldLabel htmlFor="sandbox-custom-dockerfile">Dockerfile</FieldLabel>
+              <Textarea
+                id="sandbox-custom-dockerfile"
+                value={dockerfile}
+                onChange={(e) => setDockerfile(e.target.value)}
+                className="min-h-64 font-mono text-xs"
+                spellCheck={false}
+              />
+              <FieldDescription>
+                Builds to <code className="text-xs">{settings?.sandboxImage.customImageTag ?? "maestro-sandbox:user-custom"}</code>.
+              </FieldDescription>
+            </Field>
+          )}
+
+          <Field orientation="responsive">
+            <div>
+              <FieldLabel htmlFor="sandbox-memory-limit">Memory limit</FieldLabel>
+              <FieldDescription>
+                Docker sandbox RAM limit in MB. Increase this for builds and browser workloads.
+              </FieldDescription>
+            </div>
+            <FieldContent className="@md/field-group:items-end">
+              <Input
+                id="sandbox-memory-limit"
+                type="number"
+                min="256"
+                max="16384"
+                step="256"
+                value={memoryLimitMb}
+                onChange={(e) => setMemoryLimitMb(e.target.value)}
+                className="w-full @md/field-group:w-40"
+              />
+            </FieldContent>
+          </Field>
+
+          <Field orientation="responsive">
+            <div>
+              <FieldLabel htmlFor="sandbox-max-processes">Process limit</FieldLabel>
+              <FieldDescription>
+                Docker PID/thread cap. Raise this if builds fail with <code className="text-xs">pthread_create</code> or Rayon thread-pool errors.
+              </FieldDescription>
+            </div>
+            <FieldContent className="@md/field-group:items-end">
+              <Input
+                id="sandbox-max-processes"
+                type="number"
+                min="64"
+                max="4096"
+                step="32"
+                value={maxProcesses}
+                onChange={(e) => setMaxProcesses(e.target.value)}
+                className="w-full @md/field-group:w-40"
+              />
+            </FieldContent>
+          </Field>
+        </FieldGroup>
+
+        {mode === "dockerfile" && (
+          <FieldGroup>
+            <Field orientation="horizontal">
+              <FieldLabel>Status</FieldLabel>
+              <FieldContent className="items-end">
+                <Badge
+                  variant={
+                    buildStatus === "ready"
+                      ? "secondary"
+                      : buildStatus === "error"
+                        ? "destructive"
+                        : "outline"
+                  }
+                >
+                  {buildStatus === "idle"
+                    ? "Not built"
+                    : buildStatus === "building"
+                      ? "Building"
+                      : buildStatus === "ready"
+                        ? "Ready"
+                        : "Build failed"}
+                </Badge>
+              </FieldContent>
+            </Field>
+            {builtAt && (
+              <>
+                <FieldSeparator />
+                <Field orientation="horizontal">
+                  <FieldLabel>Last built</FieldLabel>
+                  <FieldContent className="items-end">
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(builtAt).toLocaleString()}
+                    </span>
+                  </FieldContent>
+                </Field>
+              </>
+            )}
+          </FieldGroup>
+        )}
+
+        {buildError && mode === "dockerfile" && (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>Build failed</AlertTitle>
+            <AlertDescription>
+              <pre className="whitespace-pre-wrap font-mono text-xs">{buildError}</pre>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {error && (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {!resourceValuesValid && (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>Invalid resource limits</AlertTitle>
+            <AlertDescription>
+              Memory must be 256-16384 MB and process limit must be 64-4096.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button disabled={!isDirty || saving || !resourceValuesValid} onClick={() => void handleSave()}>
+            {saving ? (
+              <LoaderIcon className="mr-2 size-4 animate-spin" />
+            ) : (
+              <CheckCircleIcon className="mr-2 size-4" />
+            )}
+            {saving ? "Saving..." : isDirty ? "Save" : "Saved"}
+          </Button>
+          {mode === "dockerfile" && (
+            <Button
+              variant="outline"
+              disabled={building || !resourceValuesValid}
+              onClick={() => void handleBuild()}
+            >
+              {building ? (
+                <LoaderIcon className="mr-2 size-4 animate-spin" />
+              ) : (
+                <RefreshCwIcon className="mr-2 size-4" />
+              )}
+              {building ? "Building..." : "Build Image"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DeepgramCard({ settings, onSettingsUpdate }: {
   settings: Settings | null;
   onSettingsUpdate: (s: Settings) => void;
@@ -1256,6 +1554,7 @@ function SettingsView() {
           <GitHubConnectionCard refreshKey={authRefreshKey} />
 
           <DeepgramCard settings={settings} onSettingsUpdate={setSettings} />
+          <SandboxImageCard settings={settings} onSettingsUpdate={setSettings} />
           <AgentDefaultsCard
             settings={settings}
             onSettingsUpdate={setSettings}

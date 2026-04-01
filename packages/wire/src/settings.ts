@@ -9,6 +9,51 @@ export type AutoSpawnAgentWorktreeMode = z.infer<typeof AutoSpawnAgentWorktreeMo
 export const SandboxProviderSchema = z.enum(["none", "docker", "gvisor"]);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
+export const SandboxImageModeSchema = z.enum(["builtin", "dockerfile"]);
+export type SandboxImageMode = z.infer<typeof SandboxImageModeSchema>;
+
+export const SandboxImageBuildStatusSchema = z.enum([
+  "idle",
+  "building",
+  "ready",
+  "error",
+]);
+export type SandboxImageBuildStatus = z.infer<typeof SandboxImageBuildStatusSchema>;
+
+const DEFAULT_CUSTOM_SANDBOX_DOCKERFILE = `FROM maestro-sandbox:latest
+
+RUN apt-get update && apt-get install -y \\
+    sudo \\
+    python3 \\
+    python3-pip \\
+    curl \\
+    unzip \\
+ && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g agent-browser
+
+RUN agent-browser install --with-deps
+
+RUN pip3 install --break-system-packages uv ruff
+`;
+
+export const SandboxImageSettingsSchema = z.object({
+  mode: SandboxImageModeSchema.default("builtin"),
+  builtinImage: z.string().default("maestro-sandbox:latest"),
+  customDockerfile: z.string().default(DEFAULT_CUSTOM_SANDBOX_DOCKERFILE),
+  customImageTag: z.string().default("maestro-sandbox:user-custom"),
+  customBuildStatus: SandboxImageBuildStatusSchema.default("idle"),
+  customBuildError: z.string().nullable().default(null),
+  customBuiltAt: z.string().nullable().default(null),
+});
+export type SandboxImageSettings = z.infer<typeof SandboxImageSettingsSchema>;
+
+export const SandboxResourceSettingsSchema = z.object({
+  memoryLimitMb: z.number().int().min(256).max(16384).default(2048),
+  maxProcesses: z.number().int().min(64).max(4096).default(256),
+});
+export type SandboxResourceSettings = z.infer<typeof SandboxResourceSettingsSchema>;
+
 export const SettingsSchema = z.object({
   autoUpdateEnabled: z.boolean().default(false),
   autoUpdateIntervalHours: z.number().min(1).max(168).default(24),
@@ -27,6 +72,10 @@ export const SettingsSchema = z.object({
   agentDefaultSkipPermissions: z.boolean().default(true),
   /** Worktree mode for automatically spawned agents */
   agentDefaultWorktreeMode: AutoSpawnAgentWorktreeModeSchema.default("none"),
+  /** Global Docker image source for sandboxed terminals */
+  sandboxImage: SandboxImageSettingsSchema.default({}),
+  /** Global Docker sandbox resource limits */
+  sandboxResources: SandboxResourceSettingsSchema.default({}),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

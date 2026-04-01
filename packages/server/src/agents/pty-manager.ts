@@ -4,16 +4,17 @@ import * as fs from "fs";
 import * as path from "path";
 import { createRequire } from "module";
 import type { SandboxProvider } from "@maestro/wire";
+import { getSettings } from "../state/settings.js";
 import {
   resolveSandboxProvider,
   isDockerAvailable,
   isGvisorAvailable,
   getDockerPath,
   buildDockerRunArgs,
-  ensureDockerSandboxImage,
   type DockerMountSpec,
   type SandboxConfig,
 } from "./sandbox.js";
+import { resolveActiveSandboxDockerImage } from "../services/sandbox-image.js";
 
 const require = createRequire(import.meta.url);
 let didEnsureSpawnHelper = false;
@@ -177,13 +178,16 @@ export function spawnPty(options: PtySpawnOptions): PtyInstance {
       readonlyMounts: options.readonlyMounts,
       writableMounts: options.writableMounts,
       dockerExtraMounts: options.dockerExtraMounts,
-      memoryLimit: options.memoryLimit,
+      memoryLimit:
+        options.memoryLimit ??
+        getSettings().sandboxResources.memoryLimitMb * 1024 * 1024,
+      maxProcesses: getSettings().sandboxResources.maxProcesses,
     };
 
     const dockerArgs = buildDockerRunArgs(
       sandboxConfig,
       ["/bin/bash", ...shellArgs],
-      ensureDockerSandboxImage(),
+      resolveActiveSandboxDockerImage(),
       sandboxProvider === "gvisor" ? "runsc" : undefined
     );
 
