@@ -467,6 +467,7 @@ export function Terminal({
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
   const resizeEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fitFrameRef = useRef<number | null>(null);
+  const lastEmittedSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const shouldRestoreFocusRef = useRef(false);
   const mobileCompositionActiveRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
@@ -497,6 +498,7 @@ export function Terminal({
       cancelAnimationFrame(fitFrameRef.current);
       fitFrameRef.current = null;
     }
+    lastEmittedSizeRef.current = null;
     containerRef.current?.replaceChildren();
   }, [terminalId]);
 
@@ -552,11 +554,18 @@ export function Terminal({
       return;
     }
 
+    const nextSize = { cols: term.cols, rows: term.rows };
+    const lastSize = lastEmittedSizeRef.current;
+    if (lastSize && lastSize.cols === nextSize.cols && lastSize.rows === nextSize.rows) {
+      return;
+    }
+
     socket.emit("terminal:resize", {
       terminalId,
-      cols: term.cols,
-      rows: term.rows,
+      cols: nextSize.cols,
+      rows: nextSize.rows,
     });
+    lastEmittedSizeRef.current = nextSize;
   }, [terminalId]);
 
   const scheduleResizeEmit = useCallback(() => {
@@ -630,10 +639,6 @@ export function Terminal({
       const gestureLockThreshold = 16;
       const swipeTriggerThreshold = 56;
 
-      const lineHeight = term.rows > 0
-        ? container.clientHeight / term.rows
-        : 16;
-
       const onTouchStart = (e: TouchEvent) => {
         if (e.touches.length !== 1) return;
         touchStartX = e.touches[0].clientX;
@@ -691,6 +696,7 @@ export function Terminal({
         touchAccum += dy;
         didScroll = true;
 
+        const lineHeight = term.rows > 0 ? container.clientHeight / term.rows : 16;
         const linesToScroll = Math.trunc(touchAccum / lineHeight);
         if (linesToScroll !== 0) {
           term.scrollLines(linesToScroll);
@@ -926,7 +932,11 @@ export function Terminal({
         scheduleFit();
         if (socket.connected) {
           restoreTerminalFocus();
-          void attachTerminal();
+          if (!attachedRef.current) {
+            void attachTerminal();
+          } else {
+            scheduleResizeEmit();
+          }
           return;
         }
         socket.connect();
@@ -934,6 +944,10 @@ export function Terminal({
 
       const onSocketConnect = () => {
         void attachTerminal();
+      };
+
+      const onSocketDisconnect = () => {
+        attachedRef.current = false;
       };
 
       const onVisibilityChange = () => {
@@ -953,6 +967,7 @@ export function Terminal({
       };
 
       socket.on("connect", onSocketConnect);
+      socket.on("disconnect", onSocketDisconnect);
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("blur", onWindowBlur);
       window.addEventListener("focus", onWindowFocus);
@@ -987,6 +1002,7 @@ export function Terminal({
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
         socket.off("connect", onSocketConnect);
+        socket.off("disconnect", onSocketDisconnect);
         unsubscribeTerminalOutput();
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
@@ -996,6 +1012,7 @@ export function Terminal({
         termRef.current = null;
         fitAddonRef.current = null;
         socketRef.current = null;
+        lastEmittedSizeRef.current = null;
       };
 
       disposeTerminal = cleanup;
