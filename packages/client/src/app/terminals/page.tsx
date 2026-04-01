@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Terminal } from "@/components/Terminal";
@@ -129,7 +129,7 @@ const TerminalPanel = memo(function TerminalPanel({
   onSelect: () => void;
   onDelete: () => void;
   onSwipeNavigate?: (dir: -1 | 1) => void;
-  onRegisterRefit?: (terminalId: string, refit: () => void) => void;
+  onRegisterRefit?: (terminalId: string, refit: (() => void) | null) => void;
   onRefit?: () => void;
 }) {
   const terminal = useStore(selectAgentById(terminalId));
@@ -320,7 +320,7 @@ function TerminalPagePanel() {
   const [gridPreset, setGridPreset] = useState<GridPreset>("auto");
   const [projectFilterId, setProjectFilterId] = useState("all");
   const isMobile = useIsMobile();
-  const [refitHandlers, setRefitHandlers] = useState<Record<string, () => void>>({});
+  const refitHandlersRef = useRef<Record<string, () => void>>({});
   const [pendingDeleteTerminalId, setPendingDeleteTerminalId] = useState<string | null>(null);
   const pendingDeleteTerminal = useStore((state) =>
     pendingDeleteTerminalId ? state.agentsById[pendingDeleteTerminalId] ?? null : null
@@ -437,21 +437,21 @@ function TerminalPagePanel() {
     [selectedIndex, visibleTerminalIds, selectTerminal]
   );
 
-  const registerRefitHandler = useCallback((terminalId: string, refit: () => void) => {
-    setRefitHandlers((current) => {
-      if (current[terminalId] === refit) {
-        return current;
-      }
-      return {
-        ...current,
-        [terminalId]: refit,
-      };
-    });
+  const registerRefitHandler = useCallback((
+    terminalId: string,
+    refit: (() => void) | null
+  ) => {
+    if (refit) {
+      refitHandlersRef.current[terminalId] = refit;
+      return;
+    }
+
+    delete refitHandlersRef.current[terminalId];
   }, []);
 
   const handleRefitTerminal = useCallback((terminalId: string) => {
-    refitHandlers[terminalId]?.();
-  }, [refitHandlers]);
+    refitHandlersRef.current[terminalId]?.();
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none">
