@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { BotIcon, Clock3Icon, TriangleAlertIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,11 +18,20 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { selectAgents, useStore } from "@/lib/store";
+import type { Agent } from "@/lib/api";
+import { useStore } from "@/lib/store";
 
 function Dashboard() {
-  const agents = useStore(selectAgents);
+  const agentIds = useStore((s) => s.agentIds);
+  const agentsById = useStore((s) => s.agentsById);
   const projects = useStore((s) => s.projects);
+  const agents = useMemo<Agent[]>(
+    () =>
+      agentIds
+        .map((id) => agentsById[id])
+        .filter((agent): agent is Agent => Boolean(agent)),
+    [agentIds, agentsById]
+  );
   const running = agents.filter((a) => a.status === "running").length;
   const completed = agents.filter((a) => a.status === "completed").length;
   const errored = agents.filter((a) => a.status === "error").length;

@@ -36,7 +36,7 @@ import { api, type Agent as TerminalRecord } from "@/lib/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { selectAgentById, selectAgentSummaries, useStore } from "@/lib/store";
+import { selectAgentById, useStore } from "@/lib/store";
 import { toast } from "sonner";
 import {
   AlignHorizontalSpaceAroundIcon,
@@ -53,6 +53,13 @@ import {
 } from "lucide-react";
 
 type GridPreset = "auto" | "1x1" | "2x1" | "2x2" | "3x2" | "3x3";
+
+type TerminalSummary = {
+  id: string;
+  projectId: string | null;
+  projectLabel: string;
+  status: string;
+};
 
 const GRID_PRESETS: Record<
   Exclude<GridPreset, "auto">,
@@ -311,7 +318,8 @@ const TerminalPanel = memo(function TerminalPanel({
 });
 
 function TerminalPagePanel() {
-  const terminalSummaries = useStore(selectAgentSummaries);
+  const agentIds = useStore((s) => s.agentIds);
+  const agentsById = useStore((s) => s.agentsById);
   const selectedTerminalId = useStore((s) => s.selectedAgentId);
   const selectTerminal = useStore((s) => s.selectAgent);
   const updateTerminal = useStore((s) => s.updateAgent);
@@ -324,6 +332,20 @@ function TerminalPagePanel() {
   const [pendingDeleteTerminalId, setPendingDeleteTerminalId] = useState<string | null>(null);
   const pendingDeleteTerminal = useStore((state) =>
     pendingDeleteTerminalId ? state.agentsById[pendingDeleteTerminalId] ?? null : null
+  );
+
+  const terminalSummaries = useMemo<TerminalSummary[]>(
+    () =>
+      agentIds
+        .map((id) => agentsById[id])
+        .filter((agent): agent is TerminalRecord => Boolean(agent))
+        .map((agent) => ({
+          id: agent.id,
+          projectId: agent.projectId ?? null,
+          projectLabel: agent.project?.name || agent.projectPath,
+          status: agent.status,
+        })),
+    [agentIds, agentsById]
   );
 
   const uniqueProjects = useMemo(() => {
@@ -376,10 +398,7 @@ function TerminalPagePanel() {
       if (selectedTerminalId !== null) selectTerminal(null);
       return;
     }
-    if (
-      !selectedTerminalId ||
-      !visibleTerminalIds.includes(selectedTerminalId)
-    ) {
+    if (!selectedTerminalId || !visibleTerminalIds.includes(selectedTerminalId)) {
       selectTerminal(visibleTerminalIds[0]);
     }
   }, [visibleTerminalIds, selectedTerminalId, selectTerminal]);

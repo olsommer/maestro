@@ -55,6 +55,14 @@ async function main() {
     }
   });
   await app.register(cors, { origin: true });
+  app.addHook("onSend", async (req, reply, payload) => {
+    if (req.headers["access-control-request-private-network"] === "true") {
+      reply.header("Access-Control-Allow-Private-Network", "true");
+      reply.header("Vary", "Origin, Access-Control-Request-Headers, Access-Control-Request-Private-Network");
+    }
+
+    return payload;
+  });
 
   // 4. Register auth hook and routes
   registerAuthHook(app);
