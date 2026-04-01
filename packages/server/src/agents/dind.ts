@@ -4,6 +4,7 @@ import * as path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { MAESTRO_PROJECTS_DIR, MAESTRO_SANDBOXES_DIR } from "../state/files.js";
+import { listTerminalRecords } from "../state/terminals.js";
 import {
   getDockerPath,
   isDockerAvailable,
@@ -15,9 +16,16 @@ const DEFAULT_DIND_IMAGE = process.env.MAESTRO_DIND_IMAGE || "maestro-dind:lates
 const DEFAULT_DIND_READY_TIMEOUT_MS = Number(
   process.env.MAESTRO_DIND_READY_TIMEOUT_MS || "30000"
 );
+const DOCKER_RUNTIME_GC_INTERVAL_MS = Number(
+  process.env.MAESTRO_DIND_GC_INTERVAL_MS || String(60 * 60 * 1000)
+);
 const DIND_SOCKET_DIR = "/var/run/maestro-dind";
 const DIND_SOCKET_PATH = `${DIND_SOCKET_DIR}/docker.sock`;
+const DIND_CONTAINER_PREFIX = "maestro-dind-";
+const DIND_STATE_VOLUME_PREFIX = "maestro-dind-state-";
+const DIND_SOCKET_VOLUME_PREFIX = "maestro-dind-sock-";
 let dindImageReadyFor: string | null = null;
+let dockerRuntimeGcTimer: ReturnType<typeof setInterval> | null = null;
 
 export interface TerminalDockerRuntime {
   containerName: string;
@@ -35,9 +43,9 @@ function getTerminalDockerResourceSuffix(terminalId: string): string {
 export function getTerminalDockerRuntime(terminalId: string): TerminalDockerRuntime {
   const suffix = getTerminalDockerResourceSuffix(terminalId);
   return {
-    containerName: `maestro-dind-${suffix}`,
-    stateVolumeName: `maestro-dind-state-${suffix}`,
-    socketVolumeName: `maestro-dind-sock-${suffix}`,
+    containerName: `${DIND_CONTAINER_PREFIX}${suffix}`,
+    stateVolumeName: `${DIND_STATE_VOLUME_PREFIX}${suffix}`,
+    socketVolumeName: `${DIND_SOCKET_VOLUME_PREFIX}${suffix}`,
     socketMount: {
       type: "volume",
       source: `maestro-dind-sock-${suffix}`,
@@ -235,4 +243,106 @@ export function cleanupTerminalDockerRuntime(terminalId: string): void {
       // best effort
     }
   }
+}
+
+function listDockerResourceNames(kind: "container" | "volume", prefix: string): string[] {
+  if (!isDockerAvailable()) {
+    return [];
+  }
+
+  try {
+    const args =
+      kind === "container"
+        ? ["ps", "-a", "--filter", `name=^${prefix}`, "--format", "{{.Names}}"]
+        : ["volume", "ls", "--filter", `name=^${prefix}`, "--format", "{{.Name}}"];
+    const output = execFileSync(getDockerPath(), args, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!output) {
+      return [];
+    }
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function getExpectedDockerRuntimeResources(): {
+  containers: Set<string>;
+  volumes: Set<string>;
+} {
+  const containers = new Set<string>();
+  const volumes = new Set<string>();
+
+  for (const terminal of listTerminalRecords()) {
+    const runtime = getTerminalDockerRuntime(terminal.id);
+    containers.add(runtime.containerName);
+    volumes.add(runtime.stateVolumeName);
+    volumes.add(runtime.socketVolumeName);
+  }
+
+  return { containers, volumes };
+}
+
+export function runTerminalDockerRuntimeGcOnce(): void {
+  if (!isDockerAvailable()) {
+    return;
+  }
+
+  const expected = getExpectedDockerRuntimeResources();
+
+  for (const containerName of listDockerResourceNames("container", DIND_CONTAINER_PREFIX)) {
+    if (expected.containers.has(containerName)) {
+      continue;
+    }
+    try {
+      execFileSync(getDockerPath(), ["rm", "-f", containerName], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      console.log(`[docker-gc] Removed orphaned terminal runtime container ${containerName}`);
+    } catch (error) {
+      console.warn(`[docker-gc] Failed to remove orphaned container ${containerName}:`, error);
+    }
+  }
+
+  const orphanedVolumes = [
+    ...listDockerResourceNames("volume", DIND_STATE_VOLUME_PREFIX),
+    ...listDockerResourceNames("volume", DIND_SOCKET_VOLUME_PREFIX),
+  ];
+  for (const volumeName of orphanedVolumes) {
+    if (expected.volumes.has(volumeName)) {
+      continue;
+    }
+    try {
+      execFileSync(getDockerPath(), ["volume", "rm", "-f", volumeName], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      console.log(`[docker-gc] Removed orphaned terminal runtime volume ${volumeName}`);
+    } catch (error) {
+      console.warn(`[docker-gc] Failed to remove orphaned volume ${volumeName}:`, error);
+    }
+  }
+}
+
+export function startTerminalDockerRuntimeGc(): void {
+  if (dockerRuntimeGcTimer) {
+    return;
+  }
+
+  runTerminalDockerRuntimeGcOnce();
+  dockerRuntimeGcTimer = setInterval(() => {
+    runTerminalDockerRuntimeGcOnce();
+  }, DOCKER_RUNTIME_GC_INTERVAL_MS);
+}
+
+export function stopTerminalDockerRuntimeGc(): void {
+  if (!dockerRuntimeGcTimer) {
+    return;
+  }
+  clearInterval(dockerRuntimeGcTimer);
+  dockerRuntimeGcTimer = null;
 }

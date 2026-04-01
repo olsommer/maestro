@@ -6,6 +6,10 @@ import {
   restorePersistentTerminals,
   shutdownTerminalManager,
 } from "./agents/terminal-manager.js";
+import {
+  startTerminalDockerRuntimeGc,
+  stopTerminalDockerRuntimeGc,
+} from "./agents/dind.js";
 import { registerTerminalRoutes } from "./routes/terminal-routes.js";
 import { registerProjectRoutes } from "./routes/project-routes.js";
 import { registerKanbanRoutes } from "./routes/kanban-routes.js";
@@ -113,6 +117,7 @@ async function main() {
   startAutomationRunner();
   startAutoUpdater();
   startAuthStatusChecker();
+  startTerminalDockerRuntimeGc();
 
   const savedTelegramToken = getSettingsState().telegramBotToken;
   if (process.env.TELEGRAM_ENABLED === "1" || savedTelegramToken) {
@@ -145,6 +150,7 @@ async function main() {
     stopAutomationRunner();
     stopAutoUpdater();
     stopAuthStatusChecker();
+    stopTerminalDockerRuntimeGc();
     await stopTelegram();
     await shutdownTerminalManager();
     io.close();
