@@ -1,9 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { MAESTRO_SANDBOX_TERMINALS_DIR } from "../state/files.js";
+import { MAESTRO_TERMINALS_DIR } from "../state/files.js";
 
-const DEFAULT_TERMINAL_STATE_BASE = MAESTRO_SANDBOX_TERMINALS_DIR;
+const DEFAULT_TERMINAL_STATE_BASE = MAESTRO_TERMINALS_DIR;
 const TERMINAL_STATE_BASE =
   process.env.MAESTRO_TERMINAL_STATE_BASE?.trim() || DEFAULT_TERMINAL_STATE_BASE;
 const BOOTSTRAP_MARKER = ".bootstrap-complete";
@@ -17,8 +17,20 @@ function getGlobalHome(): string {
   return os.homedir();
 }
 
+function getLegacyTerminalRootDir(terminalId: string): string {
+  return path.join(path.dirname(TERMINAL_STATE_BASE), "sandboxes", "terminals", terminalId);
+}
+
 export function getTerminalIsolationPaths(terminalId: string): TerminalIsolationPaths {
   const rootDir = path.join(TERMINAL_STATE_BASE, terminalId);
+  return {
+    rootDir,
+    homeDir: path.join(rootDir, "home"),
+  };
+}
+
+function getLegacyTerminalIsolationPaths(terminalId: string): TerminalIsolationPaths {
+  const rootDir = getLegacyTerminalRootDir(terminalId);
   return {
     rootDir,
     homeDir: path.join(rootDir, "home"),
@@ -75,6 +87,13 @@ function bootstrapTerminalHome(homeDir: string): void {
 
 export function ensureTerminalIsolationHome(terminalId: string): TerminalIsolationPaths {
   const paths = getTerminalIsolationPaths(terminalId);
+  const legacyPaths = getLegacyTerminalIsolationPaths(terminalId);
+
+  if (!fs.existsSync(paths.rootDir) && fs.existsSync(legacyPaths.rootDir)) {
+    fs.mkdirSync(path.dirname(paths.rootDir), { recursive: true });
+    fs.renameSync(legacyPaths.rootDir, paths.rootDir);
+  }
+
   fs.mkdirSync(paths.homeDir, { recursive: true });
   bootstrapTerminalHome(paths.homeDir);
   return paths;
@@ -82,5 +101,9 @@ export function ensureTerminalIsolationHome(terminalId: string): TerminalIsolati
 
 export function removeTerminalIsolationState(terminalId: string): void {
   const paths = getTerminalIsolationPaths(terminalId);
+  const legacyPaths = getLegacyTerminalIsolationPaths(terminalId);
   fs.rmSync(paths.rootDir, { recursive: true, force: true });
+  if (legacyPaths.rootDir !== paths.rootDir) {
+    fs.rmSync(legacyPaths.rootDir, { recursive: true, force: true });
+  }
 }
