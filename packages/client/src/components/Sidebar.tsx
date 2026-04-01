@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BoltIcon,
@@ -41,12 +39,17 @@ const nav = [
 
 function AppNavMenu() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
 
-  function handleNavigate() {
+  function handleNavigate(href: string) {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     if (isMobile) {
       setOpenMobile(false);
     }
+    router.push(href);
   }
 
   return (
@@ -63,8 +66,7 @@ function AppNavMenu() {
             <SidebarMenuButton
               isActive={active}
               tooltip={item.label}
-              onClick={handleNavigate}
-              render={<Link href={item.href} />}
+              onClick={() => handleNavigate(item.href)}
             >
               <Icon />
               <span>{item.label}</span>
@@ -81,12 +83,19 @@ export function Sidebar() {
   const logout = useAuth((s) => s.logout);
   const { isMobile, setOpenMobile } = useSidebar();
 
-  function handleDisconnect() {
+  function navigate(href: string) {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     if (isMobile) {
       setOpenMobile(false);
     }
+    router.push(href);
+  }
+
+  function handleDisconnect() {
     logout();
-    router.push("/connect");
+    navigate("/connect");
   }
 
   return (
@@ -96,7 +105,7 @@ export function Sidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Maestro"
-              render={<Link href="/" />}
+              onClick={() => navigate("/")}
               className="group-data-[collapsible=icon]:justify-center"
             >
               <span className="ascii-logo truncate text-sm group-data-[collapsible=icon]:hidden">
