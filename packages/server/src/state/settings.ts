@@ -2,18 +2,81 @@ import type { Settings, SettingsUpdate } from "@maestro/wire";
 import { normalizeSandboxProvider } from "../agents/sandbox.js";
 import { getSetting, setSetting } from "./sqlite.js";
 
+const DEFAULT_CUSTOM_SANDBOX_DOCKERFILE = `FROM maestro-sandbox:latest
+
+RUN apt-get update && apt-get install -y \\
+    sudo \\
+    python3 \\
+    python3-pip \\
+    curl \\
+    unzip \\
+ && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g agent-browser
+
+RUN agent-browser install --with-deps
+
+RUN pip3 install --break-system-packages uv ruff
+`;
+
 const DEFAULTS: Settings = {
   autoUpdateEnabled: false,
   autoUpdateIntervalHours: 24,
   telegramBotToken: "",
   sandboxEnabled: false,
   sandboxProvider: "none",
+  sandboxImage: {
+    mode: "builtin",
+    builtinImage: process.env.MAESTRO_DOCKER_SANDBOX_IMAGE || "maestro-sandbox:latest",
+    customDockerfile: DEFAULT_CUSTOM_SANDBOX_DOCKERFILE,
+    customImageTag: "maestro-sandbox:user-custom",
+    customBuildStatus: "idle",
+    customBuildError: null,
+    customBuiltAt: null,
+  },
+  sandboxResources: {
+    memoryLimitMb: 2048,
+    maxProcesses: 256,
+  },
   deepgramApiKey: "",
   agentDefaultProvider: "claude",
   agentDefaultDisableSandbox: false,
   agentDefaultSkipPermissions: true,
   agentDefaultWorktreeMode: "none",
 };
+
+function parseJson<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function getSandboxImageSettings(): Settings["sandboxImage"] {
+  const parsed = parseJson<Partial<Settings["sandboxImage"]>>(
+    getSetting("sandboxImageJson"),
+    {}
+  );
+
+  return {
+    ...DEFAULTS.sandboxImage,
+    ...parsed,
+  };
+}
+
+function getSandboxResourceSettings(): Settings["sandboxResources"] {
+  const parsed = parseJson<Partial<Settings["sandboxResources"]>>(
+    getSetting("sandboxResourcesJson"),
+    {}
+  );
+
+  return {
+    ...DEFAULTS.sandboxResources,
+    ...parsed,
+  };
+}
 
 export function normalizeAutoSpawnSandboxProvider(
   provider: Settings["agentDefaultProvider"],
@@ -32,6 +95,8 @@ export function getSettings(): Settings {
   const telegramToken = getSetting("telegramBotToken");
   const sandbox = getSetting("sandboxEnabled");
   const sandboxProvider = getSetting("sandboxProvider");
+  const sandboxImage = getSandboxImageSettings();
+  const sandboxResources = getSandboxResourceSettings();
   const deepgramKey = getSetting("deepgramApiKey");
   const agentDefaultProvider = getSetting("agentDefaultProvider");
   const agentDefaultDisableSandbox = getSetting("agentDefaultDisableSandbox");
@@ -50,6 +115,8 @@ export function getSettings(): Settings {
     telegramBotToken: telegramToken !== null ? telegramToken : DEFAULTS.telegramBotToken,
     sandboxEnabled: resolvedSandboxProvider !== "none",
     sandboxProvider: resolvedSandboxProvider,
+    sandboxImage,
+    sandboxResources,
     deepgramApiKey: deepgramKey !== null ? deepgramKey : DEFAULTS.deepgramApiKey,
     agentDefaultProvider: resolvedAgentDefaultProvider,
     agentDefaultDisableSandbox:
@@ -92,6 +159,35 @@ export function updateSettings(patch: SettingsUpdate): Settings {
   if (patch.sandboxProvider !== undefined || nextSandboxProvider !== current.sandboxProvider) {
     setSetting("sandboxProvider", nextSandboxProvider);
     setSetting("sandboxEnabled", String(nextSandboxProvider !== "none"));
+  }
+  if (patch.sandboxImage !== undefined) {
+    const nextSandboxImage = {
+      ...current.sandboxImage,
+      ...patch.sandboxImage,
+    };
+    const dockerfileChanged =
+      nextSandboxImage.customDockerfile !== current.sandboxImage.customDockerfile ||
+      nextSandboxImage.customImageTag !== current.sandboxImage.customImageTag ||
+      nextSandboxImage.builtinImage !== current.sandboxImage.builtinImage;
+
+    setSetting("sandboxImageJson", JSON.stringify({
+      ...DEFAULTS.sandboxImage,
+      ...nextSandboxImage,
+      ...(dockerfileChanged
+        ? {
+            customBuildStatus: "idle",
+            customBuildError: null,
+            customBuiltAt: null,
+          }
+        : {}),
+    }));
+  }
+  if (patch.sandboxResources !== undefined) {
+    setSetting("sandboxResourcesJson", JSON.stringify({
+      ...DEFAULTS.sandboxResources,
+      ...current.sandboxResources,
+      ...patch.sandboxResources,
+    }));
   }
   if (patch.deepgramApiKey !== undefined) {
     setSetting("deepgramApiKey", patch.deepgramApiKey);

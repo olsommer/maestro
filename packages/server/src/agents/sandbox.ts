@@ -220,12 +220,11 @@ export function buildDockerRunArgs(
   return args;
 }
 
-export function ensureDockerSandboxImage(): string {
+export function ensureBuiltinDockerSandboxImage(image = DEFAULT_DOCKER_IMAGE): string {
   if (!isDockerAvailable()) {
     throw new Error("docker is not available");
   }
 
-  const image = DEFAULT_DOCKER_IMAGE;
   if (dockerImageReadyFor === image) {
     return image;
   }
@@ -248,6 +247,10 @@ export function ensureDockerSandboxImage(): string {
     dockerImageReadyFor = image;
     return image;
   }
+}
+
+export function ensureDockerSandboxImage(): string {
+  return ensureBuiltinDockerSandboxImage();
 }
 
 function collectDockerMounts(config: SandboxConfig): DockerMountSpec[] {

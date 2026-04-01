@@ -7,6 +7,7 @@ import {
   performUpdate,
   restartAutoUpdater,
 } from "../services/auto-updater.js";
+import { buildConfiguredCustomSandboxImage } from "../services/sandbox-image.js";
 
 export async function registerSettingsRoutes(app: FastifyInstance) {
   // Get current settings
@@ -27,6 +28,26 @@ export async function registerSettingsRoutes(app: FastifyInstance) {
     restartAutoUpdater();
 
     return settings;
+  });
+
+  app.post("/api/settings/sandbox-image/build", async (_req, reply) => {
+    try {
+      const settings = buildConfiguredCustomSandboxImage();
+      return { ok: true, settings };
+    } catch (error) {
+      const settings = updateSettings({
+        sandboxImage: {
+          ...getSettings().sandboxImage,
+          customBuildStatus: "error",
+          customBuildError:
+            error instanceof Error ? error.message : "Failed to build custom sandbox image",
+        },
+      });
+      return reply.status(400).send({
+        error: error instanceof Error ? error.message : "Failed to build custom sandbox image",
+        settings,
+      });
+    }
   });
 
   // Get Deepgram API key for client-side voice input

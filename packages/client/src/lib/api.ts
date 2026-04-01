@@ -105,6 +105,19 @@ export interface Settings {
   telegramBotToken: string;
   sandboxEnabled: boolean;
   sandboxProvider: "none" | "docker" | "gvisor";
+  sandboxImage: {
+    mode: "builtin" | "dockerfile";
+    builtinImage: string;
+    customDockerfile: string;
+    customImageTag: string;
+    customBuildStatus: "idle" | "building" | "ready" | "error";
+    customBuildError: string | null;
+    customBuiltAt: string | null;
+  };
+  sandboxResources: {
+    memoryLimitMb: number;
+    maxProcesses: number;
+  };
   deepgramApiKey: string;
   agentDefaultProvider: "claude" | "codex";
   agentDefaultDisableSandbox: boolean;
@@ -193,6 +206,10 @@ export const api = {
     request<Settings>("/api/settings", {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+  buildSandboxImage: () =>
+    request<{ ok: boolean; settings: Settings }>("/api/settings/sandbox-image/build", {
+      method: "POST",
     }),
   getDeepgramKey: () => request<{ apiKey: string }>("/api/settings/deepgram-key"),
   getUpdateStatus: () => request<UpdateStatus>("/api/settings/update-status"),
