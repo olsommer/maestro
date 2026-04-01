@@ -129,7 +129,7 @@ const TerminalPanel = memo(function TerminalPanel({
   onSelect: () => void;
   onDelete: () => void;
   onSwipeNavigate?: (dir: -1 | 1) => void;
-  onRegisterRefit?: (terminalId: string, refit: () => void) => void;
+  onRegisterRefit?: (terminalId: string, refit: (() => void) | null) => void;
   onRefit?: () => void;
 }) {
   const terminal = useStore(selectAgentById(terminalId));
