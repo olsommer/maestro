@@ -451,7 +451,7 @@ export function Terminal({
   terminalId: string;
   isActive?: boolean;
   onSwipeNavigate?: (dir: -1 | 1) => void;
-  registerRefit?: ((refit: () => void) => void) | null;
+  registerRefit?: ((refit: (() => void) | null) => void) | null;
 }) {
   const isMobile = useIsMobile();
   const { keyboardInset, keyboardOpen } = useMobileKeyboard();
@@ -1030,7 +1030,7 @@ export function Terminal({
     };
 
     registerRefit?.(refit);
-    return () => registerRefit?.(() => {});
+    return () => registerRefit?.(null);
   }, [registerRefit, scheduleFit, scheduleResizeEmit]);
 
   const handleShowText = useCallback(() => {
