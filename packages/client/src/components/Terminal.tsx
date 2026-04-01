@@ -9,7 +9,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
   type FormEvent as ReactFormEvent,
 } from "react";
-import { getSocket } from "@/lib/socket";
+import { getSocket, subscribeToTerminalOutput } from "@/lib/socket";
 import { useDeepgram } from "@/hooks/use-deepgram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -34,61 +34,12 @@ import {
   type TerminalAttachResponse,
 } from "@maestro/wire";
 import { toast } from "sonner";
-
-interface StoredTerminalSnapshot {
-  cursor: number;
-  data: string;
-  savedAt: number;
-}
-
-interface LocalTerminalSnapshot {
-  terminalId: string;
-  cursor: number;
-  data: string;
-  savedAt: number;
-}
-
-const SNAPSHOT_PERSIST_DELAY_MS = 400;
 function isEditableElement(element: Element | null): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
   if (element.isContentEditable) return true;
 
   const tagName = element.tagName;
   return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
-}
-
-function getSnapshotStorageKey(terminalId: string): string {
-  return `maestro:terminal-snapshot:${terminalId}`;
-}
-
-function loadStoredSnapshot(terminalId: string): StoredTerminalSnapshot | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(getSnapshotStorageKey(terminalId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredTerminalSnapshot>;
-    if (
-      typeof parsed.cursor !== "number" ||
-      typeof parsed.data !== "string" ||
-      typeof parsed.savedAt !== "number"
-    ) {
-      return null;
-    }
-    return parsed as StoredTerminalSnapshot;
-  } catch {
-    return null;
-  }
-}
-
-function storeSnapshot(terminalId: string, snapshot: StoredTerminalSnapshot): void {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(getSnapshotStorageKey(terminalId), JSON.stringify(snapshot));
-  } catch {
-    // Ignore quota/storage errors
-  }
 }
 
 function useMobileKeyboard() {
@@ -308,6 +259,19 @@ function MobileTerminalControls({
     onTranscript,
   });
 
+  const handlePasteFromClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        toast.error("Clipboard is empty.");
+        return;
+      }
+      send(text);
+    } catch {
+      toast.error("Clipboard paste is unavailable in this browser.");
+    }
+  }, [send]);
+
   if (!isMobile) return null;
 
   const isListening = voiceStatus === "listening" || voiceStatus === "stopping";
@@ -324,19 +288,6 @@ function MobileTerminalControls({
   const voiceStatusOffset = moreOpen
     ? "calc(env(safe-area-inset-bottom) + 6.5rem)"
     : "calc(env(safe-area-inset-bottom) + 3.4rem)";
-
-  const handlePasteFromClipboard = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text) {
-        toast.error("Clipboard is empty.");
-        return;
-      }
-      send(text);
-    } catch {
-      toast.error("Clipboard paste is unavailable in this browser.");
-    }
-  }, [send]);
 
   return (
     <div
@@ -514,7 +465,8 @@ export function Terminal({
   const attachedRef = useRef(false);
   const lastSeqRef = useRef(0);
   const pendingChunksRef = useRef<Map<number, string>>(new Map());
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resizeEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fitFrameRef = useRef<number | null>(null);
   const shouldRestoreFocusRef = useRef(false);
   const mobileCompositionActiveRef = useRef(false);
   const [textOverlay, setTextOverlay] = useState<string | null>(null);
@@ -537,9 +489,13 @@ export function Terminal({
     attachedRef.current = false;
     lastSeqRef.current = 0;
     pendingChunksRef.current.clear();
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
+    if (resizeEmitTimerRef.current) {
+      clearTimeout(resizeEmitTimerRef.current);
+      resizeEmitTimerRef.current = null;
+    }
+    if (fitFrameRef.current !== null) {
+      cancelAnimationFrame(fitFrameRef.current);
+      fitFrameRef.current = null;
     }
     containerRef.current?.replaceChildren();
   }, [terminalId]);
@@ -578,6 +534,42 @@ export function Terminal({
     [terminalId]
   );
 
+  const scheduleFit = useCallback(() => {
+    if (fitFrameRef.current !== null) {
+      return;
+    }
+
+    fitFrameRef.current = requestAnimationFrame(() => {
+      fitFrameRef.current = null;
+      fitAddonRef.current?.fit();
+    });
+  }, []);
+
+  const emitTerminalResize = useCallback(() => {
+    const term = termRef.current;
+    const socket = socketRef.current;
+    if (!term || !socket) {
+      return;
+    }
+
+    socket.emit("terminal:resize", {
+      terminalId,
+      cols: term.cols,
+      rows: term.rows,
+    });
+  }, [terminalId]);
+
+  const scheduleResizeEmit = useCallback(() => {
+    if (resizeEmitTimerRef.current) {
+      clearTimeout(resizeEmitTimerRef.current);
+    }
+
+    resizeEmitTimerRef.current = setTimeout(() => {
+      resizeEmitTimerRef.current = null;
+      emitTerminalResize();
+    }, 80);
+  }, [emitTerminalResize]);
+
   const handleVoiceTranscript = useCallback(
     (text: string) => {
       const transcript = text.trim();
@@ -593,16 +585,14 @@ export function Terminal({
     containerRef.current?.replaceChildren();
 
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { SerializeAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
-        import("@xterm/addon-serialize"),
       ]);
 
       if (cancelled || !containerRef.current) return;
 
       const fitAddon = new FitAddon();
-      const serializeAddon = new SerializeAddon();
       const term = new Terminal({
         theme: {
           background: "#09090b",
@@ -612,13 +602,12 @@ export function Terminal({
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         fontSize: window.innerWidth < 768 ? 10 : 13,
         cursorBlink: true,
-        scrollback: 50000,
+        scrollback: 10000,
         convertEol: false,
         disableStdin: false,
       });
 
       term.loadAddon(fitAddon);
-      term.loadAddon(serializeAddon);
       term.open(containerRef.current);
       fitAddon.fit();
       if (!isMobileRef.current) {
@@ -720,7 +709,7 @@ export function Terminal({
 
         shouldRestoreFocusRef.current = isActiveRef.current;
         term.focus();
-        requestAnimationFrame(() => fitAddon.fit());
+        scheduleFit();
       };
 
       container.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -728,7 +717,8 @@ export function Terminal({
       container.addEventListener("touchend", onTouchEnd, { capture: true, passive: false });
 
       const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit();
+        scheduleFit();
+        scheduleResizeEmit();
       });
       resizeObserver.observe(container);
 
@@ -737,32 +727,6 @@ export function Terminal({
 
       const socket = getSocket();
       socketRef.current = socket;
-      const storedSnapshot = loadStoredSnapshot(terminalId);
-
-      const persistSnapshot = () => {
-        const snapshot: LocalTerminalSnapshot = {
-          terminalId,
-          cursor: lastSeqRef.current,
-          data: serializeAddon.serialize(),
-          savedAt: Date.now(),
-        };
-
-        storeSnapshot(terminalId, {
-          cursor: snapshot.cursor,
-          data: snapshot.data,
-          savedAt: snapshot.savedAt,
-        });
-      };
-
-      const schedulePersistSnapshot = () => {
-        if (persistTimerRef.current) {
-          clearTimeout(persistTimerRef.current);
-        }
-        persistTimerRef.current = setTimeout(() => {
-          persistTimerRef.current = null;
-          persistSnapshot();
-        }, SNAPSHOT_PERSIST_DELAY_MS);
-      };
 
       const rememberTerminalFocus = () => {
         if (isMobileRef.current || !isActiveRef.current) {
@@ -808,8 +772,6 @@ export function Terminal({
           lastSeqRef.current = nextSeq;
           term.write(nextChunk);
         }
-
-        schedulePersistSnapshot();
       };
 
       const handleOutput = (data: { terminalId: string; data: string; seq: number }) => {
@@ -846,7 +808,6 @@ export function Terminal({
           cols: size.cols,
           rows: size.rows,
         });
-        schedulePersistSnapshot();
       });
 
       const onPointerDown = () => {
@@ -855,7 +816,7 @@ export function Terminal({
         }
         shouldRestoreFocusRef.current = isActiveRef.current;
         term.focus();
-        requestAnimationFrame(() => fitAddon.fit());
+        scheduleFit();
       };
       container.addEventListener("pointerdown", onPointerDown);
 
@@ -937,7 +898,7 @@ export function Terminal({
           if (attachment.mode === "snapshot") {
             if (requestedCursor === 0 || attachment.cursor > requestedCursor) {
               term.reset();
-              fitAddon.fit();
+              scheduleFit();
               for (const chunk of attachment.output) {
                 term.write(chunk);
               }
@@ -951,29 +912,18 @@ export function Terminal({
 
           attachedRef.current = true;
           flushPendingChunks();
-          requestAnimationFrame(() => fitAddon.fit());
+          scheduleFit();
           restoreTerminalFocus();
-
-          socket.emit("terminal:resize", {
-            terminalId,
-            cols: term.cols,
-            rows: term.rows,
-          });
+          scheduleResizeEmit();
         } catch {
           // Ignore
         }
       };
 
-      const onPageHide = () => {
-        rememberTerminalFocus();
-        persistSnapshot();
-      };
-      window.addEventListener("pagehide", onPageHide);
-
       const resumeTerminal = () => {
         if (cancelled || cleanedUp) return;
         if (document.visibilityState === "hidden") return;
-        requestAnimationFrame(() => fitAddon.fit());
+        scheduleFit();
         if (socket.connected) {
           restoreTerminalFocus();
           void attachTerminal();
@@ -1006,17 +956,23 @@ export function Terminal({
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("blur", onWindowBlur);
       window.addEventListener("focus", onWindowFocus);
+      const unsubscribeTerminalOutput = subscribeToTerminalOutput(
+        terminalId,
+        handleOutput
+      );
 
       const cleanup = () => {
         if (cleanedUp) return;
         cleanedUp = true;
-        if (persistTimerRef.current) {
-          clearTimeout(persistTimerRef.current);
-          persistTimerRef.current = null;
+        if (resizeEmitTimerRef.current) {
+          clearTimeout(resizeEmitTimerRef.current);
+          resizeEmitTimerRef.current = null;
         }
-        persistSnapshot();
+        if (fitFrameRef.current !== null) {
+          cancelAnimationFrame(fitFrameRef.current);
+          fitFrameRef.current = null;
+        }
         resizeObserver.disconnect();
-        window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         window.removeEventListener("blur", onWindowBlur);
         window.removeEventListener("focus", onWindowFocus);
@@ -1031,7 +987,7 @@ export function Terminal({
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
         socket.off("connect", onSocketConnect);
-        socket.off("terminal:output", handleOutput);
+        unsubscribeTerminalOutput();
         socket.emit("terminal:unsubscribe", { terminalId });
         term.dispose();
         container.replaceChildren();
@@ -1043,13 +999,6 @@ export function Terminal({
       };
 
       disposeTerminal = cleanup;
-
-      if (storedSnapshot?.data) {
-        term.write(storedSnapshot.data);
-        lastSeqRef.current = storedSnapshot.cursor;
-      }
-
-      socket.on("terminal:output", handleOutput);
 
       await attachTerminal();
 
@@ -1063,31 +1012,26 @@ export function Terminal({
       cancelled = true;
       disposeTerminal?.();
     };
-  }, [terminalId]);
+  }, [scheduleFit, scheduleResizeEmit, terminalId]);
 
   // Refit when the active terminal changes and the mobile controls mount/unmount.
   useEffect(() => {
-    const id = setTimeout(() => fitAddonRef.current?.fit(), 50);
+    const id = setTimeout(() => {
+      scheduleFit();
+      scheduleResizeEmit();
+    }, 50);
     return () => clearTimeout(id);
-  }, [isActive]);
+  }, [isActive, scheduleFit, scheduleResizeEmit]);
 
   useEffect(() => {
     const refit = () => {
-      fitAddonRef.current?.fit();
-      const term = termRef.current;
-      const socket = socketRef.current;
-      if (term && socket) {
-        socket.emit("terminal:resize", {
-          terminalId,
-          cols: term.cols,
-          rows: term.rows,
-        });
-      }
+      scheduleFit();
+      scheduleResizeEmit();
     };
 
     registerRefit?.(refit);
     return () => registerRefit?.(() => {});
-  }, [registerRefit, terminalId]);
+  }, [registerRefit, scheduleFit, scheduleResizeEmit]);
 
   const handleShowText = useCallback(() => {
     if (termRef.current) {

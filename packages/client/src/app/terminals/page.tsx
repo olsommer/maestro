@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Terminal } from "@/components/Terminal";
@@ -36,7 +36,7 @@ import { api, type Agent as TerminalRecord } from "@/lib/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/lib/store";
+import { selectAgentById, selectAgentSummaries, useStore } from "@/lib/store";
 import { toast } from "sonner";
 import {
   AlignHorizontalSpaceAroundIcon,
@@ -115,8 +115,8 @@ function getWorktreeBadge(terminal: TerminalRecord) {
   };
 }
 
-function TerminalPanel({
-  terminal,
+const TerminalPanel = memo(function TerminalPanel({
+  terminalId,
   isSelected,
   onSelect,
   onDelete,
@@ -124,7 +124,7 @@ function TerminalPanel({
   onRegisterRefit,
   onRefit,
 }: {
-  terminal: TerminalRecord;
+  terminalId: string;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
@@ -132,6 +132,11 @@ function TerminalPanel({
   onRegisterRefit?: (terminalId: string, refit: () => void) => void;
   onRefit?: () => void;
 }) {
+  const terminal = useStore(selectAgentById(terminalId));
+  if (!terminal) {
+    return null;
+  }
+
   const recentInputs = terminal.recentInputs ?? [];
   const sandboxBadge = getSandboxBadge(terminal);
   const worktreeBadge = getWorktreeBadge(terminal);
@@ -303,10 +308,10 @@ function TerminalPanel({
       </div>
     </section>
   );
-}
+});
 
 function TerminalPagePanel() {
-  const terminals = useStore((s) => s.agents);
+  const terminalSummaries = useStore(selectAgentSummaries);
   const selectedTerminalId = useStore((s) => s.selectedAgentId);
   const selectTerminal = useStore((s) => s.selectAgent);
   const updateTerminal = useStore((s) => s.updateAgent);
@@ -316,66 +321,75 @@ function TerminalPagePanel() {
   const [projectFilterId, setProjectFilterId] = useState("all");
   const isMobile = useIsMobile();
   const [refitHandlers, setRefitHandlers] = useState<Record<string, () => void>>({});
-  const [pendingDeleteTerminal, setPendingDeleteTerminal] =
-    useState<TerminalRecord | null>(null);
+  const [pendingDeleteTerminalId, setPendingDeleteTerminalId] = useState<string | null>(null);
+  const pendingDeleteTerminal = useStore((state) =>
+    pendingDeleteTerminalId ? state.agentsById[pendingDeleteTerminalId] ?? null : null
+  );
 
   const uniqueProjects = useMemo(() => {
     const seen = new Map<string, { id: string; name: string }>();
-    for (const terminal of terminals) {
+    for (const terminal of terminalSummaries) {
       if (terminal.projectId && !seen.has(terminal.projectId)) {
         seen.set(terminal.projectId, {
           id: terminal.projectId,
-          name: terminal.project?.name || terminal.projectPath,
+          name: terminal.projectLabel,
         });
       }
     }
     return Array.from(seen.values());
-  }, [terminals]);
+  }, [terminalSummaries]);
 
   const effectiveProjectFilterId =
     projectFilterId !== "all" && !uniqueProjects.some((p) => p.id === projectFilterId)
       ? "all"
       : projectFilterId;
 
-  const visibleTerminals = useMemo(() => {
-    if (effectiveProjectFilterId === "all") return terminals;
-    return terminals.filter((terminal) => terminal.projectId === effectiveProjectFilterId);
-  }, [effectiveProjectFilterId, terminals]);
+  const visibleTerminalSummaries = useMemo(() => {
+    if (effectiveProjectFilterId === "all") return terminalSummaries;
+    return terminalSummaries.filter(
+      (terminal) => terminal.projectId === effectiveProjectFilterId
+    );
+  }, [effectiveProjectFilterId, terminalSummaries]);
+
+  const visibleTerminalIds = useMemo(
+    () => visibleTerminalSummaries.map((terminal) => terminal.id),
+    [visibleTerminalSummaries]
+  );
 
   const layout = useMemo(
-    () => resolvePreset(visibleTerminals.length, gridPreset),
-    [gridPreset, visibleTerminals.length]
+    () => resolvePreset(visibleTerminalIds.length, gridPreset),
+    [gridPreset, visibleTerminalIds.length]
   );
   const reconnectableTerminals = useMemo(
     () =>
-      visibleTerminals.filter(
+      visibleTerminalSummaries.filter(
         (terminal) =>
           terminal.status === "idle" ||
           terminal.status === "completed" ||
           terminal.status === "error"
       ),
-    [visibleTerminals]
+    [visibleTerminalSummaries]
   );
 
   useEffect(() => {
-    if (visibleTerminals.length === 0) {
+    if (visibleTerminalIds.length === 0) {
       if (selectedTerminalId !== null) selectTerminal(null);
       return;
     }
     if (
       !selectedTerminalId ||
-      !visibleTerminals.some((terminal) => terminal.id === selectedTerminalId)
+      !visibleTerminalIds.includes(selectedTerminalId)
     ) {
-      selectTerminal(visibleTerminals[0].id);
+      selectTerminal(visibleTerminalIds[0]);
     }
-  }, [visibleTerminals, selectedTerminalId, selectTerminal]);
+  }, [visibleTerminalIds, selectedTerminalId, selectTerminal]);
 
   const handleDeleteTerminal = useCallback(async () => {
     if (!pendingDeleteTerminal) return;
     try {
       await api.deleteTerminal(pendingDeleteTerminal.id);
       removeTerminal(pendingDeleteTerminal.id);
-      setPendingDeleteTerminal(null);
+      setPendingDeleteTerminalId(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete terminal");
     }
@@ -400,30 +414,27 @@ function TerminalPagePanel() {
     }
   }, [reconnectableTerminals, updateTerminal]);
 
-  const runningCount = visibleTerminals.filter(
+  const runningCount = visibleTerminalSummaries.filter(
     (terminal) => terminal.status === "running" || terminal.status === "waiting"
   ).length;
   const gridColumns = isMobile ? 1 : layout.cols;
   const panelMinHeight = isMobile ? 320 : 300;
 
-  const selectedIndex = visibleTerminals.findIndex(
-    (terminal) => terminal.id === selectedTerminalId
-  );
-  const selectedTerminal =
-    selectedIndex >= 0 ? visibleTerminals[selectedIndex] : null;
-  const renderedTerminals =
-    isMobile && selectedTerminal ? [selectedTerminal] : visibleTerminals;
+  const selectedIndex = visibleTerminalIds.findIndex((terminalId) => terminalId === selectedTerminalId);
+  const selectedTerminal = selectedIndex >= 0 ? visibleTerminalIds[selectedIndex] : null;
+  const renderedTerminalIds =
+    isMobile && selectedTerminal ? [selectedTerminal] : visibleTerminalIds;
 
   const navigateTerminal = useCallback(
     (dir: -1 | 1) => {
-      if (visibleTerminals.length === 0) return;
+      if (visibleTerminalIds.length === 0) return;
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      const next = (selectedIndex + dir + visibleTerminals.length) % visibleTerminals.length;
-      selectTerminal(visibleTerminals[next].id);
+      const next = (selectedIndex + dir + visibleTerminalIds.length) % visibleTerminalIds.length;
+      selectTerminal(visibleTerminalIds[next]);
     },
-    [selectedIndex, visibleTerminals, selectTerminal]
+    [selectedIndex, visibleTerminalIds, selectTerminal]
   );
 
   const registerRefitHandler = useCallback((terminalId: string, refit: () => void) => {
@@ -485,7 +496,7 @@ function TerminalPagePanel() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          {isMobile && visibleTerminals.length > 1 && (
+          {isMobile && visibleTerminalIds.length > 1 && (
             <>
               <Button
                 size="icon-xs"
@@ -517,7 +528,7 @@ function TerminalPagePanel() {
             <span className="hidden md:inline">Reconnect Offline</span>
           </Button>
           <p className="hidden text-xs font-medium md:block">
-            {visibleTerminals.length} terminals · {runningCount} running
+            {visibleTerminalIds.length} terminals · {runningCount} running
           </p>
           <Button size="sm" className="ml-auto shrink-0" onClick={() => setShowNew(true)}>
             <PlusIcon />
@@ -527,7 +538,7 @@ function TerminalPagePanel() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0 md:overflow-auto md:p-3">
-        {visibleTerminals.length === 0 ? (
+        {visibleTerminalIds.length === 0 ? (
           <Empty className="h-full min-h-[320px] border">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -555,16 +566,16 @@ function TerminalPagePanel() {
               gridAutoRows: `minmax(${panelMinHeight}px, 1fr)`,
             }}
           >
-            {renderedTerminals.map((terminal) => (
+            {renderedTerminalIds.map((terminalId) => (
               <TerminalPanel
-                key={terminal.id}
-                terminal={terminal}
-                isSelected={selectedTerminalId === terminal.id}
-                onSelect={() => selectTerminal(terminal.id)}
-                onDelete={() => setPendingDeleteTerminal(terminal)}
+                key={terminalId}
+                terminalId={terminalId}
+                isSelected={selectedTerminalId === terminalId}
+                onSelect={() => selectTerminal(terminalId)}
+                onDelete={() => setPendingDeleteTerminalId(terminalId)}
                 onSwipeNavigate={isMobile ? navigateTerminal : undefined}
                 onRegisterRefit={registerRefitHandler}
-                onRefit={() => handleRefitTerminal(terminal.id)}
+                onRefit={() => handleRefitTerminal(terminalId)}
               />
             ))}
           </div>
@@ -573,9 +584,9 @@ function TerminalPagePanel() {
 
       <NewTerminalDialog open={showNew} onClose={() => setShowNew(false)} />
       <ConfirmDialog
-        open={pendingDeleteTerminal !== null}
+        open={pendingDeleteTerminalId !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingDeleteTerminal(null);
+          if (!open) setPendingDeleteTerminalId(null);
         }}
         title="Delete terminal?"
         description={`This permanently removes ${
